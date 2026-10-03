@@ -30,7 +30,7 @@
            #:*connection* #:with-connection
            #:show-repl #:clear-repl #:repl-return #:repl-previous-input #:repl-next-input #:repl-mode
            #:eval-last-expression #:eval-defun #:eval-region #:eval-expression-or-region
-           #:compile-defun #:compile-and-load-file #:load-file
+           #:compile-defun #:compile-or-eval-defun #:compile-and-load-file #:load-file #:load-project
            #:edit-definition #:pop-definition #:describe-symbol #:complete-symbol
            #:next-note #:previous-note #:clear-notes #:debugger-abort))
 

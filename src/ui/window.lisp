@@ -69,7 +69,9 @@
     (".cadre-status" :padding ("2px" "10px") :font-size "smaller")
     (".cadre-status label" :margin ("0" "6px"))
     (".cadre-activity" :padding "4px")
-    (".cadre-panel" :background-color "@view_bg_color")))
+    (".cadre-panel" :background-color "@view_bg_color")
+    (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
+                            :padding ("0" "6px") :font-family "monospace")))
 
 (defun install-icons ()
   "Add Cadre's own icons to the icon theme."

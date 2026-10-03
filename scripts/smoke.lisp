@@ -141,6 +141,10 @@
                 (merge-pathnames "src/big.lisp" *root*))
 (with-open-file (o (merge-pathnames "src/m2.lisp" *root*) :direction :output)
   (format o "(defun twice (x) (* 2 x))~%(defun bad (y) (+ y undefined-thing))~%(twice 21)~%~%"))
+(with-open-file (o (merge-pathnames "src/lib.lisp" *root*) :direction :output)
+  (format o "(defun smoke-lib-fn () :loaded)~%"))
+(with-open-file (o (merge-pathnames "smoke.asd" *root*) :direction :output)
+  (format o "(defsystem \"smoke\" :components ((:file \"src/lib\")))~%"))
 (setf *lisp-command* '("sbcl" "--noinform" "--no-userinit"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
@@ -385,6 +389,19 @@
   (call-command 'compile-defun))
 
 (then 1000
+  (set-cursor 2 4)                      ; in (twice 21): not a definition, so evaluated
+  (call-command 'compile-or-eval-defun))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :inline-result))
+  (let ((shown (cadre-ui::buffer-local (current-buffer) :inline-result)))
+    (check "Ctrl+Return on a call shows its value inline"
+           (and shown (search "⇒ 42" (gtk:label-get-text (cdr shown))))
+           (and shown (gtk:label-get-text (cdr shown)))))
+  (screenshot "09-inline")
+  (insert-at-cursor " ")
+  (check "editing removes the inline value" (null (cadre-ui::buffer-local (current-buffer) :inline-result)))
+  (gtk:text-buffer-undo (buffer-text (current-buffer)))
+  (setf (buffer-modified-p (current-buffer)) nil)
   (set-cursor 2 10)                     ; after (twice 21)
   (call-command 'eval-last-expression))
 
@@ -435,9 +452,20 @@
   (call-command 'describe-symbol))
 
 (then-when ((find-buffer "*Help*"))
+  (call-command 'load-project)
   (check "describe-symbol shows documentation" (search "TWICE" (buffer-string (find-buffer "*Help*")))
          (let ((b (find-buffer "*Help*"))) (if b (subseq (buffer-string b) 0 (min 200 (length (buffer-string b)))) "no *Help* buffer")))
   (call-command 'show-repl))
+
+(then-when ((search (format nil "Loading system smoke") (repl-text)))
+  (check "load-project loads the folder's system in the REPL" (search "Loading system smoke" (repl-text))))
+
+(then-when ((and (not (cadre-ui::repl-busy cadre-ui::*repl*))
+                 (search "Loading system smoke" (repl-text))))
+  (cadre-ui::repl-eval "(smoke-lib-fn)"))
+
+(then-when ((search ":LOADED" (repl-text)))
+  (check "the loaded system's code runs" (search ":LOADED" (repl-text)) (subseq (repl-text) (max 0 (- (length (repl-text)) 300)))))
 
 (then 500
   (screenshot "10-repl")

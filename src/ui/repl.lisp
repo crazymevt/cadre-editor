@@ -61,7 +61,8 @@
         (gtk:box :spacing 6 :margin-start 6 :margin-end 6 :margin-top 2 :margin-bottom 2
           (command-button "media-playback-stop-symbolic" "Interrupt the evaluation" 'interrupt-lisp)
           (command-button "edit-clear-all-symbolic" "Clear the REPL" 'clear-repl)
-          (command-button "view-refresh-symbolic" "Restart the Lisp" 'restart-lisp))
+          (command-button "view-refresh-symbolic" "Restart the Lisp" 'restart-lisp)
+          (command-button "document-open-symbolic" "Load the project's ASDF system" 'load-project))
         (view-widget view)))))
 
 (defun repl-view () (and *repl* (repl-editor-view *repl*)))

@@ -119,7 +119,7 @@
   "C-c C-b" 'interrupt-lisp)
 
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
-  "C-RET" 'compile-defun
+  "C-RET" 'compile-or-eval-defun
   "C-S-RET" 'eval-expression-or-region
   "F5" 'compile-and-load-file
   "F12" 'edit-definition
@@ -147,7 +147,11 @@
   "C-SPC" 'complete-symbol)
 
 (bind-keys *standard-global-keymap*
-  "C-`" 'show-repl)
+  "C-`" 'show-repl
+  "F6" 'load-project)
+
+(bind-keys *emacs-global-keymap*
+  "C-c L" 'load-project)
 
 (bind-keys *emacs-editing-keymap*
   "C-f" 'forward-char

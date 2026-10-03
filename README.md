@@ -67,7 +67,8 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 
 | Action | Standard (⌘ on macOS) | Emacs |
 | --- | --- | --- |
-| Compile top-level form | `Ctrl+Return` | `C-c C-c` |
+| Evaluate or compile top-level form (definitions compile, other forms show their value) | `Ctrl+Return` | — |
+| Compile top-level form | (palette) | `C-c C-c` |
 | Evaluate top-level form | (palette) | `C-M-x` |
 | Evaluate expression before cursor / selection | `Ctrl+Shift+Return` | `C-x C-e` / `C-c C-r` |
 | Compile and load file | `F5` | `C-c C-k` |
@@ -76,6 +77,10 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Complete symbol | `Ctrl+Space` | `C-M-i` |
 | Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
+| Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
+
+Values from evaluating appear inline after the form (`⇒ 42`) until you edit,
+and in the status bar.
 
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server

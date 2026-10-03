@@ -30,10 +30,49 @@
 (defun show-result (result)
   (message "~a" (string-right-trim '(#\Newline) result)))
 
-(defun eval-for-message (string package)
+;;; Results shown inline, after the form: "⇒ 42". One per buffer; it goes
+;;; away when the buffer changes.
+
+(defun result-text (result)
+  "Swank's \"=> 42 (6 bits, …)\" as \"42 (6 bits, …)\", on one line."
+  (let ((text (string-trim '(#\Newline #\Space) result)))
+    (substitute #\Space #\Newline (if (and (> (length text) 3) (string= "=> " text :end2 3))
+                                     (subseq text 3)
+                                     text))))
+
+(defun clear-inline-result (buffer)
+  (let ((shown (buffer-local buffer :inline-result)))
+    (when shown
+      (setf (buffer-local buffer :inline-result) nil)
+      (destructuring-bind (text-view . label) shown
+        (when (eq (gtk:widget-get-parent label) text-view)
+          (gtk:text-view-remove text-view label))))))
+
+(defun show-inline-result (view line result)
+  "Show RESULT after the end of LINE in VIEW, until the buffer changes."
+  (let* ((buffer (view-buffer view))
+         (text-view (view-text-view view))
+         (rect (gtk:text-view-get-iter-location text-view (line-end-iter (view-gtk-buffer view) line)))
+         (text (result-text result))
+         ;; Overlay children get their minimum width, so the label must not
+         ;; ellipsize; long values are shortened here instead.
+         (label (make-instance 'gtk:label :label (format nil "⇒ ~a" (if (> (length text) 120)
+                                                                          (concatenate 'string (subseq text 0 119) "…")
+                                                                          text))
+                                          :tooltip-text (string-trim '(#\Newline) result)
+                                          :css-classes '("cadre-inline-result"))))
+    (clear-inline-result buffer)
+    (gtk:text-view-add-overlay text-view label (+ (gdk:rectangle-x rect) 16) (gdk:rectangle-y rect))
+    (setf (buffer-local buffer :inline-result) (cons text-view label))))
+
+(defun eval-for-message (string package &optional view line)
+  "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."
   (with-connection (connection)
     (rex connection (swank-call "swank:interactive-eval" string 3 120) :package package
-         :on-ok #'show-result)))
+         :on-ok (lambda (result)
+                  (show-result result)
+                  (when (and view (member (view-buffer view) (buffer-list)))
+                    (show-inline-result view line result))))))
 
 ;;; Evaluating
 
@@ -45,7 +84,7 @@
       (multiple-value-bind (sl sc) (backward-sexp-position (current-syntax) line column)
         (unless sl (editor-error "No expression before the cursor"))
         (flash-region view sl sc line column)
-        (eval-for-message (view-region-text view sl sc line column) (view-package view))))))
+        (eval-for-message (view-region-text view sl sc line column) (view-package view) view line)))))
 
 (define-command eval-defun ()
   "Evaluate the top-level form around the cursor and show its value."
@@ -55,7 +94,7 @@
       (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-syntax) line column)
         (unless sl (editor-error "Not in a top-level form"))
         (flash-region view sl sc el ec)
-        (eval-for-message (view-region-text view sl sc el ec) (view-package view))))))
+        (eval-for-message (view-region-text view sl sc el ec) (view-package view) view el)))))
 
 (define-command eval-region ()
   "Evaluate the selected text."
@@ -113,6 +152,22 @@
                           (multiple-value-bind (notes successp duration) (parse-compilation-result result)
                             (show-notes notes :buffer buffer :replace-lines (cons sl el))
                             (compilation-message notes successp duration "Compiled"))))))))))
+
+(defun definition-form-p (syntax line column)
+  "True if the top-level form at (LINE, COLUMN) is a definition: its head is DEF… or DEFINE-…."
+  (multiple-value-bind (sl sc) (toplevel-form-bounds syntax line column)
+    (when sl
+      (let ((head (symbol-at syntax sl (1+ sc))))
+        (and head (cadre::definer-name-p head))))))
+
+(define-command compile-or-eval-defun ()
+  "Compile the top-level form if it is a definition (showing compiler notes);
+otherwise evaluate it and show its value."
+  (:modes lisp-mode)
+  (multiple-value-bind (line column) (cursor-line-column (current-view))
+    (if (definition-form-p (current-syntax) line column)
+        (compile-defun)
+        (eval-defun))))
 
 (define-command compile-and-load-file ()
   "Save the file, compile it and load the result; show the compiler's notes."
@@ -320,3 +375,67 @@
                           (cond ((null completions) (message "No completions for ~a" prefix))
                                 ((null (rest completions)) (replace-prefix view start (first (first completions))))
                                 (t (show-completions view start completions)))))))))))
+
+;;; Loading the project's system
+
+(defun asd-system-names (file)
+  "The names of the systems an .asd file defines, in lower case."
+  (let ((names '()) (state '(:code 0)) (expect nil))
+    (with-open-file (in file :if-does-not-exist nil)
+      (when in
+        (loop for line = (read-line in nil) while line
+              do (multiple-value-bind (tokens end) (lex-line line state)
+                   (setf state end)
+                   (dolist (tk tokens)
+                     (let ((text (subseq line (token-start tk) (token-end tk))))
+                       (cond (expect
+                              (when (member (token-type tk) '(:string :symbol :keyword))
+                                (push (string-downcase (cadre::package-designator-name text)) names))
+                              (setf expect nil))
+                             ((and (eq (token-type tk) :symbol)
+                                   (string-equal "defsystem" (cadre::symbol-base-name text)))
+                              (setf expect t)))))))))
+    (nreverse names)))
+
+(defun project-systems (directory)
+  "Systems defined by .asd files in DIRECTORY (not its subdirectories),
+the main system of each file first."
+  (loop for file in (uiop:directory-files directory "*.asd")
+        for base = (string-downcase (pathname-name file))
+        for names = (asd-system-names file)
+        append (cons base (remove base names :test #'string=))))
+
+(defun load-system-form (directory system)
+  "Lisp source that lets ASDF find DIRECTORY's systems and loads SYSTEM, with
+Quicklisp (fetching dependencies) if the Lisp has it. ASDF's and Quicklisp's
+symbols are looked up by name, since neither may be loaded when it is read."
+  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (if (find-package \"QL\") (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a)))"
+          (cadre::lisp-string (uiop:native-namestring directory)) (cadre::lisp-string system) (cadre::lisp-string system)))
+
+(defun load-system-in-repl (directory system)
+  (setf (setting :last-system) system)
+  (show-repl-page)
+  (with-connection (connection)
+    (declare (ignore connection))
+    (cond ((repl-busy *repl*) (message "The REPL is busy"))
+          (t (repl-fresh-line)
+             (repl-insert (format nil "; Loading system ~a from ~a~%" system (uiop:native-namestring directory))
+                          "cadre-repl-note")
+             (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
+                                        (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
+             (repl-eval (load-system-form directory system))))))
+
+(define-command load-project ()
+  "Load the open folder's ASDF system into the Lisp (choosing one if there are several)."
+  (let* ((directory (or (window-project *window*) (editor-error "Open a folder first.")))
+         (systems (or (project-systems directory)
+                      (editor-error "No .asd file in ~a" (uiop:native-namestring directory))))
+         (last (setting :last-system)))
+    (if (null (rest systems))
+        (load-system-in-repl directory (first systems))
+        (open-picker (window-picker *window*)
+                     :items (if (member last systems :test #'string=)
+                                (cons last (remove last systems :test #'string=))
+                                systems)
+                     :placeholder "Load which system?"
+                     :on-choose (lambda (system) (load-system-in-repl directory system))))))

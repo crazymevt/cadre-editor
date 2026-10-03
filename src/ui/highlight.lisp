@@ -148,6 +148,7 @@ for instance after the buffer's major mode changes."
              (gobject:connect gtk-buffer :changed
                               (lambda (b) (declare (ignore b))
                                 (schedule-highlight buffer)
+                                (clear-inline-result buffer)
                                 (completion-buffer-changed buffer))))))
     (let ((lisp (eq (buffer-major-mode buffer) 'lisp-mode)))
       (cond ((and lisp (not (buffer-syntax buffer)))
