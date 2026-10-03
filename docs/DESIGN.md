@@ -422,6 +422,13 @@ given us these):
 2. **From the image** (when connected, debounced): ask Swank which symbols
    in the visible text are macros, special variables or undefined functions,
    and colour them differently. Results are cached per package.
+   "Undefined function" is claimed only where a symbol is surely called:
+   the head of a list in an evaluated place (a top-level form, a
+   function's argument, the body of `let`, `when`, `defun`…), and not a
+   local function from `flet`/`labels`. A `let` binding, a `case` key or a
+   slot specifier is data, and is left alone. If the buffer's package
+   doesn't exist in the image (the project isn't loaded), nothing is
+   marked.
 3. **Diagnostics:** compiler notes as wavy underlines (error, warning,
    style-warning), with tooltips.
 4. **Decorations:** rainbow parens, a highlighted matching paren, the

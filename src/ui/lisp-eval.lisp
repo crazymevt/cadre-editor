@@ -5,9 +5,11 @@
 (in-package #:cadre-ui)
 
 (defun view-package (view)
-  "The package for code in VIEW at the cursor: from the buffer's IN-PACKAGE, else the REPL's."
+  "The package for code in VIEW at the cursor: the buffer's own (as for
+*Macroexpansion*), else from its IN-PACKAGE, else the REPL's."
   (let ((syntax (buffer-syntax (view-buffer view))))
-    (or (and syntax (buffer-package-name syntax (cursor-line-column view)))
+    (or (buffer-local (view-buffer view) :package)
+        (and syntax (buffer-package-name syntax (cursor-line-column view)))
         (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))))
 
 (defun view-region-text (view line column end-line end-column)
@@ -71,6 +73,7 @@
     (rex connection (swank-call "swank:interactive-eval" string 3 120) :package package
          :on-ok (lambda (result)
                   (show-result result)
+                  (image-changed)
                   (when (and view (member (view-buffer view) (buffer-list)))
                     (show-inline-result view line result))))))
 
@@ -107,7 +110,7 @@
             (package (view-package view)))
         (with-connection (connection)
           (rex connection (swank-call "swank:interactive-eval-region" text 3 120) :package package
-               :on-ok #'show-result))))))
+               :on-ok (lambda (result) (show-result result) (image-changed))))))))
 
 (define-command eval-expression-or-region ()
   "Evaluate the selection if there is one, else the expression before the cursor."
@@ -151,7 +154,8 @@
                  :on-ok (lambda (result)
                           (multiple-value-bind (notes successp duration) (parse-compilation-result result)
                             (show-notes notes :buffer buffer :replace-lines (cons sl el))
-                            (compilation-message notes successp duration "Compiled"))))))))))
+                            (compilation-message notes successp duration "Compiled")
+                            (image-changed))))))))))
 
 (defun definition-form-p (syntax line column)
   "True if the top-level form at (LINE, COLUMN) is a definition: its head is DEF… or DEFINE-…."
@@ -188,7 +192,7 @@ otherwise evaluate it and show its value."
                                (let ((loadp (fifth result)) (fasl (sixth result)))
                                  (when (and successp loadp fasl)
                                    (rex connection (swank-call "swank:load-file" fasl)
-                                        :on-ok (lambda (v) (declare (ignore v))))))))))))
+                                        :on-ok (lambda (v) (declare (ignore v)) (image-changed)))))))))))
       (if (buffer-modified-p buffer)
           (write-buffer buffer (buffer-file buffer) (lambda (ok) (when ok (compile-it))))
           (compile-it)))))
@@ -200,7 +204,7 @@ otherwise evaluate it and show its value."
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (with-connection (connection)
       (rex connection (swank-call "swank:load-file" (uiop:native-namestring (buffer-file buffer)))
-           :on-ok (lambda (v) (declare (ignore v)) (message "Loaded ~a" (buffer-name buffer)))))))
+           :on-ok (lambda (v) (declare (ignore v)) (message "Loaded ~a" (buffer-name buffer)) (image-changed))))))
 
 ;;; Definitions
 
@@ -375,67 +379,3 @@ otherwise evaluate it and show its value."
                           (cond ((null completions) (message "No completions for ~a" prefix))
                                 ((null (rest completions)) (replace-prefix view start (first (first completions))))
                                 (t (show-completions view start completions)))))))))))
-
-;;; Loading the project's system
-
-(defun asd-system-names (file)
-  "The names of the systems an .asd file defines, in lower case."
-  (let ((names '()) (state '(:code 0)) (expect nil))
-    (with-open-file (in file :if-does-not-exist nil)
-      (when in
-        (loop for line = (read-line in nil) while line
-              do (multiple-value-bind (tokens end) (lex-line line state)
-                   (setf state end)
-                   (dolist (tk tokens)
-                     (let ((text (subseq line (token-start tk) (token-end tk))))
-                       (cond (expect
-                              (when (member (token-type tk) '(:string :symbol :keyword))
-                                (push (string-downcase (cadre::package-designator-name text)) names))
-                              (setf expect nil))
-                             ((and (eq (token-type tk) :symbol)
-                                   (string-equal "defsystem" (cadre::symbol-base-name text)))
-                              (setf expect t)))))))))
-    (nreverse names)))
-
-(defun project-systems (directory)
-  "Systems defined by .asd files in DIRECTORY (not its subdirectories),
-the main system of each file first."
-  (loop for file in (uiop:directory-files directory "*.asd")
-        for base = (string-downcase (pathname-name file))
-        for names = (asd-system-names file)
-        append (cons base (remove base names :test #'string=))))
-
-(defun load-system-form (directory system)
-  "Lisp source that lets ASDF find DIRECTORY's systems and loads SYSTEM, with
-Quicklisp (fetching dependencies) if the Lisp has it. ASDF's and Quicklisp's
-symbols are looked up by name, since neither may be loaded when it is read."
-  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (if (find-package \"QL\") (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a)))"
-          (cadre::lisp-string (uiop:native-namestring directory)) (cadre::lisp-string system) (cadre::lisp-string system)))
-
-(defun load-system-in-repl (directory system)
-  (setf (setting :last-system) system)
-  (show-repl-page)
-  (with-connection (connection)
-    (declare (ignore connection))
-    (cond ((repl-busy *repl*) (message "The REPL is busy"))
-          (t (repl-fresh-line)
-             (repl-insert (format nil "; Loading system ~a from ~a~%" system (uiop:native-namestring directory))
-                          "cadre-repl-note")
-             (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
-                                        (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
-             (repl-eval (load-system-form directory system))))))
-
-(define-command load-project ()
-  "Load the open folder's ASDF system into the Lisp (choosing one if there are several)."
-  (let* ((directory (or (window-project *window*) (editor-error "Open a folder first.")))
-         (systems (or (project-systems directory)
-                      (editor-error "No .asd file in ~a" (uiop:native-namestring directory))))
-         (last (setting :last-system)))
-    (if (null (rest systems))
-        (load-system-in-repl directory (first systems))
-        (open-picker (window-picker *window*)
-                     :items (if (member last systems :test #'string=)
-                                (cons last (remove last systems :test #'string=))
-                                systems)
-                     :placeholder "Load which system?"
-                     :on-choose (lambda (system) (load-system-in-repl directory system))))))

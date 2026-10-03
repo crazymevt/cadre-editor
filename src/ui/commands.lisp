@@ -184,6 +184,10 @@ THEN, if given, is called with the view once the file is showing."
   "Show or hide the sidebar."
   (set-sidebar-visible *window* (not (gtk:widget-get-visible (window-sidebar *window*)))))
 
+(define-command show-explorer ()
+  "Show the explorer in the sidebar."
+  (show-sidebar-page *window* "explorer" :toggle nil))
+
 (define-command toggle-panel ()
   "Show or hide the panel."
   (set-panel-visible *window* (not (panel-visible-p *window*))))

@@ -46,6 +46,11 @@
 (defun syntax-line-count (syntax)
   (length (syntax-lines syntax)))
 
+(defun forget-highlighting (syntax)
+  "Mark every line as not highlighted, so the GUI tags them again."
+  (loop for info across (syntax-lines syntax)
+        do (setf (line-info-highlighted info) nil)))
+
 (defun syntax-lines-changed (syntax first old-count new-count)
   "Note that lines FIRST to FIRST+OLD-COUNT-1 are replaced by NEW-COUNT lines."
   (let* ((lines (syntax-lines syntax))

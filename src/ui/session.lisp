@@ -81,6 +81,8 @@
   (setf *connection* connection *connecting* nil)
   (update-connection-status)
   (repl-connected connection)
+  (image-changed)
+  (refresh-systems)
   (message "Connected to ~a" (connection-implementation connection))
   (let ((pending *when-connected*))
     (setf *when-connected* '())
@@ -93,6 +95,8 @@
     (setf *connection* nil)
     (repl-disconnected reason)
     (debugger-clear)
+    (image-changed)
+    (refresh-systems)
     (update-connection-status)
     (message "Lisp disconnected: ~a" reason)))
 
@@ -131,6 +135,9 @@
                                             :placeholder prompt :text (or initial "")
                                             :on-choose (lambda (text)
                                                          (swank-send connection (list :emacs-return thread tag text))))))
+      (:inspect (destructuring-bind (what &optional thread tag) args
+                  (show-inspection what)
+                  (when tag (swank-send connection (list :emacs-return thread tag nil)))))
       (:indentation-update (learn-indentation (first args)))
       (:background-message (message "~a" (first args)))
       (:new-features nil)

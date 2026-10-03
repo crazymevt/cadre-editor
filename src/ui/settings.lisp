@@ -29,6 +29,10 @@ beside it, and :auto chooses by window width (see *auto-vertical-min-width*).")
 (define-option *explorer-hidden-types* '("fasl" "dx64fsl" "ufasl" "fas" "lx64fsl") list
   "File types (extensions) the explorer leaves out.")
 
+(define-option *highlight-from-image* t boolean
+  "Color symbols by what the connected Lisp knows: macros, special variables,
+constants, and calls to functions that are not defined.")
+
 (defun config-directory ()
   (let ((xdg (uiop:getenv "XDG_CONFIG_HOME")))
     (merge-pathnames "cadre/" (if (and xdg (plusp (length xdg)))

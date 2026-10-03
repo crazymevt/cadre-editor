@@ -90,6 +90,23 @@
 (defun tab-titles ()
   (mapcar #'adw:tab-page-get-title (cadre-ui::window-pages *window*)))
 
+(defun find-widgets (root predicate)
+  "Every widget under ROOT (inclusive) satisfying PREDICATE."
+  (let ((found '()))
+    (labels ((walk (w)
+               (when (funcall predicate w) (push w found))
+               (loop for c = (gtk:widget-get-first-child w) then (gtk:widget-get-next-sibling c)
+                     while c do (walk c))))
+      (walk root))
+    (nreverse found)))
+
+(defun label-texts (root)
+  (mapcar #'gtk:label-get-text (find-widgets root (lambda (w) (typep w 'gtk:label)))))
+
+(defun panel-page-title (name)
+  (let ((stack (cadre-ui::panel-stack (cadre-ui::window-panel *window*))))
+    (gtk:stack-page-get-title (gtk:stack-get-page stack (gtk:stack-get-child-by-name stack name)))))
+
 (defmacro then (delay &body body)
   `(push (cons ,delay (lambda () ,@body)) *steps*))
 
@@ -141,6 +158,8 @@
                 (merge-pathnames "src/big.lisp" *root*))
 (with-open-file (o (merge-pathnames "src/m2.lisp" *root*) :direction :output)
   (format o "(defun twice (x) (* 2 x))~%(defun bad (y) (+ y undefined-thing))~%(twice 21)~%~%"))
+(with-open-file (o (merge-pathnames "src/m3.lisp" *root*) :direction :output)
+  (format o "(defmacro my-mac (x) `(list ,x ,x))~%(defvar special-thing 5)~%(defun caller () (my-mac (twice 3)))~%(defun get-thing () special-thing)~%(defun uses-undefined () (no-such-function 1))~%(defun deep (n) (if (zerop n) (error \"deep ~~a\" n) (deep (1- n))))~%(defun binder () (let ((not-a-call 1)) not-a-call))~%"))
 (with-open-file (o (merge-pathnames "src/lib.lisp" *root*) :direction :output)
   (format o "(defun smoke-lib-fn () :loaded)~%"))
 (with-open-file (o (merge-pathnames "smoke.asd" *root*) :direction :output)
@@ -467,6 +486,125 @@
 (then-when ((search ":LOADED" (repl-text)))
   (check "the loaded system's code runs" (search ":LOADED" (repl-text)) (subseq (repl-text) (max 0 (- (length (repl-text)) 300)))))
 
+;;; M3: debugger and tools
+(then 300
+  (open-file-path (merge-pathnames "src/m3.lisp" *root*)
+                  :then (lambda (view) (declare (ignore view)) (call-command 'compile-and-load-file))))
+
+(then-when ((has-face-p 2 18 :macro) :timeout 40)
+  (check "a macro from the image is colored as one" (has-face-p 2 18 :macro))
+  (check "a call to an undefined function is marked" (has-face-p 4 26 :undefined-function))
+  (check "a special variable without earmuffs is colored from the image" (has-face-p 3 20 :special-variable))
+  (check "a LET binding is not marked as an undefined call" (not (has-face-p 6 24 :undefined-function)))
+  (check "a defined function is not marked" (not (has-face-p 2 26 :undefined-function)))
+  (screenshot "11-image-faces")
+  (set-cursor 2 17)                     ; before (my-mac (twice 3))
+  (call-command 'expand-macro-once))
+
+(then-when ((find-buffer "*Macroexpansion*"))
+  (check "macroexpand shows the expansion"
+         (search "(LIST (TWICE 3) (TWICE 3))" (buffer-string (find-buffer "*Macroexpansion*")))
+         (buffer-string (find-buffer "*Macroexpansion*")))
+  (call-command 'close-tab)
+  (show-buffer-named "m3.lisp")
+  (set-cursor 2 28)                     ; on "twice"
+  (call-command 'who-calls))
+
+(then-when ((plusp (hash-table-count cadre-ui::*reference-rows*)))
+  (check "who-calls finds the caller"
+         (loop for x being the hash-values of cadre-ui::*reference-rows*
+               thereis (search "CALLER" (string-upcase (xref-name x)))))
+  (check "the References tab shows the count" (search "(" (panel-page-title "references"))
+         (panel-page-title "references"))
+  (screenshot "12-references")
+  (cadre-ui::inspect-string "(list 1 \"two\" 3)" "COMMON-LISP-USER"))
+
+(then-when ((search "CONS" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
+  (check "inspecting shows the object" (search "CONS" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
+  (check "the inspector shows its parts as links"
+         (find :value (cadre-ui::ins-links cadre-ui::*inspector*) :key #'third))
+  (screenshot "13-inspector")
+  (let ((link (find-if (lambda (l) (and (eq (third l) :value)
+                                        (search "\"two\"" (text-string (cadre-ui::inspector-buffer))
+                                                :start2 (first l) :end2 (second l))))
+                       (cadre-ui::ins-links cadre-ui::*inspector*))))
+    (check "the string element is a link" link)
+    (when link (cadre-ui::follow-inspector-link link))))
+
+(then-when ((search "CHARACTER" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
+  (check "clicking a value inspects it"
+         (search "CHARACTER" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+         (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+  (call-command 'inspector-back))
+
+(then-when ((search "CONS" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
+  (check "Back returns to the previous object" t)
+  (cadre-ui::repl-eval "(deep 3)"))
+
+(defun deep-frame ()
+  (find-if (lambda (f) (search "(DEEP 0" (frame-description f)))
+           (cadre-ui::dl-frames (first cadre-ui::*debug-levels*))))
+
+(then-when (cadre-ui::*debug-levels*)
+  (check "the debugger lists frames" (deep-frame)
+         (mapcar #'frame-description (subseq (cadre-ui::dl-frames (first cadre-ui::*debug-levels*)) 0 3)))
+  (let* ((n (and (deep-frame) (frame-number (deep-frame))))
+         (expander (find-if (lambda (e) (search (format nil "~d: (DEEP 0" n)
+                                                (gtk:label-get-text (gtk:expander-get-label-widget e))))
+                            (find-widgets cadre-ui::*debugger-box* (lambda (w) (typep w 'gtk:expander))))))
+    (check "each frame has an expander" expander)
+    (when expander (gtk:expander-set-expanded expander t))))
+
+(then-when ((member "N" (label-texts cadre-ui::*debugger-box*) :test #'equal))
+  (check "opening a frame shows its locals" (member "N" (label-texts cadre-ui::*debugger-box*) :test #'equal))
+  (screenshot "14-debugger-frame")
+  (let ((level (first cadre-ui::*debug-levels*)))
+    (cadre-ui::frame-rex level (swank-call "swank:eval-string-in-frame" "(+ n 100)" (frame-number (deep-frame))
+                                           "COMMON-LISP-USER" 1 100)
+                         :on-ok (lambda (v) (setf (cadre-ui::buffer-local (current-buffer) :smoke-eval) v)))))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :smoke-eval))
+  (check "evaluating in a frame sees its locals"
+         (search "100" (cadre-ui::buffer-local (current-buffer) :smoke-eval))
+         (cadre-ui::buffer-local (current-buffer) :smoke-eval))
+  (cadre-ui::show-frame-source (first cadre-ui::*debug-levels*) (frame-number (deep-frame))))
+
+(then 1500
+  (check "Source shows the frame's code" (and (string= (buffer-name (current-buffer)) "m3.lisp")
+                                              (= 5 (first (cursor))))
+         (list (buffer-name (current-buffer)) (cursor)))
+  (let ((before (length (cadre-ui::dl-frames (first cadre-ui::*debug-levels*))))
+        (more (find-if (lambda (b) (equal (gtk:button-get-label b) "More Frames"))
+                       (find-widgets cadre-ui::*debugger-box* (lambda (w) (typep w 'gtk:button))))))
+    (setf (cadre-ui::buffer-local (current-buffer) :frames-before) before)
+    (check "a long backtrace offers more frames" more)
+    (when more (gtk:widget-activate more))))
+
+(then 1500
+  (check "More Frames fetches more"
+         (> (length (cadre-ui::dl-frames (first cadre-ui::*debug-levels*)))
+            (cadre-ui::buffer-local (current-buffer) :frames-before)))
+  (cadre-ui::focus-debugger)
+  (cadre-ui::debugger-key (gdk:keyval-from-name "a") nil))
+
+(then-when ((null cadre-ui::*debug-levels*))
+  (check "pressing a in the debugger aborts" (null cadre-ui::*debug-levels*))
+  (call-command 'show-systems))
+
+(then-when ((let ((row (cdr (assoc "smoke" cadre-ui::*system-rows* :test #'string=))))
+              (and row (equal "Loaded" (adw:expander-row-get-subtitle row)))))
+  (check "the Systems view lists the project's system as loaded" t)
+  (let ((row (cdr (assoc "smoke" cadre-ui::*system-rows* :test #'string=))))
+    (adw:expander-row-set-expanded row t)))
+
+(then-when ((find-widgets (cdr (assoc "smoke" cadre-ui::*system-rows* :test #'string=))
+                          (lambda (w) (and (typep w 'adw:action-row)
+                                           (equal "lib.lisp" (adw:preferences-row-get-title w))))))
+  (check "opening a system lists its files" t)
+  (screenshot "15-systems")
+  (call-command 'show-explorer)
+  (check "the explorer comes back" (equal "explorer" (cadre-ui::sidebar-page *window*))))
+
 (then 500
   (screenshot "10-repl")
   (call-command 'disconnect))
@@ -485,6 +623,6 @@
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
-(cadre-ui:main :project *root* :init-file nil :quit-after 240)
+(cadre-ui:main :project *root* :init-file nil :quit-after 360)
 (format t "~&Timed out.~%")
 (uiop:quit 1)

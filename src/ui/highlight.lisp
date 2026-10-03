@@ -28,6 +28,8 @@
     (:reader-conditional :foreground "#7c828c" :style :italic)
     (:quote :foreground "#8a3fb1" :style :normal)
     (:invalid :foreground "#ffffff" :style :normal :background "#d0312d")
+    (:macro :foreground "#1d5fb8" :style :normal)
+    (:undefined-function :underline :single :underline-rgba "#d0312d")
     ((:paren 0) :foreground "#a35a1c")
     ((:paren 1) :foreground "#2b6cb0")
     ((:paren 2) :foreground "#2f855a")
@@ -55,6 +57,8 @@
     (:reader-conditional :foreground "#7f848e" :style :italic)
     (:quote :foreground "#c678dd" :style :normal)
     (:invalid :foreground "#ffffff" :style :normal :background "#be3a34")
+    (:macro :foreground "#61afef" :style :normal)
+    (:undefined-function :underline :single :underline-rgba "#ff6b66")
     ((:paren 0) :foreground "#d19a66")
     ((:paren 1) :foreground "#61afef")
     ((:paren 2) :foreground "#98c379")
@@ -70,15 +74,18 @@
 (defun current-theme ()
   (if (adw:dark-p) *dark-theme* *light-theme*))
 
+(defparameter *image-faces* '(:macro :undefined-function)
+  "Faces from what the connected Lisp knows (image-faces.lisp).")
+
 (defparameter *tag-faces*
   (append '(:current-line)
-          (remove :quote *faces*) '(:quote)
+          (remove :quote *faces*) *image-faces* '(:quote)
           (loop for i below *paren-face-count* collect (list :paren i))
           '(:search :search-current :paren-match :paren-mismatch))
   "Every face with a tag, in priority order.")
 
 (defun syntax-face-p (face)
-  (or (consp face) (member face *faces*)))
+  (or (consp face) (member face *faces*) (member face *image-faces*)))
 
 (defun tag-name (face)
   (if (consp face)
@@ -90,7 +97,8 @@
 
 (defun style-tag (tag properties)
   (loop for (key value) on properties by #'cddr
-        do (setf (gobject:property tag key) value)))
+        do (setf (gobject:property tag key)
+                 (if (eq key :underline-rgba) (hex-rgba value) value))))
 
 (defun style-buffer-tags (gtk-buffer)
   (let ((theme (current-theme)))
@@ -166,11 +174,14 @@ for instance after the buffer's major mode changes."
     (when (syntax-face-p face)
       (gtk:text-buffer-remove-tag gtk-buffer (face-tag gtk-buffer face) start end))))
 
-(defun highlight-line (gtk-buffer syntax line)
+(defun highlight-line (gtk-buffer syntax line &optional image)
+  "Tag LINE's tokens with their faces. IMAGE (from image-context) adds the
+faces that come from what the connected Lisp knows."
   (let ((string (text-line-string gtk-buffer line)))
     (remove-syntax-tags gtk-buffer (line-iter gtk-buffer line) (line-end-iter gtk-buffer line))
     (loop for token across (line-tokens syntax line)
-          for face = (token-face token string)
+          for face = (or (token-face token string)
+                         (and image (eq (token-type token) :symbol) (image-face image syntax line token string)))
           when face
             do (gtk:text-buffer-apply-tag gtk-buffer (face-tag gtk-buffer face)
                                           (line-iter gtk-buffer line (token-start token))
@@ -195,10 +206,11 @@ for instance after the buffer's major mode changes."
       (multiple-value-bind (first last) (visible-lines view 40)
         (setf last (min last (1- (syntax-line-count syntax))))
         (ensure-lexed syntax last)
-        (loop for line from first to last
+        (loop with image = (image-context (view-buffer view) syntax first)
+              for line from first to last
               for info = (line-info syntax line)
               unless (line-info-highlighted info)
-                do (highlight-line gtk-buffer syntax line)
+                do (highlight-line gtk-buffer syntax line image)
                    (setf (line-info-highlighted info) t))))))
 
 (defun schedule-highlight (buffer)
@@ -260,4 +272,5 @@ for instance after the buffer's major mode changes."
   "Restyle every buffer's tags when the light/dark style changes."
   (gobject:connect (adw:style-manager-get-default) "notify::dark"
                    (lambda (manager pspec) (declare (ignore manager pspec))
-                     (restyle-all-buffers))))
+                     (restyle-all-buffers)
+                     (style-inspector-tags))))

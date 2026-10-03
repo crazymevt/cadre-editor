@@ -16,6 +16,9 @@
    (title :reader window-title)
    (side-paned :reader window-side-paned)
    (sidebar :reader window-sidebar)
+   (sidebar-stack :reader window-sidebar-stack :documentation "Explorer and Systems.")
+   (activity-buttons :initform '() :accessor window-activity-buttons
+                     :documentation "(page-name . toggle button) for the activity bar.")
    (explorer-holder :reader window-explorer-holder)
    (main-paned :reader window-main-paned)
    (editor-stack :reader window-editor-stack :documentation "The empty page, or the tabs.")
@@ -90,6 +93,7 @@
   (let ((menu (gio:menu-new))
         (files (gio:menu-new))
         (view (gio:menu-new))
+        (lisp (gio:menu-new))
         (app (gio:menu-new)))
     (flet ((item (section label command)
              (gio:menu-append section label (format nil "app.command('~(~a~)')" command))))
@@ -103,11 +107,19 @@
       (item view "Toggle Panel" 'toggle-panel)
       (item view "Toggle Layout" 'toggle-layout)
       (item view "Automatic Layout" 'use-automatic-layout)
+      (item view "ASDF Systems" 'show-systems)
+      (item lisp "Load Project" 'load-project)
+      (item lisp "Load System…" 'load-system)
+      (item lisp "Inspect…" 'inspect-value)
+      (item lisp "Find References" 'find-references)
+      (item lisp "Macroexpand" 'expand-macro-once)
+      (item lisp "Restart Lisp" 'restart-lisp)
       (item app "Keyboard Shortcuts: Standard" 'use-standard-keys)
       (item app "Keyboard Shortcuts: Emacs" 'use-emacs-keys)
       (item app "Quit" 'quit))
     (gio:menu-append-section menu nil files)
     (gio:menu-append-section menu nil view)
+    (gio:menu-append-section menu nil lisp)
     (gio:menu-append-section menu nil app)
     menu))
 
@@ -171,19 +183,22 @@ and, if given, LABEL."
                   (gtk:menu-button :icon-name "open-menu-symbolic" :menu-model (app-menu)
                                    :tooltip-text "Menu" :primary t)))
               (gtk:box
-                (gtk:box :orientation :vertical :css-classes '("cadre-activity")
+                (gtk:box :orientation :vertical :spacing 4 :css-classes '("cadre-activity")
                   (gtk:toggle-button :id :explorer-button :icon-name "folder-symbolic"
                                      :tooltip-text "Explorer" :active t :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
-                                                   (call-command 'toggle-sidebar))))
+                                                   (show-sidebar-page win "explorer")))
+                  (gtk:toggle-button :id :systems-button :icon-name "cadre-system-symbolic"
+                                     :tooltip-text "ASDF Systems" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "systems"))))
                 (gtk:separator :orientation :vertical)
                 (gtk:paned :id :side-paned :orientation :horizontal :position 260
                            :shrink-start-child nil :resize-start-child nil
                            :shrink-end-child nil :hexpand t
                   (gtk:box :id :sidebar :orientation :vertical :width-request 160
-                    (gtk:label :label "EXPLORER" :xalign 0.0 :margin-start 12 :margin-top 8
-                               :margin-bottom 4 :css-classes '("caption-heading" "dim-label"))
-                    (adw:bin :id :explorer-holder :vexpand t))
+                    (gtk:stack :id :sidebar-stack :vexpand t :hhomogeneous nil :vhomogeneous nil
+                               :transition-type :crossfade))
                   ;; Neither child may shrink below its minimum size, so the
                   ;; divider stops there instead of clipping the editor.
                   (gtk:paned :id :main-paned :orientation :vertical
@@ -206,7 +221,8 @@ and, if given, LABEL."
               (slot-value win 'title) title
               (slot-value win 'side-paned) (id :side-paned)
               (slot-value win 'sidebar) (id :sidebar)
-              (slot-value win 'explorer-holder) (id :explorer-holder)
+              (slot-value win 'sidebar-stack) (id :sidebar-stack)
+              (slot-value win 'explorer-holder) (make-instance 'adw:bin :vexpand t)
               (slot-value win 'main-paned) (id :main-paned)
               (slot-value win 'editor-stack) (id :editor-stack)
               (slot-value win 'tab-view) tab-view
@@ -218,7 +234,18 @@ and, if given, LABEL."
               (slot-value win 'status-connection) (id :status-connection)
               (slot-value win 'status-arglist) (id :status-arglist)
               (slot-value win 'layout-button) (gethash :layout-button *named-widgets*))
-        (setf (window-sidebar-toggles win) (list (id :sidebar-button) (id :explorer-button))))
+        (setf (window-sidebar-toggles win) (list (id :sidebar-button))
+              (window-activity-buttons win) (list (cons "explorer" (id :explorer-button))
+                                                  (cons "systems" (id :systems-button)))))
+      (let ((stack (window-sidebar-stack win)))
+        (gtk:stack-add-named stack (gtk:build
+                                     (gtk:box :orientation :vertical
+                                       (gtk:label :label "EXPLORER" :xalign 0.0 :margin-start 12 :margin-top 8
+                                                  :margin-bottom 4 :css-classes '("caption-heading" "dim-label"))
+                                       (window-explorer-holder win)))
+                             "explorer")
+        (gtk:stack-add-named stack (make-systems-widget) "systems")
+        (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
         (gtk:stack-add-named stack (make-empty-page) "empty")
         (gtk:stack-add-named stack (gtk:build
@@ -241,6 +268,7 @@ and, if given, LABEL."
     (setf (window-project win) directory)
     (adw:bin-set-child (window-explorer-holder win)
                        (make-explorer directory :on-open-file #'open-file-path))
+    (refresh-systems)
     (let ((name (car (last (pathname-directory directory)))))
       (adw:window-title-set-title (window-title win) name)
       (adw:window-title-set-subtitle (window-title win)

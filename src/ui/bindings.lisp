@@ -116,7 +116,21 @@
   "M-TAB" 'complete-symbol
   "M-n" 'next-note
   "M-p" 'previous-note
-  "C-c C-b" 'interrupt-lisp)
+  "C-c C-b" 'interrupt-lisp
+  "C-c I" 'inspect-value
+  "C-c C-m" 'expand-macro-once
+  "C-c RET" 'expand-macro-once
+  "C-c M-m" 'expand-macro-all
+  "C-c C-w c" 'who-calls
+  "C-c C-w w" 'list-callees
+  "C-c C-w r" 'who-references
+  "C-c C-w b" 'who-binds
+  "C-c C-w s" 'who-sets
+  "C-c C-w m" 'who-macroexpands
+  "C-c C-w a" 'who-specializes
+  "C-c <" 'list-callers
+  "C-c >" 'list-callees
+  "M-?" 'find-references)
 
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
   "C-RET" 'compile-or-eval-defun
@@ -127,7 +141,11 @@
   "C-k C-i" 'describe-symbol
   "C-SPC" 'complete-symbol
   "F8" 'next-note
-  "S-F8" 'previous-note)
+  "S-F8" 'previous-note
+  "S-F12" 'find-references
+  "C-k i" 'inspect-value
+  "C-k C-m" 'expand-macro-once
+  "C-k C-a" 'expand-macro-all)
 
 (bind-keys (major-mode-keymap (find-major-mode 'repl-mode))
   "RET" 'repl-return
@@ -138,17 +156,20 @@
   "TAB" 'complete-symbol)
 
 (bind-keys (mode-profile-keymap 'repl-mode :emacs)
+  "C-c I" 'inspect-value
   "C-c C-c" 'interrupt-lisp
   "C-c M-o" 'clear-repl
   "C-M-i" 'complete-symbol)
 
 (bind-keys (mode-profile-keymap 'repl-mode :standard)
+  "C-k i" 'inspect-value
   "C-l" 'clear-repl
   "C-SPC" 'complete-symbol)
 
 (bind-keys *standard-global-keymap*
   "C-`" 'show-repl
-  "F6" 'load-project)
+  "F6" 'load-project
+  "C-S-e" 'show-explorer)
 
 (bind-keys *emacs-global-keymap*
   "C-c L" 'load-project)

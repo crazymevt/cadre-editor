@@ -71,8 +71,26 @@ has a size, try again shortly."
   (gtk:widget-set-visible (panel-widget (window-panel win)) visible)
   (when visible (restore-panel-size win)))
 
+(defun sync-toggle (toggle active)
+  (unless (eq (gtk:toggle-button-get-active toggle) active)
+    (gtk:toggle-button-set-active toggle active)))
+
+(defun sidebar-page (win)
+  (gtk:stack-get-visible-child-name (window-sidebar-stack win)))
+
 (defun set-sidebar-visible (win visible)
   (gtk:widget-set-visible (window-sidebar win) visible)
   (dolist (toggle (window-sidebar-toggles win))
-    (unless (eq (gtk:toggle-button-get-active toggle) visible)
-      (gtk:toggle-button-set-active toggle visible))))
+    (sync-toggle toggle visible))
+  (loop for (name . toggle) in (window-activity-buttons win)
+        do (sync-toggle toggle (and visible (string= name (sidebar-page win))))))
+
+(defun show-sidebar-page (win name &key (toggle t))
+  "Show the sidebar's NAME page. With TOGGLE, if it is already showing, hide the sidebar."
+  (let ((visible (gtk:widget-get-visible (window-sidebar win))))
+    (if (and toggle visible (string= name (sidebar-page win)))
+        (set-sidebar-visible win nil)
+        (progn
+          (gtk:stack-set-visible-child-name (window-sidebar-stack win) name)
+          (set-sidebar-visible win t)
+          (when (string= name "systems") (refresh-systems))))))

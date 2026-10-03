@@ -169,3 +169,99 @@
                :on-ok #'identity :on-abort #'identity)
   (true (wait-for (lambda () (find-if (lambda (e) (and (eq (first e) :debug-return) (= (third e) level)))
                                       *events*)))))
+
+;;; M3: inspector, cross-references, debugger, image classification
+
+(define-test inspector-replies :parent cadre-tests
+  (let ((i (c:parse-inspection
+            (c:read-sexp "(:title \"#<CONS {1}>\" :id 0 :content ((\"A list\" \"
+\" \"Car: \" (:value \"1\" 1) (:action \"[remove]\" 0) (:label \"Slots\")) 6 0 500))"))))
+    (is string= "#<CONS {1}>" (c:inspection-title i))
+    (is equal '((:text "A list") (:text "
+") (:text "Car: ") (:value "1" 1) (:action "[remove]" 0) (:label "Slots"))
+        (c:inspection-parts i))
+    (is = 6 (c:inspection-next i))
+    (false (c:inspection-more i)))
+  (multiple-value-bind (parts next more) (c:parse-inspector-range '(("x") 1500 0 500))
+    (is equal '((:text "x")) parts)
+    (is = 1500 next)
+    (true more))
+  (is eq nil (c:parse-inspection nil)))
+
+(define-test xref-replies :parent cadre-tests
+  (let ((xrefs (c:parse-xrefs-groups
+                (c:read-sexp "((:calls (\"(defun bar)\" (:location (:file \"/tmp/a.lisp\") (:position 11) nil))
+                                         (\"baz\" (:error \"No source\")))
+                               (:references (\"quux\" (:location (:buffer \"x\") (:position 1) nil))))"))))
+    (is = 3 (length xrefs))
+    (is eq :calls (c:xref-kind (first xrefs)))
+    (is string= "(defun bar)" (c:xref-name (first xrefs)))
+    (is equal "/tmp/a.lisp" (getf (c:xref-location (first xrefs)) :file))
+    (is = 10 (getf (c:xref-location (first xrefs)) :position))
+    (true (getf (c:xref-location (second xrefs)) :error))
+    (is eq :references (c:xref-kind (third xrefs))))
+  (is eq :not-implemented (c:parse-xrefs :calls :not-implemented))
+  (is string= "Calls" (c:xref-kind-heading :calls)))
+
+(define-test debugger-replies :parent cadre-tests
+  (let ((frames (c:parse-frames (c:read-sexp "((0 \"(/ 1 0)\" (:restartable t)) (1 \"(FOO)\"))"))))
+    (is = 2 (length frames))
+    (is string= "(/ 1 0)" (c:frame-description (first frames)))
+    (true (c:frame-restartable (first frames)))
+    (false (c:frame-restartable (second frames))))
+  (multiple-value-bind (locals tags)
+      (c:parse-frame-locals (c:read-sexp "(((:name \"X\" :id 0 :value \"1\") (:name \"Y\" :id 0 :value \"NIL\")) (\"tag\"))"))
+    (is equal '(("X" "1") ("Y" "NIL")) locals)
+    (is equal '("tag") tags)))
+
+(defpackage #:cadre-tests-image (:use #:cl) (:export #:a-function))
+(defmacro cadre-tests-image::a-macro () nil)
+(defun cadre-tests-image:a-function () nil)
+(defvar cadre-tests-image::*a-var* 1)
+(defconstant cadre-tests-image::+a-constant+ 2)
+
+(define-test image-classification :parent cadre-tests
+  (let* ((names '("a-macro" "a-function" "*a-var*" "+a-constant+" "no-such-thing" "car" "if"
+                  "cadre-tests-image:a-function" "no-such-package:x" "cadre-tests-image::a-macro"))
+         (source (c:image-classify-source "CADRE-TESTS-IMAGE" names))
+         (value (eval (read-from-string source))))
+    (is equal '(:macro :function :special-variable :constant :unknown :function :special-operator
+                :function :no-package :macro)
+        value)
+    (is equal value (c:parse-image-classes (list "" (format nil "~s" value)) (length names)))
+    (is equal '(nil nil) (c:parse-image-classes (list "" "junk(") 2))
+    (false (find-symbol "NO-SUCH-THING" "CADRE-TESTS-IMAGE") "classifying never interns"))
+  (is equal '(:no-package :no-package)
+      (eval (read-from-string (c:image-classify-source "NO-SUCH-PACKAGE" '("x" "y")))))
+  (true (c:classifiable-name-p "foo:bar"))
+  (false (c:classifiable-name-p "|odd|"))
+  (false (c:classifiable-name-p ":key")))
+
+(defun called-p (string line name &optional (function-p (constantly nil)))
+  "Is the head symbol NAME on LINE of STRING surely a call?"
+  (let* ((s (syntax-of string))
+         (tk (find-if (lambda (tk) (and (eq (c:token-type tk) :symbol)
+                                        (string-equal name (c:token-text s line tk))))
+                      (c:line-tokens s line))))
+    (c:surely-called-p s line tk function-p (c:local-function-names s line))))
+
+(define-test surely-called :parent cadre-tests
+  (true (called-p "(foo 1)" 0 "foo") "a top-level form")
+  (true (called-p "(defun f (x) (foo x))" 0 "foo") "a DEFUN body")
+  (false (called-p "(defun f (foo) foo)" 0 "foo") "not a lambda list (not a head)")
+  (true (called-p "(let ((x 1)) (foo x))" 0 "foo") "a LET body")
+  (false (called-p "(let ((x 1)) (foo x))" 0 "x") "not a LET binding")
+  (true (called-p "(let ((x (foo))) x)" 0 "foo") "an argument of a function (LIST-like binding value)"
+        )
+  (false (called-p "(case k (foo 1))" 0 "foo") "not a CASE key")
+  (true (called-p "(case k (a (foo)))" 0 "foo") "a CASE clause body")
+  (true (called-p "(cond ((foo) 1))" 0 "foo") "a COND test")
+  (false (called-p "'(foo 1)" 0 "foo") "quoted")
+  (false (called-p "(list '(foo 1))" 0 "foo") "quoted argument")
+  (false (called-p "(defclass c () ((foo :initarg :foo)))" 0 "foo") "a slot specifier")
+  (false (called-p "(flet ((foo () 1)) (foo))" 0 "foo") "a local function")
+  (true (called-p "(bar (foo))" 0 "foo" (lambda (name) (string-equal name "bar")))
+        "an argument of a function the image knows")
+  (false (called-p "(bar (foo))" 0 "foo") "an argument of an unknown operator")
+  (true (called-p "(handler-case (foo) (error () 1))" 0 "foo") "HANDLER-CASE's form")
+  (false (called-p "(handler-case (foo) (my-error () 1))" 0 "my-error") "not a HANDLER-CASE clause"))

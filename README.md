@@ -3,7 +3,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M2 (talking to a running Lisp). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M3 (debugger and tools). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -19,6 +19,12 @@ for the design and the milestones.
   notes (Problems page and underlines), argument hints in the status bar,
   completion, go to definition and back, describe, and a debugger page with
   restarts and the backtrace.
+- **M3:** a full debugger (frame locals, evaluate in a frame, frame source,
+  restart or return from a frame, more frames, inspect the condition), an
+  inspector, cross-references (who calls, references, binds, sets, expands,
+  specializes), a macroexpander, an ASDF Systems view in the sidebar, and
+  highlighting from the running image (user macros, special variables,
+  constants, calls to undefined functions).
 
 ## Running
 
@@ -78,9 +84,26 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
 | Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
+| Inspect a value | `Ctrl+K I` | `C-c I` |
+| Find references (all kinds) | `Shift+F12` | `M-?` |
+| Who calls / references / binds / sets | (palette) | `C-c C-w c` / `r` / `b` / `s` |
+| Who expands a macro / specializes a class | (palette) | `C-c C-w m` / `a` |
+| Callers / callees | (palette) | `C-c <` / `C-c >` |
+| Macroexpand once / completely | `Ctrl+K Ctrl+M` / `Ctrl+K Ctrl+A` | `C-c C-m` / `C-c M-m` |
+| Show the explorer | `Ctrl+Shift+E` | — |
 
 Values from evaluating appear inline after the form (`⇒ 42`) until you edit,
 and in the status bar.
+
+In the debugger, digits choose a restart, `a` aborts and `c` continues. Open a
+frame to see its locals (click one to inspect it) and to evaluate in the frame.
+Expanding a macro inside the *Macroexpansion* tab expands it there, in place.
+The sidebar's second page (the box icon) lists the folder's ASDF systems: load,
+reload with compiler notes, test, and open their files.
+
+Symbols are colored by what the connected Lisp knows: your macros like Common
+Lisp's, special variables and constants, and calls to functions that don't
+exist underlined. Set `*highlight-from-image*` to `nil` to turn this off.
 
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server
@@ -115,9 +138,9 @@ make smoke    # drive a real window through the M0 features; screenshots in buil
 | --- | --- |
 | `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
 | `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
-| `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers |
+| `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers, inspector/xref/debugger replies, classifying symbols in the image |
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
-| `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings |
+| `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |
 | `tests/` | Parachute tests for `src/core/` |
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp` |
 | `icons/` | Cadre's own symbolic icons |

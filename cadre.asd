@@ -29,6 +29,11 @@
                (:file "debugger")
                (:file "completion")
                (:file "lisp-eval")
+               (:file "image-faces")
+               (:file "inspector")
+               (:file "xref")
+               (:file "macroexpand")
+               (:file "systems")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -59,7 +64,9 @@
                 :components ((:file "sexp")
                              (:file "connection")
                              (:file "inferior")
-                             (:file "forms")))))
+                             (:file "forms")
+                             (:file "tools")
+                             (:file "image")))))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."

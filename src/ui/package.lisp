@@ -32,7 +32,12 @@
            #:eval-last-expression #:eval-defun #:eval-region #:eval-expression-or-region
            #:compile-defun #:compile-or-eval-defun #:compile-and-load-file #:load-file #:load-project
            #:edit-definition #:pop-definition #:describe-symbol #:complete-symbol
-           #:next-note #:previous-note #:clear-notes #:debugger-abort))
+           #:next-note #:previous-note #:clear-notes #:debugger-abort #:debugger-continue
+           #:*highlight-from-image* #:show-explorer #:show-systems #:load-system
+           #:inspect-value #:inspector-back #:inspector-forward #:inspector-refresh
+           #:find-references #:who-calls #:who-references #:who-binds #:who-sets
+           #:who-macroexpands #:who-specializes #:list-callers #:list-callees
+           #:expand-macro-once #:expand-macro-all #:expand-compiler-macro))
 
 (defpackage #:cadre-user
   (:use #:cl #:cadre #:cadre-ui)

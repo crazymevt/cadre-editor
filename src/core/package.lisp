@@ -43,7 +43,7 @@
    #:lex-line #:terminating-char-p #:whitespace-char-p #:token #:token-type #:token-start #:token-end #:token-depth #:token-subtype
    #:make-lisp-syntax #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
    #:ensure-lexed #:line-tokens #:line-start-state #:line-end-state
-   #:line-info #:line-info-highlighted #:line-info-tokens
+   #:line-info #:line-info-highlighted #:line-info-tokens #:forget-highlighting
    #:depth-at #:context-at
    #:forward-sexp-position #:backward-sexp-position #:up-list-position #:down-list-position
    #:beginning-of-defun-position #:end-of-defun-position #:toplevel-form-bounds
@@ -61,4 +61,15 @@
    #:start-inferior-lisp #:kill-inferior-lisp #:inferior-alive-p #:inferior-process
    #:buffer-package-name #:symbol-at #:symbol-prefix-at #:raw-form-at #:parse-location
    #:compiler-note #:compiler-note-severity #:compiler-note-message #:compiler-note-location
-   #:parse-compiler-notes #:parse-compilation-result #:severity-rank))
+   #:parse-compiler-notes #:parse-compilation-result #:severity-rank
+   ;; inspector, cross-references, debugger
+   #:inspection #:inspection-title #:inspection-parts #:inspection-next #:inspection-more
+   #:inspector-segments #:parse-inspector-range #:parse-inspection
+   #:*xref-kinds* #:xref-kind-heading #:xref #:make-xref #:xref-kind #:xref-name #:xref-location
+   #:parse-xrefs #:parse-xrefs-groups
+   #:frame #:make-frame #:frame-number #:frame-description #:frame-restartable
+   #:parse-frames #:parse-frame-locals
+   ;; what the image knows
+   #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
+   #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p
+   #:symbol-base-name #:token-text))
