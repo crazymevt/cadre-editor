@@ -38,7 +38,9 @@ libadwaita 1.5+), so it gets native windows on Linux, macOS and Windows.
 ### Non-goals (for 1.0)
 
 - Supporting many languages. Lisp comes first. The mode system should allow
-  other languages later, but we won't build LSP support before 1.0.
+  other languages later, but we won't build LSP support before 1.0. Two
+  small modes are planned after 1.0 because Lisp projects use them every
+  day: JSON and Markdown (7.5).
 - Matching Emacs feature for feature, or running Emacs Lisp.
 - A terminal (TTY) interface.
 - Remote or collaborative editing.
@@ -85,6 +87,8 @@ Priority: **P0** = must have for the first usable release, **P1** = 1.0,
 | Extensibility | Editor REPL: a REPL in the editor's own image | P0 |
 | Extensibility | Themes: GTK CSS plus syntax colours; dark and light | P1 |
 | Extensibility | Packages: load extensions through Quicklisp/ASDF | P2 |
+| Other files | JSON mode: highlighting, validation, formatting, folding (7.5) | P2 |
+| Other files | Markdown mode with a live, rendered preview beside the source (7.5) | P2 |
 
 ## 4. Architecture
 
@@ -434,6 +438,56 @@ argument positions found from the image's arglists, the standard CL table,
 and `define-indentation` for user overrides. It runs as you type (on
 newline and closing paren) and on `indent-region`.
 
+### 7.5 Other file types: JSON and Markdown (after 1.0)
+
+Requested 2026-10-03. Both are small major modes built the same way as
+Lisp mode: a line lexer whose end-of-line state goes into the per-line
+syntax cache (7.2), faces mapped to text tags, and commands in the mode's
+keymap. Generalising the cache so each major mode supplies its own lexer is
+the first step; Lisp mode is then one client of it.
+
+**JSON mode** (`.json`, `.jsonl`, `.asd`-adjacent config, `package.json`, …)
+
+- Highlighting: keys, strings, numbers, `true`/`false`/`null`, punctuation,
+  and invalid tokens; rainbow brackets and bracket matching reuse Lisp
+  mode's paren code.
+- Validation as you type: unbalanced brackets, trailing commas, bad escapes
+  and unquoted keys shown as notes (the same underline + Problems page as
+  compiler notes, 8.3).
+- Format document / format selection (pretty-print with a configurable
+  indent), and compact.
+- Indentation on Return; folding of objects and arrays when folding lands
+  (7.1).
+- Navigation: the outline view shows the key structure; "copy path" puts
+  the path of the value at the cursor (`$.dependencies.foo`) on the
+  clipboard.
+
+**Markdown mode with preview** (`.md`, `.markdown`)
+
+- Source highlighting: headings, emphasis, inline code, links, lists,
+  block quotes, tables, and fenced code blocks, with Lisp (and JSON) code
+  in fences highlighted by those modes' lexers.
+- **Live preview**, like Claude's rendered Markdown: a second view beside
+  the source (`Ctrl+K V` / `C-c C-c p`), updated as you type and scrolled
+  in step with the source. It renders headings, emphasis, lists, task
+  lists, block quotes, tables, links (clickable), images, horizontal rules
+  and syntax-highlighted code blocks.
+- **How it renders: natively, not with a web view.** The preview is a
+  read-only GtkTextView whose buffer Cadre fills from a Markdown parse
+  tree, using text tags for styles and child anchors for images, tables
+  and rules. Reasons:
+  - The gtk4 bindings don't cover WebKitGTK, and WebKitGTK is hard to ship
+    on macOS and Windows.
+  - It stays light, follows the editor's theme and fonts, and reuses the
+    same highlighter for code blocks.
+  - It can be updated incrementally from the changed blocks.
+  The parser is a CommonMark subset plus GitHub tables and task lists,
+  written in Lisp and GTK-free (tested headlessly like the Lisp lexer).
+  If full HTML fidelity is ever needed, a web-view preview can be added
+  behind the same command.
+- Commands: toggle preview, bold/italic/code/link on the selection, insert
+  a table, and "copy as HTML".
+
 ## 8. Lisp integration (the SLY/Swank layer)
 
 ### 8.1 Decision: be a Swank client
@@ -742,7 +796,7 @@ prompt, and `--json-schema` asking for `{replacement, explanation}`.
 | **M4 — Claude** | CLI driver (sign-in check, streaming, resume), MCP server with the tools that read, approval prompts, chat panel with context, `propose_edit` with inline diff | Fix a compiler error by asking Claude, accept the diff |
 | **M5 — Emacs depth** | Paredit, kill ring, incremental search/query-replace, keyboard macros, `:emacs` keybindings, splits, session restore, editor REPL | An Emacs user can switch |
 | **M6 — 1.0** | Agent mode, themes, settings page, packaging (macOS `.app`, Flatpak, Windows installer) using the gtk4 deployment tools | Shipped executables on three platforms |
-| **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, LSP for other languages | — |
+| **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop
 itself.
