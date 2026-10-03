@@ -202,6 +202,41 @@ sidebar, and whether a Lisp was running, and restores them the next time you
 open that folder (without naming files). Turn this off with
 `*restore-session*`, or just the Lisp with `*restore-lisp*`.
 
+### Finding, replacing and refactoring
+
+The menu's second section has them all, and so does the right-click menu in
+an editor (a right click moves the cursor there first).
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Find / find and replace in the file | `Ctrl+F` / `Ctrl+H` | `C-s` / `M-%` |
+| Find in project / replace in project | `Ctrl+Shift+F` / `Ctrl+Shift+H` | `C-c s` / `C-c S` |
+| Find the symbol at the cursor in the project | `Ctrl+K Ctrl+F` | `C-c C-x s` |
+| Rename symbol (everywhere in the project) | `F2` | `C-c r` |
+| Extract function / extract variable | `Ctrl+K E F` / `Ctrl+K E V` | `C-c C-x f` / `C-c C-x v` |
+
+The find bar and the Search page (the magnifier in the activity bar) have
+**Aa** (match case), **W** (whole words: `foo` doesn't match `foo-bar`) and
+**.\*** (regular expressions, Perl syntax; `\1` in the replacement is the
+first group). Without **Aa**, a search with a capital letter matches case,
+and replacing keeps each match's case. Project search covers the files the
+explorer shows, using open buffers' unsaved text. Replacing in the project
+shows a check box on each match; open files change in their buffers (one
+undo each), other files on disk, after you confirm.
+
+**Rename symbol** finds the symbol in the project's Lisp files with the
+lexer, so strings, comments and longer names are left alone and `pkg:name`
+counts. Review the places in the Search page, change the name, then
+*Rename*. **Extract function** moves the selection into a new `defun`
+above the current form and calls it there; the variables it uses from
+around it (the defun's parameters, `let`, `flet`, `dolist`, `loop` and other
+bindings) become its parameters. **Extract variable** binds the selection
+with `let` around the form containing it.
+
+Typing `(`, `[`, `{`, `"`, `'` or `` ` `` with text selected wraps the
+selection in that pair and keeps it selected (turn off with
+`*wrap-selection*`).
+
 ### Settings and themes
 
 *Settings…* in the menu (`Ctrl+,`, or `M-x settings` / `M-x customize`)

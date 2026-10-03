@@ -65,6 +65,9 @@
    #:paredit-slurp-forward #:paredit-barf-forward #:paredit-slurp-backward #:paredit-barf-backward
    #:paredit-raise #:paredit-splice #:paredit-splice-killing-backward #:paredit-splice-killing-forward
    #:paredit-wrap #:paredit-split #:paredit-join #:paredit-open #:paredit-close #:paredit-quote
+   #:read-form-tree #:bound-variables-at #:extract-function-edits #:extract-variable-edits
+   #:project-files #:read-text-file #:split-text-lines #:line-matches #:text-matches
+   #:symbol-occurrences #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec
    #:token-face #:*faces* #:*paren-face-count*

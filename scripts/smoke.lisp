@@ -168,6 +168,8 @@
 (setf *claude-program* (namestring (truename "scripts/fake-claude")))
 (with-open-file (o (merge-pathnames "src/m5.lisp" *root*) :direction :output)
   (format o "(a b) c~%"))
+(with-open-file (o (merge-pathnames "src/m6.lisp" *root*) :direction :output)
+  (format o "(defun uses-area () (area 2 3)) ; area in a comment~%(print \"area in a string\")~%"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -1041,6 +1043,122 @@ d" 0 0)
   (cadre-ui::resolve-conflict :keep)
   (check "keeping mine leaves the buffer alone" (not (search "changed elsewhere" (buffer-string (find-buffer "m5.lisp")))))
   (check "and hides the bar" (not (gtk:revealer-get-reveal-child cadre-ui::*conflict-bar*))))
+
+;;; Editing tools: find options, wrapping, project search, rename, extract
+(defun find-bar () (cadre-ui::window-find-bar *window*))
+(defun match-count () (length (cadre-ui::find-bar-matches (find-bar))))
+
+(then 300
+  (m5-text "foo foo-bar Foo fob" 0 0)
+  (call-command 'find-text)
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (find-bar)) "foo"))
+
+(then 300
+  (check "find matches ignoring case" (= 3 (match-count)) (match-count))
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-word-button (find-bar)) t)
+  (check "whole words leave out foo-bar" (= 2 (match-count)) (match-count))
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-case-button (find-bar)) t)
+  (check "match case leaves out Foo" (= 1 (match-count)) (match-count))
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-word-button (find-bar)) nil)
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-case-button (find-bar)) nil)
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-regex-button (find-bar)) t)
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (find-bar)) "fo(.)"))
+
+(then 300
+  (check "a regular expression finds its matches" (= 4 (match-count)) (match-count))
+  (gtk:editable-set-text (cadre-ui::find-bar-replace-entry (find-bar)) "[\\1]")
+  (cadre-ui::find-replace-all (find-bar))
+  (check "a regex replacement fills in groups" (string= "[o] [o]-bar [o] [b]" (buffer-text-string)) (buffer-text-string))
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (find-bar)) "(oops"))
+
+(then 300
+  (check "a bad regex says so" (string= "Bad regex" (gtk:label-get-text (cadre-ui::find-bar-status (find-bar)))))
+  (gtk:toggle-button-set-active (cadre-ui::find-bar-regex-button (find-bar)) nil)
+  (cadre-ui::find-close (find-bar))
+  ;; Wrapping the selection
+  (m5-text "abc def" 0 0)
+  (let ((gtk-buffer (buffer-text (current-buffer))))
+    (gtk:text-buffer-select-range gtk-buffer (cadre-ui::iter-at gtk-buffer 0) (cadre-ui::iter-at gtk-buffer 3)))
+  (type-keys "(")
+  (check "typing ( with a selection wraps it" (string= "(abc) def" (buffer-text-string)) (buffer-text-string))
+  (type-keys "\"")
+  (check "and keeps it selected, so \" wraps it again" (string= "(\"abc\") def" (buffer-text-string)) (buffer-text-string))
+  (type-keys "[")
+  (check "[ wraps too" (string= "(\"[abc]\") def" (buffer-text-string)) (buffer-text-string))
+  ;; The right-click menu
+  (let ((menu (gtk:text-view-get-extra-menu (view-text-view (current-view)))))
+    (check "Lisp editors have a right-click menu with Go to Definition"
+           (and menu (plusp (gio:menu-model-get-n-items menu))
+                (search "Go to Definition" (prin1-to-string (loop for i below (gio:menu-model-get-n-items (gio:menu-model-get-item-link menu 0 "section"))
+                                                                     collect (glib:variant-get-string
+                                                                              (gio:menu-model-get-item-attribute-value
+                                                                               (gio:menu-model-get-item-link menu 0 "section") i "label" nil))))))))
+  ;; Find in the project
+  (show-buffer-named "m1.lisp")
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+  (set-cursor 0 8)
+  (call-command 'cadre-ui::find-in-project))
+
+(defun search-results () (cadre-ui::ps-results-data cadre-ui::*project-search*))
+(defun result-files () (mapcar (lambda (r) (file-namestring (first r))) (search-results)))
+
+(then-when ((search "result" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*))))
+  (check "Find in Project searches for the symbol at the cursor"
+         (string= "area" (gtk:editable-get-text (cadre-ui::ps-entry cadre-ui::*project-search*))))
+  (check "and lists the files that contain it" (and (member "m1.lisp" (result-files) :test #'string=)
+                                                    (member "m6.lisp" (result-files) :test #'string=))
+         (result-files))
+  (check "the sidebar shows the Search page" (equal "search" (cadre-ui::sidebar-page *window*)))
+  (screenshot "25-project-search")
+  (show-buffer-named "m1.lisp")
+  (set-cursor 0 8)
+  (call-command 'cadre-ui::rename-symbol))
+
+(then-when ((and (eq :symbol (cadre-ui::ps-mode cadre-ui::*project-search*))
+                 (search "result" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*)))))
+  (let ((m6 (find "m6.lisp" (search-results) :key (lambda (r) (file-namestring (first r))) :test #'string=)))
+    (check "renaming finds the symbol, not the word in strings and comments"
+           (and m6 (= 1 (length (second m6)))) (and m6 (length (second m6)))))
+  (gtk:editable-set-text (cadre-ui::ps-replace-entry cadre-ui::*project-search*) "surface")
+  (cadre-ui::apply-project-replace)
+  (check "rename changes open buffers" (search "(defun surface" (buffer-string (find-buffer "m1.lisp"))))
+  (check "and files that aren't open, on disk"
+         (search "(surface 2 3)" (uiop:read-file-string (merge-pathnames "src/m6.lisp" *root*))))
+  (check "leaving strings and comments alone"
+         (search "area in a string" (uiop:read-file-string (merge-pathnames "src/m6.lisp" *root*))))
+  (gtk:text-buffer-undo (buffer-text (find-buffer "m1.lisp")))
+  (check "one undo takes back the rename in an open buffer" (search "(defun area" (buffer-string (find-buffer "m1.lisp"))))
+  ;; Extract variable and function
+  (show-buffer-named "m1.lisp")
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp")) "(defun area (w h)
+  (let ((pad 2))
+    (* (+ w pad) h)))")
+  (let* ((gtk-buffer (buffer-text (find-buffer "m1.lisp")))
+         (start (search "(+ w pad)" (buffer-string (find-buffer "m1.lisp")))))
+    (gtk:text-buffer-select-range gtk-buffer (cadre-ui::iter-at gtk-buffer start) (cadre-ui::iter-at gtk-buffer (+ start 9))))
+  (call-command 'cadre-ui::extract-function)
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "padded")
+  (cadre-ui::choose (picker)))
+
+(then 300
+  (check "Extract Function defines the function with the variables it uses"
+         (search "(defun padded (w pad)" (buffer-string (find-buffer "m1.lisp")))
+         (buffer-string (find-buffer "m1.lisp")))
+  (check "and calls it in place" (search "(* (padded w pad) h)" (buffer-string (find-buffer "m1.lisp"))))
+  (let* ((gtk-buffer (buffer-text (find-buffer "m1.lisp")))
+         (start (search "(padded w pad)" (buffer-string (find-buffer "m1.lisp")))))
+    (gtk:text-buffer-select-range gtk-buffer (cadre-ui::iter-at gtk-buffer start) (cadre-ui::iter-at gtk-buffer (+ start 14))))
+  (call-command 'cadre-ui::extract-variable)
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "width")
+  (cadre-ui::choose (picker)))
+
+(then 300
+  (check "Extract Variable binds it with let around the form"
+         (and (search "(let ((width (padded w pad)))" (buffer-string (find-buffer "m1.lisp")))
+              (search "(* width h)" (buffer-string (find-buffer "m1.lisp"))))
+         (buffer-string (find-buffer "m1.lisp")))
+  (screenshot "26-refactor")
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
 (setf *steps* (reverse *steps*))
 

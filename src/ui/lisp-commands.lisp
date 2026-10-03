@@ -154,13 +154,13 @@
 
 (defparameter *quick-open-limit* 20000)
 
-(defun project-files (directory)
+(defun quick-open-files (directory)
   "Files under DIRECTORY, as paths relative to it, skipping hidden names and types."
   (let ((files '()) (count 0))
     (labels ((hidden-p (name) (member name *explorer-hidden-names* :test #'string=))
              (walk (dir)
                (dolist (file (uiop:directory-files dir))
-                 (when (>= count *quick-open-limit*) (return-from project-files (nreverse files)))
+                 (when (>= count *quick-open-limit*) (return-from quick-open-files (nreverse files)))
                  (unless (or (hidden-p (file-namestring file))
                              (member (pathname-type file) *explorer-hidden-types* :test #'equalp))
                    (push (enough-namestring file directory) files)
@@ -177,7 +177,7 @@
   "Open a file in the project by typing part of its name."
   (let ((project (or (window-project *window*) (editor-error "Open a folder first."))))
     (open-picker (window-picker *window*)
-                 :items (project-files project)
+                 :items (quick-open-files project)
                  :placeholder "Open a file by name"
                  :on-choose (lambda (path) (open-file-path (merge-pathnames path project))))))
 

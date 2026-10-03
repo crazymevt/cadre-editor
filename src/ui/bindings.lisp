@@ -62,6 +62,9 @@
   "C-S-r" 'editor-repl
   "C-k C-k" 'describe-key
   "C-," 'settings
+  "C-S-f" 'find-in-project
+  "C-S-h" 'replace-in-project
+  "F2" 'rename-symbol
   "C-k C-t" 'choose-theme
   "C-q" 'quit)
 
@@ -120,6 +123,9 @@
   "C-h b" 'describe-bindings
   "C-c R" 'editor-repl
   "C-c C-a g" 'claude-agent
+  "C-c s" 'find-in-project
+  "C-c S" 'replace-in-project
+  "C-c r" 'rename-symbol
   "M-g n" 'next-note
   "M-g p" 'previous-note
   "M-g g" 'go-to-line
@@ -172,7 +178,10 @@
   "C-c C-w a" 'who-specializes
   "C-c <" 'list-callers
   "C-c >" 'list-callees
-  "M-?" 'find-references)
+  "M-?" 'find-references
+  "C-c C-x f" 'extract-function
+  "C-c C-x v" 'extract-variable
+  "C-c C-x s" 'find-symbol-in-project)
 
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
   "C-RET" 'compile-or-eval-defun
@@ -187,7 +196,10 @@
   "S-F12" 'find-references
   "C-k i" 'inspect-value
   "C-k C-m" 'expand-macro-once
-  "C-k C-a" 'expand-macro-all)
+  "C-k C-a" 'expand-macro-all
+  "C-k C-f" 'find-symbol-in-project
+  "C-k e f" 'extract-function
+  "C-k e v" 'extract-variable)
 
 (defparameter *emacs-structural-keys*
   '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward
@@ -436,6 +448,7 @@ typed into the focused widget here."
   (let ((dispatcher (window-dispatcher win)))
     (cond
       ((and *key-reader* (funcall *key-reader* key)) t)
+      ((and (null (dispatcher-pending dispatcher)) (null *pending-prefix-arg*) (wrap-selection-key win key text)) t)
       ((and (null (dispatcher-pending dispatcher)) (collect-prefix-digit key))
        (show-pending-keys win nil)
        t)

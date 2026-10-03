@@ -179,3 +179,55 @@ b"))))
     (is eq :b *test-choice*)
     (is string= "(\"a\")" (c:write-option-value (o '*test-list*)))
     (is string= "" (c:write-option-value (o '*test-name*)))))
+
+;;; Searching and refactoring
+
+(define-test project-search :parent cadre-tests
+  (is equal '((0 4 7) (1 0 3)) (c:text-matches (format nil "the foo~%Foo-bar") "foo"))
+  (is equal '((0 4 7)) (c:text-matches (format nil "the foo~%Foo-bar") "foo" :whole-word t))
+  (is equal '((1 0 3)) (c:text-matches (format nil "the foo~%Foo-bar") "Foo" :case-sensitive t))
+  (is equal '((0 7 10) (1 10 13))
+      (c:symbol-occurrences (format nil "(defun foo () \"foo\") ; foo~%(cl-user::foo 1 foo-bar)") "foo"))
+  (is equal '((0 1 4)) (c:symbol-occurrences "(Bar)" "pkg:bar"))
+  (is string= (format nil "(defun baz () \"foo\")~%(baz)")
+      (c:replace-matches (format nil "(defun foo () \"foo\")~%(foo)")
+                         (c:symbol-occurrences (format nil "(defun foo () \"foo\")~%(foo)") "foo") "baz")))
+
+(defun after-edits (text edits)
+  (let ((st (c:make-string-text text)))
+    (c:apply-edits st edits 0)
+    (c:text-string st)))
+
+(define-test refactoring :parent cadre-tests
+  (let ((tree (c:read-form-tree "(a (b c) ; x
+ \"s\")")))
+    (is = 1 (length tree))
+    (is = 3 (length (fourth (first tree)))))
+  (let ((text "(defun f (x &key (y 2)) (let ((z 3)) (+ x y z w)))"))
+    (let ((start (search "(+ x" text)))
+      (is equal '("x" "y" "z") (sort (c:bound-variables-at (c:read-form-tree text) start (+ start 11)) #'string<))))
+  (let* ((text "(defun area (w h)
+  (let ((pad 2))
+    (* (+ w pad) h)))")
+         (start (search "(+ w pad)" text)))
+    (multiple-value-bind (edits params) (c:extract-function-edits text start (+ start 9) "padded")
+      (is equal '("w" "pad") params)
+      (is string= "(defun padded (w pad)
+  (+ w pad))
+
+(defun area (w h)
+  (let ((pad 2))
+    (* (padded w pad) h)))" (after-edits text edits))))
+  (let* ((text "(defun g (x) (foo (bar x) 1))")
+         (start (search "(bar x)" text)))
+    (is string= "(defun g (x) (let ((b (bar x)))
+(foo b 1)))" (after-edits text (c:extract-variable-edits text start (+ start 7) "b"))))
+  (fail (c:extract-function-edits "(a b)" 0 0 "f")))
+
+(define-test regex-search :parent cadre-tests
+  (is equal '((0 0 3) (1 4 7)) (c:text-matches (format nil "foo bar~%baz fox") "f.." :regex t))
+  (is equal '((0 4 7)) (c:text-matches "Foo foo" "f\\w+" :regex t :case-sensitive t))
+  (is equal '((0 0 3) (0 4 7)) (c:text-matches "Foo foo" "f\\w+" :regex t))
+  (is equal '((0 6 9)) (c:text-matches "foo-x foo" "fo+" :regex t :whole-word t))
+  (fail (c:text-matches "x" "(" :regex t))
+  (is string= "b-a" (c:regex-replacement "(a)-(b)" "a-b" "\\2-\\1")))

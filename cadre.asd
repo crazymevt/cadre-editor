@@ -45,13 +45,15 @@
                (:file "editor-repl")
                (:file "restore")
                (:file "settings-page")
+               (:file "project-search")
+               (:file "refactor")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "cl-ppcre")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -71,7 +73,9 @@
                              (:file "syntax")
                              (:file "indent")
                              (:file "faces")
-                             (:file "paredit")))
+                             (:file "paredit")
+                             (:file "refactor")))
+               (:file "search")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")

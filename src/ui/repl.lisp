@@ -55,6 +55,7 @@ editor REPL) bind it to that buffer's REPL.")
   (let* ((buffer (make-buffer :name "*repl*" :text (make-gtk-text) :major-mode 'repl-mode))
          (view (make-editor-view buffer :gutter nil)))
     (setf *repl* (make-repl-for-buffer buffer :editor-view view))
+    (setup-context-menu view)
     (gtk:text-view-set-wrap-mode (view-text-view view) :word-char)
     (repl-insert (format nil "; Not connected. Evaluate something, or press ~a, to start a Lisp.~%"
                          "the ● button below")

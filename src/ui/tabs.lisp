@@ -117,6 +117,7 @@ one if it has none. Returns the view."
           (view-group view) group)
     (attach-syntax buffer)
     (setup-note-tooltips view)
+    (setup-context-menu view)
     (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
                      (lambda (adjustment) (declare (ignore adjustment))
                        (schedule-highlight buffer)))

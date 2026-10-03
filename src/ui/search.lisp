@@ -24,6 +24,9 @@
    (current :initform nil :accessor find-bar-current)
    (buffer :initform nil :accessor find-bar-buffer)
    (mode :initform :find :accessor find-bar-mode :documentation ":find or :isearch.")
+   (case-button :accessor find-bar-case-button)
+   (word-button :accessor find-bar-word-button)
+   (regex-button :accessor find-bar-regex-button)
    (direction :initform 1 :accessor find-bar-direction)
    (origin :initform nil :accessor find-bar-origin
            :documentation "In isearch, the cursor offset where the search began.")))
@@ -35,7 +38,13 @@
   (let* ((fb (make-instance 'find-bar))
          (entry (make-instance 'gtk:search-entry :search-delay 0 :hexpand t
                                                  :placeholder-text "Find"))
-         (replace-entry (make-instance 'gtk:entry :hexpand t :placeholder-text "Replace"))
+         (replace-entry (make-instance 'gtk:entry :hexpand t :width-chars 4 :placeholder-text "Replace"))
+         (case-button (make-instance 'gtk:toggle-button :label "Aa" :tooltip-text "Match case"
+                                                        :css-classes '("flat")))
+         (word-button (make-instance 'gtk:toggle-button :label "W" :tooltip-text "Whole words only"
+                                                        :css-classes '("flat")))
+         (regex-button (make-instance 'gtk:toggle-button :label ".*" :tooltip-text "Regular expression (\\1 in the replacement is the first group)"
+                                                         :css-classes '("flat")))
          (status (make-instance 'gtk:label :css-classes '("dim-label") :ellipsize :end
                                            :width-chars 4 :max-width-chars 12))
          (replace-row (gtk:build
@@ -46,6 +55,11 @@
                                         :on-clicked (lambda (b) (declare (ignore b)) (find-replace-one fb)))
                             (gtk:button :label "All" :tooltip-text "Replace every match"
                                         :on-clicked (lambda (b) (declare (ignore b)) (find-replace-all fb))))))))
+    (setf (find-bar-case-button fb) case-button
+          (find-bar-word-button fb) word-button
+          (find-bar-regex-button fb) regex-button)
+    (dolist (b (list case-button word-button regex-button))
+      (gobject:connect b :toggled (lambda (b) (declare (ignore b)) (find-update fb))))
     (setf (slot-value fb 'entry) entry
           (slot-value fb 'status) status
           (slot-value fb 'replace-entry) replace-entry
@@ -60,12 +74,17 @@
                               :on-clicked (lambda (b) (declare (ignore b)) (find-step fb -1)))
                   (gtk:button :icon-name "go-down-symbolic" :tooltip-text "Next match"
                               :on-clicked (lambda (b) (declare (ignore b)) (find-step fb 1)))
+                  status)
+                ;; Options on a row of their own, so a narrow editor still fits the bar.
+                (gtk:box :spacing 2 :margin-top 2
+                  case-button
+                  word-button
+                  regex-button
                   (gtk:toggle-button :icon-name "cadre-replace-symbolic" :tooltip-text "Replace"
                                      :css-classes '("flat")
                                      :on-clicked (lambda (b)
                                                    (gtk:revealer-set-reveal-child
-                                                    replace-row (gtk:toggle-button-get-active b))))
-                  status)
+                                                    replace-row (gtk:toggle-button-get-active b)))))
                 replace-row))))
     (gtk:search-bar-connect-entry (find-bar-widget fb) entry)
     (gobject:connect entry :search-changed (lambda (e) (declare (ignore e)) (find-update fb)))
@@ -109,21 +128,46 @@
       (clear-search-tags (buffer-text buffer))))
   (setf (find-bar-matches fb) #() (find-bar-current fb) nil (find-bar-buffer fb) nil))
 
+(defvar *find-case-sensitive* nil)
+(defvar *find-whole-word* nil)
+(defvar *find-regex* nil)
+
+(defun find-case-sensitive-p (pattern)
+  "Match case if asked to, or (as in Emacs) if PATTERN has a capital letter."
+  (or *find-case-sensitive* (and (not *find-regex*) (not (case-fold-p pattern)))))
+
+(defun find-replacement (pattern match replacement)
+  "What MATCH of PATTERN becomes, as the find bar's options say."
+  (if *find-regex*
+      (regex-replacement pattern match replacement :case-sensitive (find-case-sensitive-p pattern))
+      (replacement-for match replacement :case-fold (not (find-case-sensitive-p pattern)))))
+
 (defun find-matches (gtk-buffer pattern)
   "Start and end offsets of each occurrence of PATTERN in GTK-BUFFER."
-  (let ((flags (if (some #'upper-case-p pattern) '(:text-only) '(:text-only :case-insensitive)))
-        (iter (gtk:text-buffer-get-start-iter gtk-buffer))
-        (matches '()))
-    (loop repeat *max-search-matches*
-          do (multiple-value-bind (found start end) (gtk:text-iter-forward-search iter pattern flags nil)
-               (unless found (return))
-               (push (cons (gtk:text-iter-get-offset start) (gtk:text-iter-get-offset end)) matches)
-               (setf iter end)
-               (when (gtk:text-iter-equal start end) (return))))
-    (coerce (nreverse matches) 'vector)))
+  (let* ((text (text-string gtk-buffer))
+         (line-starts (cons 0 (loop for i from 0 below (length text)
+                                    when (char= (char text i) #\Newline) collect (1+ i))))
+         (starts (coerce line-starts 'vector))
+         (matches (text-matches text pattern :case-sensitive (find-case-sensitive-p pattern)
+                                             :whole-word *find-whole-word* :regex *find-regex*)))
+    (coerce (loop for (line start end) in matches
+                  repeat *max-search-matches*
+                  collect (cons (+ (aref starts line) start) (+ (aref starts line) end)))
+            'vector)))
 
 (defun find-update (fb)
   "Search again for the entry's text in the current buffer."
+  (setf *find-case-sensitive* (gtk:toggle-button-get-active (find-bar-case-button fb))
+        *find-whole-word* (gtk:toggle-button-get-active (find-bar-word-button fb))
+        *find-regex* (gtk:toggle-button-get-active (find-bar-regex-button fb)))
+  (handler-case (find-update-1 fb)
+    (editor-error (e)
+      (clear-matches fb)
+      (gtk:label-set-text (find-bar-status fb) "Bad regex")
+      (gtk:widget-set-tooltip-text (find-bar-status fb) (editor-error-message e)))))
+
+(defun find-update-1 (fb)
+  (gtk:widget-set-tooltip-text (find-bar-status fb) nil)
   (clear-matches fb)
   (let ((view (and *window* (selected-view *window*)))
         (pattern (gtk:editable-get-text (find-bar-entry fb))))
@@ -232,9 +276,8 @@
         (find-update fb)
         (let* ((gtk-buffer (buffer-text buffer))
                (match (aref (find-bar-matches fb) index))
-               (replacement (replacement-for (text-string gtk-buffer (car match) (cdr match))
-                                             (gtk:editable-get-text (find-bar-replace-entry fb))
-                                             :case-fold (case-fold-p pattern))))
+               (replacement (find-replacement pattern (text-string gtk-buffer (car match) (cdr match))
+                                              (gtk:editable-get-text (find-bar-replace-entry fb)))))
           (replace-text-between gtk-buffer (car match) (cdr match) replacement)
           (gtk:text-buffer-place-cursor gtk-buffer (iter-at gtk-buffer (+ (car match) (length replacement))))
           (find-update fb)))))
@@ -250,8 +293,7 @@
           (loop for i from (1- (length matches)) downto 0
                 for (start . end) = (aref matches i)
                 do (replace-text-between gtk-buffer start end
-                                         (replacement-for (text-string gtk-buffer start end) to
-                                                          :case-fold (case-fold-p pattern)))))
+                                         (find-replacement pattern (text-string gtk-buffer start end) to))))
         (find-update fb)
         (message "Replaced ~d occurrence~:p" (length matches))))))
 

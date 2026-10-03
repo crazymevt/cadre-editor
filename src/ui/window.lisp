@@ -79,6 +79,8 @@
     (".cadre-panel-switcher button" :padding ("2px" "10px") :min-width "0")
     (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
     (".cadre-conflict-bar" :background-color "alpha(@warning_bg_color, 0.2)")
+    (".cadre-search-match label" :font-weight "normal")
+    (".cadre-search-match" :padding ("2px" "4px"))
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))
     (".cadre-chat-code" :background-color "alpha(@view_fg_color, 0.06)" :border-radius "6px"
@@ -113,6 +115,17 @@
   (gtk:add-css *css*)
   (install-font-css))
 
+(defun edit-menu ()
+  (let ((edit (gio:menu-new)))
+    (flet ((item (label command)
+             (gio:menu-append edit label (format nil "app.command('~(~a~)')" command))))
+      (item "Find…" 'find-text)
+      (item "Find and Replace…" 'find-replace)
+      (item "Find in Project…" 'find-in-project)
+      (item "Replace in Project…" 'replace-in-project)
+      (item "Rename Symbol…" 'rename-symbol))
+    edit))
+
 (defun app-menu ()
   (let ((menu (gio:menu-new))
         (files (gio:menu-new))
@@ -145,6 +158,7 @@
       (item app "Keyboard Shortcuts: Emacs" 'use-emacs-keys)
       (item app "Quit" 'quit))
     (gio:menu-append-section menu nil files)
+    (gio:menu-append-section menu nil (edit-menu))
     (gio:menu-append-section menu nil view)
     (gio:menu-append-section menu nil lisp)
     (gio:menu-append-section menu nil app)
@@ -215,6 +229,10 @@ and, if given, LABEL."
                                      :tooltip-text "Explorer" :active t :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
                                                    (show-sidebar-page win "explorer")))
+                  (gtk:toggle-button :id :search-button :icon-name "cadre-search-symbolic"
+                                     :tooltip-text "Search the project" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "search")))
                   (gtk:toggle-button :id :systems-button :icon-name "cadre-system-symbolic"
                                      :tooltip-text "ASDF Systems" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
@@ -266,6 +284,7 @@ and, if given, LABEL."
               (slot-value win 'layout-button) (gethash :layout-button *named-widgets*))
         (setf (window-sidebar-toggles win) (list (id :sidebar-button))
               (window-activity-buttons win) (list (cons "explorer" (id :explorer-button))
+                                                  (cons "search" (id :search-button))
                                                   (cons "systems" (id :systems-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
@@ -274,6 +293,7 @@ and, if given, LABEL."
                                                   :margin-bottom 4 :css-classes '("caption-heading" "dim-label"))
                                        (window-explorer-holder win)))
                              "explorer")
+        (gtk:stack-add-named stack (make-project-search-widget) "search")
         (gtk:stack-add-named stack (make-systems-widget) "systems")
         (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
