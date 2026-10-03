@@ -756,6 +756,13 @@ this session*, *Deny*), then returns the user's answer to Claude Code.
 Editor tools that need approval (`eval`, `propose_edit`) show their own,
 richer review UI (the form, or an inline diff) the same way.
 
+**As built (M4):** Claude Code accepts `--append-system-prompt` (there is no
+file variant), the MCP server answers each POST with a plain JSON response
+(no SSE stream), and `MCP_TOOL_TIMEOUT` is raised for the session so a
+`propose_edit` can wait while the user reviews. Edits are reviewed by
+showing a merged, read-only copy of the buffer in the tab; the buffer itself
+changes only on *Accept*.
+
 **Inline edits** don't need the full agent. They run a short-lived process
 with no tools (`claude -p --tools "" --no-session-persistence --model …`),
 with the selection, the surrounding top-level forms, and the request in the

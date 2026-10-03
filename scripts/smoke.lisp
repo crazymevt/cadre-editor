@@ -417,9 +417,11 @@
            (and shown (search "⇒ 42" (gtk:label-get-text (cdr shown))))
            (and shown (gtk:label-get-text (cdr shown)))))
   (screenshot "09-inline")
-  (insert-at-cursor " ")
-  (check "editing removes the inline value" (null (cadre-ui::buffer-local (current-buffer) :inline-result)))
-  (gtk:text-buffer-undo (buffer-text (current-buffer)))
+  (let ((label (cdr (cadre-ui::buffer-local (current-buffer) :inline-result))))
+    (insert-at-cursor " ")
+    (check "editing removes the inline value" (and (null (cadre-ui::buffer-local (current-buffer) :inline-result))
+                                                   label (not (gtk:widget-get-visible label))))
+    (gtk:text-buffer-undo (buffer-text (current-buffer))))
   (setf (buffer-modified-p (current-buffer)) nil)
   (set-cursor 2 10)                     ; after (twice 21)
   (call-command 'eval-last-expression))
@@ -605,6 +607,91 @@
   (call-command 'show-explorer)
   (check "the explorer comes back" (equal "explorer" (cadre-ui::sidebar-page *window*))))
 
+;;; M4: Claude (a stand-in CLI, scripts/fake-claude, plays Claude's part)
+(defun chat-texts () (label-texts (cadre-ui::chat-messages cadre-ui::*chat*)))
+(defun chat-says (text) (some (lambda (s) (search text s)) (chat-texts)))
+(defun chat-type (text)
+  (text-replace-contents (gtk:text-view-get-buffer (cadre-ui::chat-input cadre-ui::*chat*)) text)
+  (call-command 'cadre-ui::chat-send))
+
+(then 300
+  (setf *claude-program* (namestring (truename "scripts/fake-claude")))
+  (call-command 'cadre-ui::claude))
+
+(then-when ((equal "chat" (gtk:stack-get-visible-child-name (cadre-ui::chat-stack cadre-ui::*chat*))))
+  (check "the Claude panel finds a signed-in CLI" (cadre-ui::claude-ready-p))
+  (chat-type "hello"))
+
+(then-when ((chat-says "Done."))
+  (check "Claude's reply streams into the chat and is rendered" (chat-says "Hello from fake Claude"))
+  (check "code blocks in replies are shown as code" (member "(defun hi () :hi)" (chat-texts) :test #'equal))
+  (check "the turn ends" (not (cadre-ui::chat-busy cadre-ui::*chat*)))
+  (check "the panel shows the conversation's cost"
+         (search "$0.0042" (gtk:label-get-text (cadre-ui::chat-status cadre-ui::*chat*)))
+         (gtk:label-get-text (cadre-ui::chat-status cadre-ui::*chat*)))
+  (screenshot "16-claude")
+  (call-command 'cadre-ui::ask-claude-about-problems))
+
+(then-when (cadre-ui::*reviews*)
+  (let ((review (first cadre-ui::*reviews*)))
+    (check "Claude used get_problems to see the warning" (chat-says "an undefined variable."))
+    (check "propose_edit opens an inline review" (gtk:revealer-get-reveal-child cadre-ui::*review-bar*))
+    (check "the review bar names the file and counts the lines"
+           (search "m2.lisp  +1 −1" (gtk:label-get-text cadre-ui::*review-label*))
+           (gtk:label-get-text cadre-ui::*review-label*))
+    (let ((merged (text-string (cadre-ui::rv-gtk-buffer review))))
+      (check "the review shows the removed and added lines"
+             (and (search "(+ y undefined-thing)" merged) (search "(+ y 1)" merged))))
+    (check "the tab shows the review while it lasts"
+           (eq (gtk:text-view-get-buffer (view-text-view (cadre-ui::rv-view review))) (cadre-ui::rv-gtk-buffer review)))
+    (check "the buffer is untouched until accepted"
+           (search "undefined-thing" (buffer-string (find-buffer "m2.lisp")))))
+  (screenshot "17-review")
+  (call-command 'cadre-ui::accept-edit))
+
+(then-when ((chat-says "Result:"))
+  (let ((buffer (find-buffer "m2.lisp")))
+    (check "accepting applies the edit" (and (search "(+ y 1)" (buffer-string buffer))
+                                             (not (search "undefined-thing" (buffer-string buffer)))))
+    (check "accepting saves the file" (search "(+ y 1)" (uiop:read-file-string (merge-pathnames "src/m2.lisp" *root*))))
+    (check "Claude hears that the edit was accepted" (chat-says "accepted the edit"))
+    (check "tool calls appear in the chat"
+           (find-if (lambda (e) (search "propose_edit" (gtk:expander-get-label e)))
+                    (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*) (lambda (w) (typep w 'gtk:expander)))))
+    (check "the tab shows the buffer again"
+           (eq (gtk:text-view-get-buffer (view-text-view (current-view))) (buffer-text (current-buffer))))
+    (gtk:text-buffer-undo (buffer-text buffer))
+    (check "one undo takes the whole edit back" (search "(+ y undefined-thing)" (buffer-string buffer)))
+    (gtk:text-buffer-redo (buffer-text buffer))
+    (setf (buffer-modified-p buffer) nil))
+  (chat-type "Try another edit"))
+
+(then-when (cadre-ui::*reviews*)
+  (call-command 'cadre-ui::reject-edit))
+
+(then-when ((chat-says "rejected"))
+  (check "rejecting leaves the buffer alone" (search "(* 2 x)" (buffer-string (find-buffer "m2.lisp"))))
+  (chat-type "permission please"))
+
+(defun chat-button (label)
+  (find-if (lambda (b) (equal (gtk:button-get-label b) label))
+           (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*) (lambda (w) (typep w 'gtk:button)))))
+
+(then-when ((chat-button "Allow Once"))
+  (check "Claude Code's permission prompts ask in the chat" (chat-says "Claude wants to use Bash"))
+  (screenshot "18-approval")
+  (gtk:widget-activate (chat-button "Allow Once")))
+
+(then-when ((chat-says "Permission:"))
+  (check "allowing tells Claude Code to go ahead" (chat-says "Permission: allow"))
+  (chat-type "what is my context"))
+
+(then-when ((chat-says "Context:"))
+  (check "current_context describes what the user is looking at" (chat-says "Buffer: m2.lisp")
+         (find-if (lambda (s) (search "Context:" s)) (chat-texts)))
+  (call-command 'cadre-ui::claude-new-chat)
+  (check "a new conversation starts empty" (not (chat-says "Context:"))))
+
 (then 500
   (screenshot "10-repl")
   (call-command 'disconnect))
@@ -623,6 +710,6 @@
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
-(cadre-ui:main :project *root* :init-file nil :quit-after 360)
+(cadre-ui:main :project *root* :init-file nil :quit-after 480)
 (format t "~&Timed out.~%")
 (uiop:quit 1)

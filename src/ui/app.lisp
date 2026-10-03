@@ -50,7 +50,8 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "problems" (make-problems-widget))
       (panel-set-page-child panel "debugger" (make-debugger-widget))
       (panel-set-page-child panel "inspector" (make-inspector-widget))
-      (panel-set-page-child panel "references" (make-references-widget)))
+      (panel-set-page-child panel "references" (make-references-widget))
+      (panel-set-page-child panel "claude" (make-claude-widget)))
     (update-connection-status)
     (let ((directory (initial-project project)))
       (when directory (open-project directory)))
@@ -66,7 +67,9 @@ are files to open in tabs. QUIT-AFTER (seconds) quits automatically, for
 tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
   (load-settings)
   (when init-file (load-init-file))
-  (adw:run-application *application-id*
-                       (lambda (app) (activate app :project project :files files))
-                       :flags '(:non-unique)
-                       :quit-after quit-after))
+  (unwind-protect
+       (adw:run-application *application-id*
+                            (lambda (app) (activate app :project project :files files))
+                            :flags '(:non-unique)
+                            :quit-after quit-after)
+    (stop-claude-session)))

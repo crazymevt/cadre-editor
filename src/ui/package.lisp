@@ -37,7 +37,9 @@
            #:inspect-value #:inspector-back #:inspector-forward #:inspector-refresh
            #:find-references #:who-calls #:who-references #:who-binds #:who-sets
            #:who-macroexpands #:who-specializes #:list-callers #:list-callees
-           #:expand-macro-once #:expand-macro-all #:expand-compiler-macro))
+           #:expand-macro-once #:expand-macro-all #:expand-compiler-macro
+           #:claude #:chat-send #:claude-stop #:claude-new-chat #:claude-sign-in
+           #:ask-claude-about-problems #:ask-claude-about-error #:accept-edit #:reject-edit))
 
 (defpackage #:cadre-user
   (:use #:cl #:cadre #:cadre-ui)

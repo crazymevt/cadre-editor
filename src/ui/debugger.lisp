@@ -86,7 +86,9 @@
                                     :tooltip-text "Return to the top level (a)"
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'debugger-abort)))
                         (gtk:button :label "Inspect Condition"
-                                    :on-clicked (lambda (b) (declare (ignore b)) (inspect-condition level))))))
+                                    :on-clicked (lambda (b) (declare (ignore b)) (inspect-condition level)))
+                        (gtk:button :label "Ask Claude" :tooltip-text "Send the error and backtrace to Claude"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
     (gtk:box-append *debugger-box* (label "Restarts" :margin-top 6 :css-classes '("heading")))
     (loop for (name description) in (dl-restarts level)
           for n from 0

@@ -143,7 +143,14 @@ BUFFER's notes."
     (gobject:connect list-view :activate
                      (lambda (lv position) (declare (ignore lv))
                        (goto-note (gobject:lisp-object-value (gio:list-model-get-item store position)))))
-    (make-instance 'gtk:scrolled-window :child list-view :vexpand t)))
+    (gtk:build
+      (gtk:box :orientation :vertical
+        (gtk:box :margin-start 6 :margin-end 6 :margin-top 2 :margin-bottom 2 :spacing 6
+          (gtk:label :hexpand t)
+          (gtk:button :label "Ask Claude to Fix" :css-classes '("flat")
+                      :tooltip-text "Send the problems to Claude and ask for a fix"
+                      :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-problems))))
+        (gtk:scrolled-window :child list-view :vexpand t)))))
 
 (defun refresh-problems ()
   (when *notes-list*

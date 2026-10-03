@@ -1,7 +1,7 @@
 ;;;; panel.lisp — the panel, below or beside the editor
 ;;;;
 ;;;; Pages: the REPL, Problems (compiler notes), the Debugger, the Inspector,
-;;;; References (cross-references) and Output (a log of messages).
+;;;; References (cross-references), Claude (a chat) and Output (a log of messages).
 
 (in-package #:cadre-ui)
 
@@ -22,7 +22,7 @@
                                                     :left-margin 8 :top-margin 4))
          (stack (make-instance 'gtk:stack :vexpand t :hexpand t)))
     (dolist (page '(("repl" "REPL") ("problems" "Problems") ("debugger" "Debugger")
-                    ("inspector" "Inspector") ("references" "References")))
+                    ("inspector" "Inspector") ("references" "References") ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))

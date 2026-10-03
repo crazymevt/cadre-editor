@@ -1,0 +1,252 @@
+;;;; cli.lisp — driving the Claude Code CLI (design doc 9.5)
+;;;;
+;;;; A conversation is one `claude -p` process with stream-json input and
+;;;; output. User messages go to its stdin, one JSON line each; every line
+;;;; it prints is an event, turned here into a CLAUDE-EVENT for the GUI.
+;;;; Lines are read on a thread and handed to DELIVER (the GTK main loop).
+
+(in-package #:cadre)
+
+(define-option *claude-program* nil (or null string)
+  "The Claude Code CLI. Nil: `claude` on PATH, then ~/.local/bin/claude,
+then the copy inside the Claude desktop app.")
+
+(define-option *claude-model* "sonnet" string
+  "The model for Claude chats: an alias (sonnet, opus, haiku) or a full name.")
+
+(define-option *claude-effort* nil (or null string)
+  "The effort level for Claude chats (low, medium, high, xhigh, max), or nil for the default.")
+
+(define-option *claude-isolated* nil boolean
+  "Start Claude without the user's own MCP servers and settings: only the
+project's settings and Cadre's tools.")
+
+;;; Random identifiers
+
+(defun random-octets (n)
+  (let ((octets (make-array n :element-type '(unsigned-byte 8))))
+    (or (ignore-errors
+         (with-open-file (in "/dev/urandom" :element-type '(unsigned-byte 8))
+           (read-sequence octets in)
+           octets))
+        (let ((state (make-random-state t)))
+          (dotimes (i n octets) (setf (aref octets i) (random 256 state)))))))
+
+(defun make-uuid ()
+  "A random (version 4) UUID string."
+  (let ((o (random-octets 16)))
+    (setf (aref o 6) (logior #x40 (logand (aref o 6) #x0f))
+          (aref o 8) (logior #x80 (logand (aref o 8) #x3f)))
+    (format nil "~(~{~2,'0x~}-~{~2,'0x~}-~{~2,'0x~}-~{~2,'0x~}-~{~2,'0x~}~)"
+            (coerce (subseq o 0 4) 'list) (coerce (subseq o 4 6) 'list) (coerce (subseq o 6 8) 'list)
+            (coerce (subseq o 8 10) 'list) (coerce (subseq o 10 16) 'list))))
+
+(defun random-token ()
+  (string-downcase (format nil "~{~2,'0x~}" (coerce (random-octets 24) 'list))))
+
+;;; Finding the CLI
+
+(defun desktop-app-claude ()
+  "The newest Claude Code bundled with the Claude desktop app (macOS), or nil."
+  (let ((root (merge-pathnames "Library/Application Support/Claude/claude-code/" (user-homedir-pathname))))
+    (car (sort (directory (merge-pathnames "*/*/claude.app/Contents/MacOS/claude" root))
+               #'string> :key #'namestring))))
+
+(defun find-claude-program ()
+  "The path of the Claude Code CLI, or nil."
+  (if *claude-program*
+      (and (probe-file *claude-program*) *claude-program*)
+      (let ((on-path (ignore-errors
+                      (string-trim '(#\Newline #\Space)
+                                   (uiop:run-program '("/bin/sh" "-c" "command -v claude")
+                                                     :output :string :ignore-error-status t)))))
+        (or (and on-path (plusp (length on-path)) on-path)
+            (loop for candidate in '(".local/bin/claude" ".claude/local/claude")
+                  for path = (merge-pathnames candidate (user-homedir-pathname))
+                  when (probe-file path) return (namestring path))
+            (let ((app (desktop-app-claude))) (and app (namestring app)))))))
+
+(defstruct (claude-status (:conc-name claude-status-))
+  "What Cadre found out about the CLI."
+  program version logged-in auth-method error)
+
+(defun check-claude ()
+  "Run the CLI's --version and auth status. Slow: call it off the GUI thread."
+  (let ((program (find-claude-program)))
+    (if (null program)
+        (make-claude-status :error "The Claude Code CLI (claude) was not found.")
+        (handler-case
+            (let* ((version (string-trim '(#\Newline #\Space)
+                                         (uiop:run-program (list program "--version") :output :string
+                                                                                     :ignore-error-status t)))
+                   (auth (ignore-errors
+                          (parse-json (uiop:run-program (list program "auth" "status") :output :string
+                                                                                       :ignore-error-status t)))))
+              (make-claude-status :program program :version version
+                                  :logged-in (jtrue-p (jget auth "loggedIn"))
+                                  :auth-method (jget auth "authMethod")))
+          (error (e) (make-claude-status :program program :error (princ-to-string e)))))))
+
+;;; The command line
+
+(defun claude-arguments (&key session-id resume model effort mcp-config permission-tool
+                              allowed-tools disallowed-tools system-prompt isolated)
+  "The arguments for a stream-json conversation (after the program name)."
+  (append (list "-p" "--input-format" "stream-json" "--output-format" "stream-json"
+                "--verbose" "--include-partial-messages")
+          (cond (resume (list "--resume" resume))
+                (session-id (list "--session-id" session-id)))
+          (and model (list "--model" model))
+          (and effort (list "--effort" effort))
+          (and mcp-config (list "--mcp-config" (namestring mcp-config)))
+          (and permission-tool (list "--permission-prompt-tool" permission-tool))
+          (and disallowed-tools (list "--disallowedTools" (format nil "~{~a~^,~}" disallowed-tools)))
+          (and allowed-tools (list "--allowedTools" (format nil "~{~a~^,~}" allowed-tools)))
+          (and system-prompt (list "--append-system-prompt" system-prompt))
+          (and isolated (list "--strict-mcp-config" "--setting-sources" "project"))))
+
+(defun user-message-line (text)
+  "The stdin line that sends TEXT as a user message."
+  (json-string (jobj "type" "user"
+                     "message" (jobj "role" "user"
+                                     "content" (vector (jobj "type" "text" "text" text))))))
+
+(defun interrupt-line (request-id)
+  (json-string (jobj "type" "control_request" "request_id" request-id
+                     "request" (jobj "subtype" "interrupt"))))
+
+;;; Events
+
+(defstruct (claude-event (:conc-name event-))
+  "One line from the CLI, simplified. KIND is one of:
+  :init      SESSION-ID, MODEL, and DATA: the MCP servers' (name . status)
+  :text-delta  TEXT, more of the reply being written
+  :tool-start  NAME, ID: a tool call being written
+  :message-start
+  :text      TEXT, a finished block of the reply
+  :thinking  TEXT
+  :tool-use  NAME, ID, INPUT (a JSON object)
+  :tool-result  ID, TEXT, ERROR
+  :result    TEXT, ERROR, COST, DURATION, SESSION-ID, DATA: usage
+  :other     DATA: the JSON"
+  kind text name id input error cost duration session-id model data subagent)
+
+(defun content-text (content)
+  "A tool result's content (a string or an array of blocks) as text."
+  (cond ((stringp content) content)
+        ((vectorp content)
+         (format nil "~{~a~^~%~}" (loop for block across content
+                                       when (equal (jget block "type") "text") collect (jget block "text"))))
+        (t "")))
+
+(defun parse-claude-event (line)
+  "The CLAUDE-EVENTs for one line of the CLI's stream-json output: a list,
+since a message can hold several blocks. Nil for lines that are not JSON."
+  (let ((json (ignore-errors (parse-json line))))
+    (when (jobject-p json)
+      (let ((type (jget json "type"))
+            (subagent (jtrue-p (jget json "parent_tool_use_id"))))
+        (flet ((event (&rest args) (apply #'make-claude-event :subagent subagent args)))
+          (cond
+            ((and (equal type "system") (equal (jget json "subtype") "init"))
+             (list (event :kind :init :session-id (jget json "session_id") :model (jget json "model")
+                          :data (loop for server in (jlist (jget json "mcp_servers"))
+                                      collect (cons (jget server "name") (jget server "status"))))))
+            ((equal type "stream_event")
+             (let* ((e (jget json "event")) (etype (jget e "type")))
+               (cond ((equal etype "message_start") (list (event :kind :message-start)))
+                     ((and (equal etype "content_block_delta") (equal (jget e "delta" "type") "text_delta"))
+                      (list (event :kind :text-delta :text (jget e "delta" "text"))))
+                     ((and (equal etype "content_block_start") (equal (jget e "content_block" "type") "tool_use"))
+                      (list (event :kind :tool-start :name (jget e "content_block" "name")
+                                   :id (jget e "content_block" "id")))))))
+            ((equal type "assistant")
+             (loop for block in (jlist (jget json "message" "content"))
+                   for btype = (jget block "type")
+                   when (equal btype "text") collect (event :kind :text :text (jget block "text"))
+                   when (equal btype "thinking") collect (event :kind :thinking :text (jget block "thinking"))
+                   when (equal btype "tool_use")
+                     collect (event :kind :tool-use :name (jget block "name") :id (jget block "id")
+                                    :input (jget block "input"))))
+            ((equal type "user")
+             (loop for block in (jlist (jget json "message" "content"))
+                   when (equal (jget block "type") "tool_result")
+                     collect (event :kind :tool-result :id (jget block "tool_use_id")
+                                    :text (content-text (jget block "content"))
+                                    :error (jtrue-p (jget block "is_error")))))
+            ((equal type "result")
+             (list (event :kind :result :text (let ((r (jget json "result"))) (if (stringp r) r ""))
+                          :error (or (jtrue-p (jget json "is_error"))
+                                     (not (equal (jget json "subtype") "success")))
+                          :cost (jget json "total_cost_usd") :duration (jget json "duration_ms")
+                          :session-id (jget json "session_id") :data (jget json "usage"))))
+            (t (list (event :kind :other :data json)))))))))
+
+(defun tool-display-name (name)
+  "NAME without the mcp__cadre__ prefix."
+  (let ((prefix "mcp__cadre__"))
+    (if (and (> (length name) (length prefix)) (string= prefix name :end2 (length prefix)))
+        (subseq name (length prefix))
+        name)))
+
+;;; The process
+
+(defstruct (claude-process (:conc-name cp-))
+  process session-id (stopped nil) (lock (sb-thread:make-mutex :name "claude stdin")))
+
+(defun start-claude (arguments &key program directory (deliver #'funcall) on-event on-stderr on-exit
+                                     environment)
+  "Start the CLI with ARGUMENTS in DIRECTORY. Through DELIVER, calls ON-EVENT
+with each CLAUDE-EVENT, ON-STDERR with each line of standard error, and
+ON-EXIT with the exit code."
+  (let* ((process (sb-ext:run-program (or program (find-claude-program) (error "Claude Code was not found"))
+                                      arguments
+                                      :search t :wait nil :directory (and directory (namestring directory))
+                                      :input :stream :output :stream :error :stream
+                                      :environment (append environment (sb-ext:posix-environ))
+                                      :external-format :utf-8))
+         (cp (make-claude-process :process process)))
+    (sb-thread:make-thread
+     (lambda ()
+       (let ((stream (sb-ext:process-output process)))
+         (loop for line = (ignore-errors (read-line stream nil))
+               while line
+               do (let ((events (parse-claude-event line)))
+                    (when events
+                      (funcall deliver (lambda () (dolist (e events) (when on-event (funcall on-event e))))))))
+         (sb-ext:process-wait process)
+         (let ((code (sb-ext:process-exit-code process)))
+           (funcall deliver (lambda () (when on-exit (funcall on-exit code)))))))
+     :name "claude output")
+    (sb-thread:make-thread
+     (lambda ()
+       (let ((stream (sb-ext:process-error process)))
+         (loop for line = (ignore-errors (read-line stream nil))
+               while line
+               do (let ((line line)) (funcall deliver (lambda () (when on-stderr (funcall on-stderr line))))))))
+     :name "claude stderr")
+    cp))
+
+(defun claude-alive-p (cp)
+  (and cp (sb-ext:process-alive-p (cp-process cp))))
+
+(defun claude-write-line (cp line)
+  (sb-thread:with-mutex ((cp-lock cp))
+    (let ((stream (sb-ext:process-input (cp-process cp))))
+      (write-line line stream)
+      (force-output stream))))
+
+(defun claude-send (cp text)
+  "Send TEXT as the next user message."
+  (claude-write-line cp (user-message-line text)))
+
+(defun claude-interrupt (cp)
+  "Ask the CLI to stop the current turn."
+  (ignore-errors (claude-write-line cp (interrupt-line (format nil "cadre-~d" (random 1000000))))))
+
+(defun stop-claude (cp)
+  "End the conversation's process."
+  (when (claude-alive-p cp)
+    (setf (cp-stopped cp) t)
+    (ignore-errors (close (sb-ext:process-input (cp-process cp))))
+    (sb-ext:process-kill (cp-process cp) 15)))

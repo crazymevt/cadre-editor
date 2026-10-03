@@ -167,12 +167,15 @@
   "C-SPC" 'complete-symbol)
 
 (bind-keys *standard-global-keymap*
+  "C-M-i" 'claude
   "C-`" 'show-repl
   "F6" 'load-project
   "C-S-e" 'show-explorer)
 
 (bind-keys *emacs-global-keymap*
-  "C-c L" 'load-project)
+  "C-c L" 'load-project
+  "C-c C-a a" 'claude
+  "C-c C-a p" 'ask-claude-about-problems)
 
 (bind-keys *emacs-editing-keymap*
   "C-f" 'forward-char

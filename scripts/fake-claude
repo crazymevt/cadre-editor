@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the Claude Code CLI, for the smoke test (see fake-claude.lisp).
+exec sbcl --noinform --non-interactive --load "$(dirname "$0")/fake-claude.lisp" --end-toplevel-options "$@"

@@ -34,6 +34,9 @@
                (:file "xref")
                (:file "macroexpand")
                (:file "systems")
+               (:file "review")
+               (:file "claude-tools")
+               (:file "claude")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -66,7 +69,13 @@
                              (:file "inferior")
                              (:file "forms")
                              (:file "tools")
-                             (:file "image")))))
+                             (:file "image")))
+               (:module "claude"
+                :serial t
+                :components ((:file "json")
+                             (:file "cli")
+                             (:file "mcp")
+                             (:file "diff")))))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -79,5 +88,6 @@
                (:file "commands")
                (:file "keymaps")
                (:file "lisp")
-               (:file "swank"))
+               (:file "swank")
+               (:file "claude"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

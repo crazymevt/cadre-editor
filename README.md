@@ -3,7 +3,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M3 (debugger and tools). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M4 (Claude). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -25,6 +25,12 @@ for the design and the milestones.
   specializes), a macroexpander, an ASDF Systems view in the sidebar, and
   highlighting from the running image (user macros, special variables,
   constants, calls to undefined functions).
+- **M4:** Claude, through the Claude Code CLI: a Claude panel with streaming
+  replies, context from the editor, tool calls shown as they happen, and
+  approval prompts; an MCP server through which Claude reads your buffers and
+  asks your running Lisp (describe, arglists, definitions, cross-references,
+  macroexpansion, compiler notes, the backtrace); and edits proposed as inline
+  diffs in the editor, which you accept or reject.
 
 ## Running
 
@@ -101,6 +107,34 @@ Expanding a macro inside the *Macroexpansion* tab expands it there, in place.
 The sidebar's second page (the box icon) lists the folder's ASDF systems: load,
 reload with compiler notes, test, and open their files.
 
+### Claude
+
+Cadre runs the Claude Code CLI (`claude`), so you need it installed and signed
+in: `claude auth login` (with a Claude subscription or a Console account).
+Cadre finds `claude` on your PATH, in `~/.local/bin`, or inside the Claude
+desktop app; set `*claude-program*` to use another.
+
+Open the Claude tab (`Ctrl+Alt+I`, Emacs `C-c C-a a`, or "Chat with Claude" in
+the menu) and ask. `Return` sends, `Shift+Return` starts a new line. The
+**File** chip tells Claude where you are and what is selected; **Problems** and
+**Debugger** attach the compiler's notes or the current error. The Problems
+tab's *Ask Claude to Fix* and the debugger's *Ask Claude* buttons fill these in
+for you.
+
+Claude can't write files directly: every change is a `propose_edit`, shown in
+its tab as an inline diff (removed lines struck out, added lines green) with
+*Accept* and *Reject*. Accepting applies it as one undo step and saves the
+file if it had no unsaved changes. Evaluating or compiling code in your Lisp,
+and Claude Code's own commands (Bash, web fetches), ask first in the chat:
+*Allow Once*, *Allow for This Conversation* or *Deny*. Claude never runs code
+in Cadre's own Lisp.
+
+`*claude-model*` (default `sonnet`, also in the panel's menu), `*claude-effort*`
+and `*claude-isolated*` (ignore your own Claude Code settings and MCP servers)
+are options for your init file.
+
+### Image-aware highlighting
+
 Symbols are colored by what the connected Lisp knows: your macros like Common
 Lisp's, special variables and constants, and calls to functions that don't
 exist underlined. Set `*highlight-from-image*` to `nil` to turn this off.
@@ -138,6 +172,7 @@ make smoke    # drive a real window through the M0 features; screenshots in buil
 | --- | --- |
 | `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
 | `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
+| `src/core/claude/` | JSON, the Claude Code CLI driver (stream-json), the MCP server, line diffs |
 | `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers, inspector/xref/debugger replies, classifying symbols in the image |
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |

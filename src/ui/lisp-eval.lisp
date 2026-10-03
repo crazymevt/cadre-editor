@@ -47,8 +47,11 @@
     (when shown
       (setf (buffer-local buffer :inline-result) nil)
       (destructuring-bind (text-view . label) shown
-        (when (eq (gtk:widget-get-parent label) text-view)
-          (gtk:text-view-remove text-view label))))))
+        ;; GTK keeps overlay children in a container of its own; removing
+        ;; one doesn't always take it off the screen, so hide it too.
+        (gtk:widget-set-visible label nil)
+        (when (gtk:widget-get-parent label)
+          (ignore-errors (gtk:text-view-remove text-view label)))))))
 
 (defun show-inline-result (view line result)
   "Show RESULT after the end of LINE in VIEW, until the buffer changes."

@@ -73,6 +73,14 @@
     (".cadre-status label" :margin ("0" "6px"))
     (".cadre-activity" :padding "4px")
     (".cadre-panel" :background-color "@view_bg_color")
+    (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
+    (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
+                        :padding ("6px" "10px"))
+    (".cadre-chat-code" :background-color "alpha(@view_fg_color, 0.06)" :border-radius "6px"
+                        :padding "6px")
+    (".cadre-chat-approval" :background-color "alpha(@warning_bg_color, 0.25)" :border-radius "8px"
+                            :padding "8px")
+    (".cadre-chat-tool" :opacity "0.8")
     (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
                             :padding ("0" "6px") :font-family "monospace")))
 
@@ -114,6 +122,7 @@
       (item lisp "Find References" 'find-references)
       (item lisp "Macroexpand" 'expand-macro-once)
       (item lisp "Restart Lisp" 'restart-lisp)
+      (item lisp "Chat with Claude" 'claude)
       (item app "Keyboard Shortcuts: Standard" 'use-standard-keys)
       (item app "Keyboard Shortcuts: Emacs" 'use-emacs-keys)
       (item app "Quit" 'quit))
@@ -251,6 +260,7 @@ and, if given, LABEL."
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
                                        (adw:tab-bar :view tab-view :autohide nil)
+                                       (make-review-bar)
                                        (find-bar-widget (window-find-bar win))
                                        tab-view))
                              "tabs"))

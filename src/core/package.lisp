@@ -72,4 +72,23 @@
    ;; what the image knows
    #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
    #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p
-   #:symbol-base-name #:token-text))
+   #:symbol-base-name #:token-text
+   ;; JSON
+   #:jobj #:jget #:jtrue-p #:jlist #:jobject-p #:read-json #:parse-json #:write-json #:json-string
+   #:json-error
+   ;; the Claude Code CLI
+   #:*claude-program* #:*claude-model* #:*claude-effort* #:*claude-isolated*
+   #:make-uuid #:random-token #:find-claude-program #:check-claude
+   #:claude-status #:claude-status-program #:claude-status-version #:claude-status-logged-in
+   #:claude-status-auth-method #:claude-status-error
+   #:claude-arguments #:user-message-line #:parse-claude-event #:content-text #:tool-display-name
+   #:claude-event #:event-kind #:event-text #:event-name #:event-id #:event-input #:event-error
+   #:event-cost #:event-duration #:event-session-id #:event-model #:event-data #:event-subagent
+   #:start-claude #:claude-alive-p #:claude-send #:claude-interrupt #:stop-claude
+   #:claude-process #:cp-session-id #:cp-process #:cp-stopped
+   ;; MCP
+   #:define-mcp-tool #:register-mcp-tool #:*mcp-tools* #:mcp-tool-name #:tool-error #:tool-argument
+   #:mcp-tool-error #:mcp-handle #:call-mcp-tool #:start-mcp-server #:stop-mcp-server
+   #:mcp-server-url #:mcp-server-port #:mcp-server-token #:write-mcp-config #:http-post-json
+   ;; diffs
+   #:split-lines #:diff-lines #:diff-stats #:replace-unique))
