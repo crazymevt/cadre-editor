@@ -34,8 +34,11 @@
           (gtk:build
             (gtk:box :orientation :vertical :css-classes '("cadre-panel")
               (gtk:box :spacing 6 :margin-start 6 :margin-end 6 :margin-top 4 :margin-bottom 4
-                (gtk:stack-switcher :stack stack)
-                (gtk:box :hexpand t)
+                ;; In a scroller, so a narrow panel scrolls its tabs instead
+                ;; of forcing the panel wider.
+                (gtk:scrolled-window :hscrollbar-policy :external :vscrollbar-policy :never
+                                     :propagate-natural-width t :hexpand t
+                  (gtk:stack-switcher :stack stack :halign :start))
                 (gtk:button :icon-name "window-close-symbolic" :tooltip-text "Hide the panel"
                             :css-classes '("flat")
                             :on-clicked (lambda (b) (declare (ignore b))

@@ -176,14 +176,18 @@ and, if given, LABEL."
                                                    (call-command 'toggle-sidebar))))
                 (gtk:separator :orientation :vertical)
                 (gtk:paned :id :side-paned :orientation :horizontal :position 260
-                           :shrink-start-child nil :resize-start-child nil :hexpand t
+                           :shrink-start-child nil :resize-start-child nil
+                           :shrink-end-child nil :hexpand t
                   (gtk:box :id :sidebar :orientation :vertical :width-request 160
                     (gtk:label :label "EXPLORER" :xalign 0.0 :margin-start 12 :margin-top 8
                                :margin-bottom 4 :css-classes '("caption-heading" "dim-label"))
                     (adw:bin :id :explorer-holder :vexpand t))
+                  ;; Neither child may shrink below its minimum size, so the
+                  ;; divider stops there instead of clipping the editor.
                   (gtk:paned :id :main-paned :orientation :vertical
-                             :shrink-end-child nil :resize-end-child nil
-                    (gtk:stack :id :editor-stack :hexpand t :vexpand t)
+                             :shrink-start-child nil :shrink-end-child nil :resize-end-child nil
+                    (gtk:stack :id :editor-stack :hexpand t :vexpand t
+                               :hhomogeneous nil :vhomogeneous nil)
                     (panel-widget panel))))
               (gtk:box :child-type "bottom" :css-classes '("cadre-status" "toolbar")
                 (gtk:button :id :status-connection :label "○ No Lisp" :css-classes '("flat")

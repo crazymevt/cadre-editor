@@ -202,6 +202,12 @@
   )
 
 (then 300
+  (check "in the vertical layout the editor fits beside the panel, unclipped"
+         (<= (gtk:widget-get-width (cadre-ui::window-editor-stack *window*))
+             (gtk:paned-get-position (cadre-ui::window-main-paned *window*)))
+         (format nil "editor ~d px, divider at ~d"
+                 (gtk:widget-get-width (cadre-ui::window-editor-stack *window*))
+                 (gtk:paned-get-position (cadre-ui::window-main-paned *window*))))
   (screenshot "03-vertical")
   (press "C-k C-l"))
 

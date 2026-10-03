@@ -20,15 +20,16 @@
 
 (defun make-find-bar ()
   (let* ((fb (make-instance 'find-bar))
-         (entry (make-instance 'gtk:search-entry :search-delay 0 :width-request 320
+         (entry (make-instance 'gtk:search-entry :search-delay 0 :hexpand t
                                                  :placeholder-text "Find"))
-         (status (make-instance 'gtk:label :css-classes '("dim-label") :width-chars 12)))
+         (status (make-instance 'gtk:label :css-classes '("dim-label") :ellipsize :end
+                                           :width-chars 4 :max-width-chars 12)))
     (setf (slot-value fb 'entry) entry
           (slot-value fb 'status) status
           (slot-value fb 'bar)
           (gtk:build
             (gtk:search-bar :show-close-button t
-              (gtk:box :spacing 6
+              (gtk:box :spacing 6 :width-request 120 :hexpand t
                 entry
                 (gtk:button :icon-name "go-up-symbolic" :tooltip-text "Previous match"
                             :on-clicked (lambda (b) (declare (ignore b)) (find-step fb -1)))
