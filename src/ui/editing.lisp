@@ -74,7 +74,8 @@
     (and mark (gtk:text-iter-get-offset (gtk:text-buffer-get-iter-at-mark (buffer-text buffer) mark)))))
 
 (define-option *mark-ring-max* 16 (integer 1)
-  "How many earlier marks each buffer remembers, for C-u C-SPC.")
+  "How many earlier marks each buffer remembers, for C-u C-SPC."
+  :category "Editing")
 
 (defun push-mark (buffer offset &key activate)
   "Set BUFFER's mark at OFFSET, remembering where it was before."

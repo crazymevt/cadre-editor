@@ -61,6 +61,8 @@
   "C-M-Right" 'move-tab-to-next-group
   "C-S-r" 'editor-repl
   "C-k C-k" 'describe-key
+  "C-," 'settings
+  "C-k C-t" 'choose-theme
   "C-q" 'quit)
 
 (bind-keys *standard-editing-keymap*
@@ -117,6 +119,7 @@
   "C-h w" 'where-is-command
   "C-h b" 'describe-bindings
   "C-c R" 'editor-repl
+  "C-c C-a g" 'claude-agent
   "M-g n" 'next-note
   "M-g p" 'previous-note
   "M-g g" 'go-to-line
@@ -325,6 +328,7 @@ mode's keys for this profile, the minor modes', then the major mode's."
 (defun set-keybinding-profile (profile)
   (setf *keybinding-profile* profile
         (setting :keybinding-profile) profile)
+  (save-option '*keybinding-profile*)
   (message "Keyboard shortcuts: ~:[Standard~;Emacs~]" (eq profile :emacs)))
 
 ;;; Prefix arguments (C-u, M-0 … M-9)

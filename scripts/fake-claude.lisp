@@ -82,6 +82,23 @@
      (let ((answer (use-tool "approve" (jobj "tool_name" "Bash" "input" (jobj "command" "ls -la")))))
        (say (format nil "Permission: ~a" (jget (parse-json answer) "behavior")))
        (finish "done")))
+    ((search "agent check" message)
+     (let ((prompt (or (second (member "--append-system-prompt" *args* :test #'string=)) ""))
+           (allowed (or (second (member "--allowedTools" *args* :test #'string=)) "")))
+       (say (format nil "Mode: agent=~:[no~;yes~] todo=~:[no~;yes~] model=~a"
+                    (search "agent mode" prompt) (search "TodoWrite" allowed)
+                    (second (member "--model" *args* :test #'string=))))
+       (finish "done")))
+    ((search "make a plan" message)
+     (emit (jobj "type" "assistant" "parent_tool_use_id" :null
+                 "message" (jobj "role" "assistant"
+                                 "content" (vector (jobj "type" "tool_use" "id" "toolu_plan" "name" "TodoWrite"
+                                                         "input" (jobj "todos" (vector (jobj "content" "Read area" "status" "completed" "activeForm" "Reading area")
+                                                                                       (jobj "content" "Compile area" "status" "in_progress" "activeForm" "Compiling area")
+                                                                                       (jobj "content" "Summarize" "status" "pending" "activeForm" "Summarizing"))))))))
+     (use-tool "open_file" (jobj "file" "src/m1.lisp" "line" 2))
+     (say (format nil "Compiled: ~a" (use-tool "compile_defun" (jobj "buffer" "src/m1.lisp" "line" 2))))
+     (finish "done"))
     ((search "context" message)
      (say (format nil "Context: ~a" (use-tool "current_context" (jobj))))
      (finish "done"))

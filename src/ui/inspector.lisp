@@ -32,14 +32,10 @@
                                              :tooltip-text "Inspect the object again" :css-classes '("flat")))
          (gtk-buffer (gtk:text-view-get-buffer text-view)))
     (setf *inspector* (make-inspector :text-view text-view :title title :back back :forward forward))
-    (gtk:text-tag-table-add (gtk:text-buffer-get-tag-table gtk-buffer)
-                            (make-instance 'gtk:text-tag :name "cadre-inspector-value" :foreground "#2b6cb0"))
-    (gtk:text-tag-table-add (gtk:text-buffer-get-tag-table gtk-buffer)
-                            (make-instance 'gtk:text-tag :name "cadre-inspector-action" :foreground "#a3299e"
-                                                         :underline :single))
+    (ensure-face-tag gtk-buffer "cadre-inspector-value" :inspector-value)
+    (ensure-face-tag gtk-buffer "cadre-inspector-action" :inspector-action)
     (gtk:text-tag-table-add (gtk:text-buffer-get-tag-table gtk-buffer)
                             (make-instance 'gtk:text-tag :name "cadre-inspector-label" :weight 700))
-    (style-inspector-tags)
     (gobject:connect back :clicked (lambda (b) (declare (ignore b)) (call-command 'inspector-back)))
     (gobject:connect forward :clicked (lambda (b) (declare (ignore b)) (call-command 'inspector-forward)))
     (gobject:connect refresh :clicked (lambda (b) (declare (ignore b)) (call-command 'inspector-refresh)))
@@ -65,15 +61,6 @@
           back forward refresh title)
         (gtk:separator)
         (gtk:scrolled-window :vexpand t :child text-view)))))
-
-(defun style-inspector-tags ()
-  (when *inspector*
-    (let ((table (gtk:text-buffer-get-tag-table (inspector-buffer)))
-          (dark (adw:dark-p)))
-      (setf (gobject:property (gtk:text-tag-table-lookup table "cadre-inspector-value") :foreground)
-            (if dark "#61afef" "#1d5fb8")
-            (gobject:property (gtk:text-tag-table-lookup table "cadre-inspector-action") :foreground)
-            (if dark "#e386d8" "#a3299e")))))
 
 (defun inspector-show-empty ()
   (gtk:label-set-text (ins-title *inspector*) "Nothing inspected")

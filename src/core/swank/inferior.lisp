@@ -11,14 +11,17 @@
 (define-option *lisp-command* '("sbcl" "--noinform") list
   "The program and arguments that start a Lisp for M-x lisp. Swank's
 bootstrap is added with --eval, so the Lisp must accept that (SBCL, CCL and
-ECL do).")
+ECL do)."
+  :category "Lisp")
 
 (define-option *swank-source* :bundled (member :bundled :quicklisp)
-  "Where the started Lisp loads Swank from: Cadre's bundled copy, or Quicklisp.")
+  "Where the started Lisp loads Swank from: Cadre's bundled copy, or Quicklisp."
+  :category "Lisp")
 
 (define-option *swank-startup-timeout* 120 (integer 1)
   "Seconds to wait for a started Lisp's Swank server. The first start
-compiles Swank, which takes a while.")
+compiles Swank, which takes a while."
+  :category "Lisp")
 
 (defun swank-directory ()
   (asdf:system-relative-pathname :cadre "vendor/slime/"))

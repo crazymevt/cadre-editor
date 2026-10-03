@@ -81,6 +81,7 @@ are files to open in tabs. QUIT-AFTER (seconds) quits automatically, for
 tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
   (load-settings)
   (when init-file (load-init-file))
+  (apply-saved-options)
   (unwind-protect
        (adw:run-application *application-id*
                             (lambda (app) (activate app :project project :files files))

@@ -60,7 +60,7 @@
                               :on-clicked (lambda (b) (declare (ignore b)) (find-step fb -1)))
                   (gtk:button :icon-name "go-down-symbolic" :tooltip-text "Next match"
                               :on-clicked (lambda (b) (declare (ignore b)) (find-step fb 1)))
-                  (gtk:toggle-button :icon-name "edit-find-replace-symbolic" :tooltip-text "Replace"
+                  (gtk:toggle-button :icon-name "cadre-replace-symbolic" :tooltip-text "Replace"
                                      :css-classes '("flat")
                                      :on-clicked (lambda (b)
                                                    (gtk:revealer-set-reveal-child

@@ -8,7 +8,8 @@
 (in-package #:cadre)
 
 (define-option *kill-ring-max* 120 (integer 1)
-  "How many killed texts the kill ring keeps.")
+  "How many killed texts the kill ring keeps."
+  :category "Editing")
 
 (defvar *kill-ring* '() "Killed texts, newest first.")
 (defvar *kill-ring-yank-index* 0 "Which entry M-y yanked last.")

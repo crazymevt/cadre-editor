@@ -9,7 +9,9 @@
    #:*after-command-hook*
    ;; options
    #:define-option #:find-option #:list-options
-   #:option-name #:option-type #:option-default #:option-documentation
+   #:option-name #:option-type #:option-default #:option-documentation #:option-category
+   #:option-title #:option-kind #:option-value #:valid-option-value-p #:set-option-value
+   #:read-option-value #:write-option-value
    ;; text protocol
    #:text-length #:text-string #:text-insert #:text-delete #:text-char
    #:text-point #:text-modified-p #:text-replace-contents

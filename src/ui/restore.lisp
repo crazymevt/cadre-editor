@@ -11,10 +11,12 @@
 (in-package #:cadre-ui)
 
 (define-option *restore-session* t boolean
-  "Reopen a project's files, splits and panel as they were when Cadre last closed.")
+  "Reopen a project's files, splits and panel as they were when Cadre last closed."
+  :category "Session")
 
 (define-option *restore-lisp* t boolean
-  "When restoring a session, start the Lisp again if one was running.")
+  "When restoring a session, start the Lisp again if one was running."
+  :category "Session")
 
 (defparameter *remembered-projects* 30)
 

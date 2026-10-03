@@ -821,6 +821,17 @@ prompt, and `--json-schema` asking for `{replacement, explanation}`.
 | **M4 — Claude** | CLI driver (sign-in check, streaming, resume), MCP server with the tools that read, approval prompts, chat panel with context, `propose_edit` with inline diff | Fix a compiler error by asking Claude, accept the diff |
 | **M5 — Emacs depth** | Paredit, kill ring, incremental search/query-replace, keyboard macros, `:emacs` keybindings, splits, session restore, editor REPL | An Emacs user can switch |
 | **M6 — 1.0** | Agent mode, themes, settings page, packaging (macOS `.app`, Flatpak, Windows installer) using the gtk4 deployment tools | Shipped executables on three platforms |
+
+**As built (M6):** agent mode, themes, the settings page and reloading
+changed files are done; packaging waits until Cadre is more feature
+complete. Agent mode is the same chat with a different appended prompt,
+`TodoWrite` and `Task` allowed, the agent model, and five more editor tools
+(`compile_defun`, `load_system`, `run_tests`, `open_file`, `save_file`);
+switching modes restarts the CLI with `--resume`, so the conversation goes
+on. Options carry a category, and their type decides the editing widget;
+the page saves to `settings.sexp` under `:options`. Themes are data
+(`define-theme`), may inherit faces, and every color in the UI comes from
+them.
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop

@@ -10,70 +10,6 @@
 
 (in-package #:cadre-ui)
 
-;;; Themes: face → text tag properties. Both themes set the same properties
-;;; for each face, so switching between them leaves nothing behind.
-
-(defparameter *light-theme*
-  '((:comment :foreground "#7c828c" :style :italic)
-    (:string :foreground "#2a7a2f" :style :normal)
-    (:number :foreground "#b35c00" :style :normal)
-    (:character :foreground "#b35c00" :style :normal)
-    (:keyword :foreground "#8a3fb1" :style :normal)
-    (:builtin :foreground "#1d5fb8" :style :normal)
-    (:definer :foreground "#a3299e" :style :normal)
-    (:definition-name :foreground "#0b6e80" :style :normal)
-    (:special-variable :foreground "#b8322a" :style :normal)
-    (:constant :foreground "#b35c00" :style :normal)
-    (:lambda-keyword :foreground "#8a3fb1" :style :normal)
-    (:reader-conditional :foreground "#7c828c" :style :italic)
-    (:quote :foreground "#8a3fb1" :style :normal)
-    (:invalid :foreground "#ffffff" :style :normal :background "#d0312d")
-    (:macro :foreground "#1d5fb8" :style :normal)
-    (:undefined-function :underline :single :underline-rgba "#d0312d")
-    ((:paren 0) :foreground "#a35a1c")
-    ((:paren 1) :foreground "#2b6cb0")
-    ((:paren 2) :foreground "#2f855a")
-    ((:paren 3) :foreground "#9b2c9b")
-    ((:paren 4) :foreground "#b7791f")
-    ((:paren 5) :foreground "#2c7a7b")
-    (:current-line :paragraph-background "#f2f4f7")
-    (:search :background "#fff1a8")
-    (:search-current :background "#ffc94d")
-    (:paren-match :background "#cfe3ff" :weight 700)
-    (:paren-mismatch :background "#ffc9c9" :weight 700)))
-
-(defparameter *dark-theme*
-  '((:comment :foreground "#7f848e" :style :italic)
-    (:string :foreground "#98c379" :style :normal)
-    (:number :foreground "#d19a66" :style :normal)
-    (:character :foreground "#d19a66" :style :normal)
-    (:keyword :foreground "#c678dd" :style :normal)
-    (:builtin :foreground "#61afef" :style :normal)
-    (:definer :foreground "#e386d8" :style :normal)
-    (:definition-name :foreground "#e5c07b" :style :normal)
-    (:special-variable :foreground "#e06c75" :style :normal)
-    (:constant :foreground "#d19a66" :style :normal)
-    (:lambda-keyword :foreground "#c678dd" :style :normal)
-    (:reader-conditional :foreground "#7f848e" :style :italic)
-    (:quote :foreground "#c678dd" :style :normal)
-    (:invalid :foreground "#ffffff" :style :normal :background "#be3a34")
-    (:macro :foreground "#61afef" :style :normal)
-    (:undefined-function :underline :single :underline-rgba "#ff6b66")
-    ((:paren 0) :foreground "#d19a66")
-    ((:paren 1) :foreground "#61afef")
-    ((:paren 2) :foreground "#98c379")
-    ((:paren 3) :foreground "#c678dd")
-    ((:paren 4) :foreground "#e5c07b")
-    ((:paren 5) :foreground "#56b6c2")
-    (:current-line :paragraph-background "#2a2d33")
-    (:search :background "#5c4d18")
-    (:search-current :background "#9a7612")
-    (:paren-match :background "#3d4c66" :weight 700)
-    (:paren-mismatch :background "#6b2626" :weight 700)))
-
-(defun current-theme ()
-  (if (adw:dark-p) *dark-theme* *light-theme*))
-
 (defparameter *image-faces* '(:macro :undefined-function)
   "Faces from what the connected Lisp knows (image-faces.lisp).")
 
@@ -95,16 +31,10 @@
 (defun face-tag (gtk-buffer face)
   (gtk:text-tag-table-lookup (gtk:text-buffer-get-tag-table gtk-buffer) (tag-name face)))
 
-(defun style-tag (tag properties)
-  (loop for (key value) on properties by #'cddr
-        do (setf (gobject:property tag key)
-                 (if (eq key :underline-rgba) (hex-rgba value) value))))
-
 (defun style-buffer-tags (gtk-buffer)
-  (let ((theme (current-theme)))
-    (dolist (face *tag-faces*)
-      (let ((tag (face-tag gtk-buffer face)))
-        (when tag (style-tag tag (rest (assoc face theme :test #'equal))))))))
+  (dolist (face *tag-faces*)
+    (let ((tag (face-tag gtk-buffer face)))
+      (when tag (restyle-tag tag face)))))
 
 (defun ensure-tags (gtk-buffer)
   "Give GTK-BUFFER Cadre's tags, once."
@@ -115,12 +45,14 @@
       (style-buffer-tags gtk-buffer))))
 
 (defun restyle-all-buffers ()
-  (dolist (buffer (buffer-list))
-    (when (typep (buffer-text buffer) 'gtk:text-buffer)
-      (style-buffer-tags (buffer-text buffer))
-      (style-note-tags (buffer-text buffer))
-      (when (eq (buffer-major-mode buffer) 'repl-mode)
-        (style-repl-tags (buffer-text buffer))))))
+  (dolist (gtk-buffer (append (loop for buffer in (buffer-list)
+                                    when (typep (buffer-text buffer) 'gtk:text-buffer)
+                                      collect (buffer-text buffer))
+                              (remove nil (list (and *inspector* (inspector-buffer))))
+                              (loop for review in *reviews*
+                                    when (rv-gtk-buffer review) collect (rv-gtk-buffer review))))
+    (style-buffer-tags gtk-buffer)
+    (restyle-named-tags gtk-buffer)))
 
 ;;; Keeping the syntax in step with the text
 
@@ -269,8 +201,9 @@ faces that come from what the connected Lisp knows."
                     (setf (buffer-local buffer :paren-ranges) (list (list l1 c1) (list l2 c2)))))))))))))
 
 (defun setup-theme-following ()
-  "Restyle every buffer's tags when the light/dark style changes."
+  "Use the current theme now, and again when the light/dark style changes."
+  (load-user-themes)
+  (apply-theme)
   (gobject:connect (adw:style-manager-get-default) "notify::dark"
                    (lambda (manager pspec) (declare (ignore manager pspec))
-                     (restyle-all-buffers)
-                     (style-inspector-tags))))
+                     (apply-theme))))

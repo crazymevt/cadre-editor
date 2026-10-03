@@ -18,22 +18,8 @@
   (case (severity-rank severity) (0 :note-error) (1 :note-warning) (t :note-style)))
 
 (defun ensure-note-tags (gtk-buffer)
-  (let ((table (gtk:text-buffer-get-tag-table gtk-buffer)))
-    (unless (gtk:text-tag-table-lookup table "cadre-note-error")
-      (dolist (face *note-faces*)
-        (gtk:text-tag-table-add table (make-instance 'gtk:text-tag :name (tag-name face) :underline :error)))
-      (style-note-tags gtk-buffer))))
-
-(defun hex-rgba (string)
-  (let ((rgba (gdk:make-rgba)))
-    (gdk:rgba-parse rgba string)
-    rgba))
-
-(defun style-note-tags (gtk-buffer)
-  (loop for face in *note-faces*
-        for color in (if (adw:dark-p) '("#ff6b66" "#e5a50a" "#7f848e") '("#d0312d" "#c27c0e" "#8a8f98"))
-        do (let ((tag (face-tag gtk-buffer face)))
-             (when tag (setf (gobject:property tag :underline-rgba) (hex-rgba color))))))
+  (dolist (face *note-faces*)
+    (ensure-face-tag gtk-buffer (tag-name face) face)))
 
 (defun note-buffer (shown)
   (or (and (sn-buffer shown) (member (sn-buffer shown) (buffer-list)) (sn-buffer shown))

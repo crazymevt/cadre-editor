@@ -13,7 +13,8 @@
   "Keep parentheses balanced while typing.")
 
 (define-option *paredit* nil boolean
-  "Turn on paredit mode in Lisp buffers and REPLs.")
+  "Turn on paredit mode in Lisp buffers and REPLs."
+  :category "Editing")
 
 (defparameter *paredit-major-modes* '(lisp-mode repl-mode editor-repl-mode))
 
@@ -27,6 +28,7 @@
   "Turn paredit mode on or off, in every Lisp buffer and REPL."
   (setf *paredit* (not *paredit*)
         (setting :paredit) *paredit*)
+  (save-option '*paredit*)
   (dolist (buffer (buffer-list))
     (when (member (buffer-major-mode buffer) *paredit-major-modes*)
       (set-minor-mode buffer 'paredit-mode *paredit*)))

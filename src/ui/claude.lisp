@@ -19,16 +19,41 @@ Change files only with propose_edit: the user reviews each edit as an inline dif
 edit small and focused, one call per change. After an edit is accepted and saved, you can
 compile_file to check it. eval runs code in the user's image after they approve it.")
 
+(defparameter *claude-agent-prompt*
+  "You are in agent mode: carry the user's task through to the end rather than stopping to ask
+at each step. Keep a plan with TodoWrite and update it as you go. Read before you change: use
+read_buffer and the Swank tools. Make each change with propose_edit; once accepted, save_file if
+needed, then check it with compile_defun or compile_file, and run_tests when the project has tests.
+Fix what fails and check again. Use open_file to show the user the code you mean. Finish with a
+short summary of what changed and anything left to do.")
+
+(define-option *claude-agent-model* "opus" string
+  "The model for agent mode, chosen when you switch the Claude panel to Agent."
+  :category "Claude")
+
 (defparameter *claude-allowed-tools*
   '("Read" "Grep" "Glob" "ToolSearch" "mcp__cadre__list_buffers" "mcp__cadre__read_buffer" "mcp__cadre__current_context"
     "mcp__cadre__get_problems" "mcp__cadre__get_backtrace" "mcp__cadre__describe_symbol"
     "mcp__cadre__arglist" "mcp__cadre__find_definitions" "mcp__cadre__who_calls"
     "mcp__cadre__who_references" "mcp__cadre__macroexpand" "mcp__cadre__apropos"
-    "mcp__cadre__list_systems" "mcp__cadre__propose_edit" "mcp__cadre__eval" "mcp__cadre__compile_file")
+    "mcp__cadre__list_systems" "mcp__cadre__propose_edit" "mcp__cadre__eval" "mcp__cadre__compile_file"
+    "mcp__cadre__compile_defun" "mcp__cadre__load_system" "mcp__cadre__run_tests" "mcp__cadre__open_file"
+    "mcp__cadre__save_file")
   "Tools Claude may use without Claude Code asking first. propose_edit, eval and
 compile_file ask in Cadre themselves.")
 
+(defparameter *claude-agent-allowed-tools* '("TodoWrite" "Task")
+  "Tools agent mode also allows without asking.")
+
+(define-option *claude-direct-edits* nil boolean
+  "Let Claude Code write files itself with its Edit and Write tools (each asks first), instead
+of proposing every change for review. Open files reload when they change on disk."
+  :category "Claude")
+
 (defparameter *claude-disallowed-tools* '("Edit" "Write" "NotebookEdit" "MultiEdit"))
+
+(defun claude-disallowed-tools ()
+  (if *claude-direct-edits* '() *claude-disallowed-tools*))
 
 ;;; State
 
@@ -40,6 +65,10 @@ compile_file ask in Cadre themselves.")
 
 (defstruct (chat (:conc-name chat-))
   process session-id (started nil) (busy nil) (cost 0)
+  (mode :chat)                          ; :chat or :agent
+  (process-mode nil)                    ; the mode the running process was started in
+  mode-dropdown
+  (plan-box nil)                        ; the checklist of Claude's current plan (TodoWrite)
   messages scroller input send-button status model-dropdown stack composer
   context-file context-problems context-debugger
   (stream-box nil)                      ; the box of the reply being streamed
@@ -76,6 +105,7 @@ compile_file ask in Cadre themselves.")
          (send (make-instance 'gtk:button :label "Send" :valign :end :css-classes '("suggested-action")))
          (status (make-instance 'gtk:label :xalign 0.0 :hexpand t :ellipsize :end :css-classes '("dim-label")))
          (models (gtk:drop-down-new-from-strings (coerce *claude-models* 'list)))
+         (modes (gtk:drop-down-new-from-strings '("Chat" "Agent")))
          (file (make-instance 'gtk:toggle-button :label "File" :active t :css-classes '("flat")
                                                  :tooltip-text "Tell Claude which file you are in, where the cursor is, and the selection"))
          (problems (make-instance 'gtk:toggle-button :label "Problems" :css-classes '("flat")
@@ -84,11 +114,16 @@ compile_file ask in Cadre themselves.")
                                                      :tooltip-text "Attach the debugger's condition and backtrace"))
          (stack (make-instance 'gtk:stack :vexpand t))
          (chat (make-chat :messages messages :scroller scroller :input input :send-button send :status status
-                          :model-dropdown models :stack stack :context-file file :context-problems problems
+                          :model-dropdown models :mode-dropdown modes
+                          :stack stack :context-file file :context-problems problems
                           :context-debugger debugger :session-id (make-uuid))))
     (setf *chat* chat)
     (let ((model (position *claude-model* *claude-models* :test #'string=)))
       (when model (gtk:drop-down-set-selected models model)))
+    (gtk:widget-set-tooltip-text modes "Chat answers questions and proposes edits. Agent works through a larger task: it plans, edits, compiles and runs the tests, asking before each change.")
+    (gobject:connect modes "notify::selected"
+                     (lambda (d pspec) (declare (ignore pspec))
+                       (set-chat-mode (if (= 1 (gtk:drop-down-get-selected d)) :agent :chat))))
     (gobject:connect send :clicked (lambda (b) (declare (ignore b))
                                      (if (chat-busy chat) (call-command 'claude-stop) (call-command 'chat-send))))
     (let ((keys (gtk:event-controller-key-new)))
@@ -121,6 +156,7 @@ compile_file ask in Cadre themselves.")
       (gtk:box :orientation :vertical
         (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-top 2 :margin-bottom 2
           status
+          modes
           models
           (gtk:button :icon-name "cadre-document-new-symbolic" :tooltip-text "New conversation"
                       :css-classes '("flat")
@@ -309,7 +345,8 @@ chat or what is missing. THEN is called if Claude is ready."
     (chat-set-status
      (cond ((chat-busy *chat*) "Claude is working…")
            ((not (claude-ready-p)) (if *claude-status* "Claude Code is not ready" ""))
-           (t (format nil "~a~@[ · $~,4f this conversation~]" (claude-status-version *claude-status*)
+           (t (format nil "~:[~;Agent · ~]~a~@[ · $~,4f this conversation~]" (eq (chat-mode *chat*) :agent)
+                      (claude-status-version *claude-status*)
                       (and (plusp (chat-cost *chat*)) (chat-cost *chat*))))))
     (gtk:button-set-label (chat-send-button *chat*) (if (chat-busy *chat*) "Stop" "Send"))
     (gtk:widget-set-css-classes (chat-send-button *chat*)
@@ -443,7 +480,51 @@ chat or what is missing. THEN is called if Claude is ready."
                               (jget input "file_path") (jget input "pattern") (jget input "command"))))
                    (and (stringp v) (substitute #\Space #\Newline (if (> (length v) 80) (subseq v 0 80) v))))))))
 
+(defun set-chat-mode (mode)
+  "Switch the Claude panel to MODE, :chat or :agent. The conversation carries on;
+the next message restarts Claude Code with that mode's tools and model."
+  (unless (eq mode (chat-mode *chat*))
+    (setf (chat-mode *chat*) mode)
+    (let ((i (position (if (eq mode :agent) *claude-agent-model* *claude-model*) *claude-models* :test #'string=)))
+      (when i (gtk:drop-down-set-selected (chat-model-dropdown *chat*) i)))
+    (unless (= (gtk:drop-down-get-selected (chat-mode-dropdown *chat*)) (if (eq mode :agent) 1 0))
+      (gtk:drop-down-set-selected (chat-mode-dropdown *chat*) (if (eq mode :agent) 1 0)))
+    (chat-update-status)
+    (chat-note (if (eq mode :agent)
+                   "Agent mode: Claude works through the task, planning, editing, compiling and testing. Each edit, evaluation, compile and test run still asks you first."
+                   "Chat mode."))))
+
+(defun todo-mark (status)
+  (cond ((equal status "completed") "☑")
+        ((equal status "in_progress") "◐")
+        (t "☐")))
+
+(defun show-plan (input)
+  "Show Claude's plan (TodoWrite's todos) as a checklist, updated in place."
+  (let ((todos (and (jobject-p input) (jlist (jget input "todos")))))
+    (when todos
+      (let ((box (or (chat-plan-box *chat*)
+                     (let ((box (make-instance 'gtk:box :orientation :vertical :spacing 2
+                                                        :css-classes '("cadre-chat-plan"))))
+                       (setf (chat-plan-box *chat*) box (chat-stream-box *chat*) nil)
+                       (chat-append box)
+                       box))))
+        (clear-box box)
+        (gtk:box-append box (make-instance 'gtk:label :label "Plan" :xalign 0.0 :css-classes '("heading")))
+        (dolist (todo todos)
+          (let ((status (jget todo "status")))
+            (gtk:box-append box (make-instance 'gtk:label
+                                               :label (format nil "~a ~a" (todo-mark status)
+                                                              (or (and (equal status "in_progress") (jget todo "activeForm"))
+                                                                  (jget todo "content")))
+                                               :xalign 0.0 :wrap t
+                                               :css-classes (if (equal status "completed") '("dim-label") '())))))
+        (chat-scroll-to-end)))))
+
 (defun chat-tool-row (id name input)
+  (when (equal name "TodoWrite")
+    (show-plan input)
+    (return-from chat-tool-row nil))
   (let ((entry (gethash id (chat-tools *chat*))))
     (if entry
         (gtk:expander-set-label (car entry) (format nil "⚙ ~a" (tool-summary name input)))
@@ -494,12 +575,16 @@ chat or what is missing. THEN is called if Claude is ready."
     (chat-update-status)))
 
 (defun ensure-claude-process ()
-  "The conversation's process, started (or resumed) if needed."
+  "The conversation's process, started (or resumed) if needed. A process
+started in the other mode is replaced, resuming the same conversation."
+  (when (and (claude-alive-p (chat-process *chat*)) (not (eq (chat-process-mode *chat*) (chat-mode *chat*))))
+    (stop-claude (chat-process *chat*)))
   (or (and (claude-alive-p (chat-process *chat*)) (chat-process *chat*))
       (progn
         (ensure-mcp-server)
         (let* ((resume (and (chat-started *chat*) (chat-session-id *chat*)))
                (model (nth (gtk:drop-down-get-selected (chat-model-dropdown *chat*)) *claude-models*))
+               (agent (eq (chat-mode *chat*) :agent))
                (process nil))
           (setf process
                 (start-claude (claude-arguments :session-id (unless resume (chat-session-id *chat*))
@@ -507,9 +592,12 @@ chat or what is missing. THEN is called if Claude is ready."
                                                 :model model :effort *claude-effort*
                                                 :mcp-config *mcp-config*
                                                 :permission-tool "mcp__cadre__approve"
-                                                :allowed-tools *claude-allowed-tools*
-                                                :disallowed-tools *claude-disallowed-tools*
-                                                :system-prompt *claude-system-prompt*
+                                                :allowed-tools (append *claude-allowed-tools*
+                                                                       (and agent *claude-agent-allowed-tools*))
+                                                :disallowed-tools (claude-disallowed-tools)
+                                                :system-prompt (if agent
+                                                                   (format nil "~a~%~%~a" *claude-system-prompt* *claude-agent-prompt*)
+                                                                   *claude-system-prompt*)
                                                 :isolated *claude-isolated*)
                               :program (claude-status-program *claude-status*)
                               :directory (or (window-project *window*) (user-homedir-pathname))
@@ -519,6 +607,7 @@ chat or what is missing. THEN is called if Claude is ready."
                               :on-stderr (lambda (line) (panel-log-raw (window-panel *window*) (format nil "claude: ~a" line)))
                               :on-exit (lambda (code) (claude-exited process code))))
           (setf (chat-process *chat*) process
+                (chat-process-mode *chat*) (chat-mode *chat*)
                 (chat-started *chat*) t)
           process))))
 
@@ -603,6 +692,11 @@ chat or what is missing. THEN is called if Claude is ready."
   "Show the Claude panel, to chat with Claude about your code."
   (show-claude-page :focus t))
 
+(define-command claude-agent ()
+  "Show the Claude panel in agent mode, for a larger task."
+  (show-claude-page :focus t)
+  (set-chat-mode :agent))
+
 (define-command chat-send ()
   "Send what is typed in the Claude panel."
   (let* ((input (gtk:text-view-get-buffer (chat-input *chat*)))
@@ -638,7 +732,8 @@ chat or what is missing. THEN is called if Claude is ready."
   (clrhash *session-allowed*)
   (clrhash (chat-tools *chat*))
   (setf (chat-process *chat*) nil (chat-busy *chat*) nil (chat-started *chat*) nil
-        (chat-session-id *chat*) (make-uuid) (chat-cost *chat*) 0 (chat-stream-box *chat*) nil)
+        (chat-session-id *chat*) (make-uuid) (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
+        (chat-plan-box *chat*) nil)
   (clear-box (chat-messages *chat*))
   (show-claude-intro)
   (chat-update-status))

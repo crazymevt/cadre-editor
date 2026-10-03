@@ -720,6 +720,33 @@
   (call-command 'cadre-ui::claude-new-chat)
   (check "a new conversation starts empty" (not (chat-says "Context:"))))
 
+(then 300
+  (cadre-ui::set-chat-mode :agent)
+  (check "Agent mode picks the agent model"
+         (string= "opus" (nth (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*))
+                              cadre-ui::*claude-models*)))
+  (chat-type "agent check"))
+
+(then-when ((chat-says "Mode:"))
+  (check "Agent mode starts Claude Code with the agent prompt and tools"
+         (chat-says "agent=yes todo=yes model=opus")
+         (find-if (lambda (s) (search "Mode:" s)) (chat-texts)))
+  (setf (gethash "compile" cadre-ui::*session-allowed*) t)
+  (chat-type "make a plan"))
+
+(then-when ((chat-says "Compiled:"))
+  (check "TodoWrite shows Claude's plan as a checklist"
+         (let ((box (cadre-ui::chat-plan-box cadre-ui::*chat*)))
+           (and box (member "◐ Compiling area" (label-texts box) :test #'equal)
+                (member "☑ Read area" (label-texts box) :test #'equal)))
+         (let ((box (cadre-ui::chat-plan-box cadre-ui::*chat*))) (and box (label-texts box))))
+  (check "open_file shows the file" (string= "m1.lisp" (buffer-name (view-buffer (cadre-ui::selected-view *window*)))))
+  (check "compile_defun compiles a form in the Lisp" (chat-says "Compiled: Compiled.")
+         (find-if (lambda (s) (search "Compiled:" s)) (chat-texts)))
+  (screenshot "21-agent")
+  (cadre-ui::set-chat-mode :chat)
+  (check "back to chat mode" (eq :chat (cadre-ui::chat-mode cadre-ui::*chat*))))
+
 (then 500
   (screenshot "10-repl")
   (call-command 'disconnect))
@@ -945,6 +972,75 @@ d" 0 0)
                      when (and (find-command s) (not (eq s 'cadre:lisp-mode))) collect s)))
   (call-command 'close-tab)
   (setf *keybinding-profile* :standard))
+
+;;; M6: themes, settings, files changed on disk
+(defun tag-color (buffer face)
+  (let ((tag (cadre-ui::face-tag (buffer-text buffer) face)))
+    (and (gobject:property tag :foreground-set)
+         (gdk:rgba-to-string (gobject:property tag :foreground-rgba)))))
+
+(then 300
+  (setf cadre-ui::*light-theme* "solarized-light" cadre-ui::*color-scheme* :light)
+  (cadre-ui::apply-theme))
+
+(then 300
+  (check "a theme colors the syntax" (equal "rgb(147,161,161)" (tag-color (find-buffer "m1.lisp") :comment))
+         (tag-color (find-buffer "m1.lisp") :comment))
+  (check "a theme with a background colors the editor" cadre-ui::*theme-provider*)
+  (screenshot "22-solarized")
+  (setf cadre-ui::*dark-theme* "high-contrast-dark" cadre-ui::*color-scheme* :dark)
+  (cadre-ui::apply-theme))
+
+(then 300
+  (check "faces a theme leaves out come from the theme it inherits"
+         (equal "rgb(127,132,142)" (tag-color (find-buffer "m1.lisp") :reader-conditional))
+         (tag-color (find-buffer "m1.lisp") :reader-conditional))
+  (setf cadre-ui::*light-theme* "cadre-light" cadre-ui::*dark-theme* "cadre-dark" cadre-ui::*color-scheme* :system)
+  (cadre-ui::apply-theme)
+  (call-command 'cadre-ui::settings))
+
+(defun settings-row (title)
+  (find-if (lambda (w) (and (typep w 'adw:preferences-row) (equal title (adw:preferences-row-get-title w))))
+           (find-widgets cadre-ui::*settings-dialog* (lambda (w) (typep w 'adw:preferences-row)))))
+
+(then 500
+  (check "the settings page lists the options" (and (settings-row "Paredit") (settings-row "Editor font")))
+  (screenshot "23-settings")
+  (adw:switch-row-set-active (settings-row "Paredit") t)
+  (check "a switch sets its option" cadre-ui::*paredit*)
+  (check "and saves it" (cadre-ui::saved-option-value 'cadre-ui::*paredit*))
+  (check "and applies it" (minor-mode-enabled-p (find-buffer "m1.lisp") 'cadre-ui::paredit-mode))
+  (adw:switch-row-set-active (settings-row "Paredit") nil)
+  (let ((row (settings-row "Kill ring max")))
+    (adw:spin-row-set-value row 50d0)
+    (check "a number field sets its option" (= 50 *kill-ring-max*)))
+  (let ((row (settings-row "Explorer hidden types (Lisp)")))
+    (gtk:editable-set-text row "(\"fasl\" \"tmp\")")
+    (gobject:emit row :apply)
+    (check "a Lisp field reads its value" (equal '("fasl" "tmp") cadre-ui::*explorer-hidden-types*))
+    (gtk:editable-set-text row "(oops")
+    (gobject:emit row :apply)
+    (check "a bad value is refused" (and (equal '("fasl" "tmp") cadre-ui::*explorer-hidden-types*)
+                                         (gtk:widget-has-css-class row "error"))))
+  (setf cadre-ui::*explorer-hidden-types* '("fasl" "dx64fsl" "ufasl" "fas" "lx64fsl") *kill-ring-max* 120)
+  (adw:dialog-close cadre-ui::*settings-dialog*)
+  ;; Files changed on disk
+  (with-open-file (o (merge-pathnames "src/m1.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(defun area (w h)~%  (* w h 1))~%")))
+
+(then-when ((search "(* w h 1)" (buffer-string (find-buffer "m1.lisp"))) :timeout 10)
+  (check "an unmodified buffer reloads when its file changes" (search "(* w h 1)" (buffer-string (find-buffer "m1.lisp"))))
+  (check "and stays unmodified" (not (buffer-modified-p (find-buffer "m1.lisp"))))
+  (check "m5.lisp has unsaved changes" (buffer-modified-p (find-buffer "m5.lisp")))
+  (with-open-file (o (merge-pathnames "src/m5.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "changed elsewhere~%")))
+
+(then-when ((gtk:revealer-get-reveal-child cadre-ui::*conflict-bar*) :timeout 10)
+  (check "a modified buffer whose file changes shows the conflict bar" (gtk:revealer-get-reveal-child cadre-ui::*conflict-bar*))
+  (screenshot "24-conflict")
+  (cadre-ui::resolve-conflict :keep)
+  (check "keeping mine leaves the buffer alone" (not (search "changed elsewhere" (buffer-string (find-buffer "m5.lisp")))))
+  (check "and hides the bar" (not (gtk:revealer-get-reveal-child cadre-ui::*conflict-bar*))))
 
 (setf *steps* (reverse *steps*))
 

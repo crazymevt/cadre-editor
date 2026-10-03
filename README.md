@@ -3,7 +3,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M5 (Emacs depth). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M6 (without packaging, which waits until Cadre is more complete). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -36,6 +36,8 @@ for the design and the milestones.
   search and query-replace (and replace in the find bar), keyboard macros,
   numeric arguments, help about keys and commands, split editors, session
   restore, and a REPL in Cadre's own image.
+- **M6:** a settings page for every option, color themes (with a light and a
+  dark choice), Claude's agent mode, and reloading files changed on disk.
 
 ## Running
 
@@ -134,6 +136,15 @@ and Claude Code's own commands (Bash, web fetches), ask first in the chat:
 *Allow Once*, *Allow for This Conversation* or *Deny*. Claude never runs code
 in Cadre's own Lisp.
 
+The panel's **Chat / Agent** switch picks the mode. In **Agent** mode Claude
+works through a larger task: it keeps a plan (shown as a checklist in the
+chat), edits through `propose_edit`, saves, compiles forms or files, loads
+systems and runs the tests, and shows you code with `open_file`. Each edit,
+evaluation, compile, load and test run still asks you first (unless you
+allow it for the conversation). Agent mode uses `*claude-agent-model*`
+(default `opus`). `*claude-direct-edits*` lets Claude Code write files
+itself, each write approved in the chat; open files reload afterwards.
+
 `*claude-model*` (default `sonnet`, also in the panel's menu), `*claude-effort*`
 and `*claude-isolated*` (ignore your own Claude Code settings and MCP servers)
 are options for your init file.
@@ -190,6 +201,30 @@ Cadre remembers each folder's open files, splits, cursor positions, panel and
 sidebar, and whether a Lisp was running, and restores them the next time you
 open that folder (without naming files). Turn this off with
 `*restore-session*`, or just the Lisp with `*restore-lisp*`.
+
+### Settings and themes
+
+*Settings…* in the menu (`Ctrl+,`, or `M-x settings` / `M-x customize`)
+lists every option by category, with search. Changes apply at once where
+they can and are saved to `~/.config/cadre/settings.sexp`; each row has a
+button that puts the option back to its default. Choices made there are
+applied after `init.lisp`, so they win.
+
+*Color Theme…* (`M-x choose-theme`) picks a theme: Cadre Light and Dark,
+Solarized Light and Dark, and High Contrast Dark. Cadre keeps a preferred
+light theme and a preferred dark one and follows the system's style, unless
+*Color scheme* is set to Light or Dark (`M-x toggle-dark-style` switches).
+Write your own with `define-theme` in `~/.config/cadre/themes/*.lisp`:
+
+```lisp
+(cadre-ui::define-theme my-dark (:dark t :background "#1b1b1b" :foreground "#d0d0d0")
+  (:comment :foreground "#6a9955" :style :italic)
+  (:string :foreground "#ce9178"))     ; faces left out come from Cadre Dark
+```
+
+Open files that change on disk reload by themselves when they have no
+unsaved changes; otherwise a bar offers *Reload*, *Keep Mine* or *Compare*
+(an inline diff of the version on disk).
 
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server

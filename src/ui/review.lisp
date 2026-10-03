@@ -35,14 +35,8 @@
                           :on-clicked (lambda (b) (declare (ignore b)) (call-command 'accept-edit))))))))
 
 (defun ensure-diff-tags (gtk-buffer)
-  (let ((table (gtk:text-buffer-get-tag-table gtk-buffer))
-        (dark (adw:dark-p)))
-    (unless (gtk:text-tag-table-lookup table "cadre-diff-added")
-      (gtk:text-tag-table-add table (make-instance 'gtk:text-tag :name "cadre-diff-added"
-                                                                 :paragraph-background (if dark "#1f3d2a" "#dcf5e3")))
-      (gtk:text-tag-table-add table (make-instance 'gtk:text-tag :name "cadre-diff-removed"
-                                                                 :paragraph-background (if dark "#4a2326" "#fbe0e0")
-                                                                 :strikethrough t)))))
+  (ensure-face-tag gtk-buffer "cadre-diff-added" :diff-added)
+  (ensure-face-tag gtk-buffer "cadre-diff-removed" :diff-removed))
 
 (defun merged-review-buffer (buffer diff)
   "A new gtk:text-buffer showing DIFF (from diff-lines), highlighted like BUFFER."

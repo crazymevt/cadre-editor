@@ -78,6 +78,7 @@
     (".cadre-panel" :background-color "@view_bg_color")
     (".cadre-panel-switcher button" :padding ("2px" "10px") :min-width "0")
     (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
+    (".cadre-conflict-bar" :background-color "alpha(@warning_bg_color, 0.2)")
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))
     (".cadre-chat-code" :background-color "alpha(@view_fg_color, 0.06)" :border-radius "6px"
@@ -85,6 +86,7 @@
     (".cadre-chat-approval" :background-color "alpha(@warning_bg_color, 0.25)" :border-radius "8px"
                             :padding "8px")
     (".cadre-chat-tool" :opacity "0.8")
+    (".cadre-chat-plan" :background-color "alpha(@accent_bg_color, 0.08)" :border-radius "8px" :padding "8px")
     (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
                             :padding ("0" "6px") :font-family "monospace")))
 
@@ -93,13 +95,23 @@
   (gtk:icon-theme-add-search-path (gtk:icon-theme-get-for-display (gdk:display-get-default))
                                   (namestring (asdf:system-relative-pathname :cadre "icons/"))))
 
-(defun install-css ()
-  (gtk:add-css *css*)
-  ;; The editor font comes from an option, so it is written separately.
+(defvar *font-provider* nil)
+
+(defun install-font-css ()
+  "Use *editor-font* in editors (again, after it changes)."
+  (when *font-provider*
+    (gtk:style-context-remove-provider-for-display (gdk:display-get-default) *font-provider*))
   (let* ((font *editor-font*)
          (space (position #\Space font :from-end t)))
-    (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text { font-family: ~a; font-size: ~a; }"
-                         (subseq font 0 space) (subseq font (1+ space))))))
+    (setf *font-provider*
+          (gtk:add-css (if space
+                           (format nil "textview.cadre-editor, textview.cadre-editor text { font-family: ~a; font-size: ~a; }"
+                                   (subseq font 0 space) (subseq font (1+ space)))
+                           (format nil "textview.cadre-editor, textview.cadre-editor text { font-family: ~a; }" font))))))
+
+(defun install-css ()
+  (gtk:add-css *css*)
+  (install-font-css))
 
 (defun app-menu ()
   (let ((menu (gio:menu-new))
@@ -127,6 +139,8 @@
       (item lisp "Macroexpand" 'expand-macro-once)
       (item lisp "Restart Lisp" 'restart-lisp)
       (item lisp "Chat with Claude" 'claude)
+      (item app "Settings…" 'settings)
+      (item app "Color Theme…" 'choose-theme)
       (item app "Keyboard Shortcuts: Standard" 'use-standard-keys)
       (item app "Keyboard Shortcuts: Emacs" 'use-emacs-keys)
       (item app "Quit" 'quit))
@@ -267,6 +281,7 @@ and, if given, LABEL."
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
                                        (make-review-bar)
+                                       (make-conflict-bar)
                                        (find-bar-widget (window-find-bar win))
                                        groups-holder))
                              "tabs"))

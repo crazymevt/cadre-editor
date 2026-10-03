@@ -197,6 +197,7 @@ THEN, if given, is called with the view once the file is showing."
   (let ((new (if (eq (window-layout *window*) :vertical) :horizontal :vertical)))
     (setf *layout* new
           (setting :layout) new)
+    (save-option '*layout*)
     (unless (panel-visible-p *window*) (set-panel-visible *window* t))
     (apply-layout *window*)
     (message "~:[Horizontal~;Vertical~] layout" (eq new :vertical))))
@@ -205,6 +206,7 @@ THEN, if given, is called with the view once the file is showing."
   "Choose the layout by window width: vertical for wide windows."
   (setf *layout* :auto
         (setting :layout) :auto)
+  (save-option '*layout*)
   (apply-layout *window*)
   (message "Automatic layout: vertical when the window is at least ~d pixels wide"
            *auto-vertical-min-width*))

@@ -331,6 +331,101 @@ must be saved. The user approves this unless they allowed it for the session."
               (format out "~(~a~)~@[ at offset ~d~]: ~a~%" (compiler-note-severity note) (getf place :position)
                       (compiler-note-message note)))))))))
 
+;;; Tools for working through larger tasks (agent mode)
+
+(defun tool-lisp-buffer (name)
+  "The buffer for NAME, opening its file if needed. Any thread."
+  (or (on-main (tool-buffer name))
+      (let ((path (on-main (resolve-path name))))
+        (unless (probe-file path) (tool-error "No file or buffer ~a" name))
+        (wait-for (lambda (done) (open-file-path path :then (lambda (view) (funcall done (view-buffer view)))))))))
+
+(defun notes-report (notes successp verb)
+  (with-output-to-string (out)
+    (format out "~:[~a failed~;~a~]. ~d note~:p.~%" successp verb (length notes))
+    (dolist (note notes)
+      (format out "~(~a~): ~a~%" (compiler-note-severity note) (compiler-note-message note)))))
+
+(define-mcp-tool "compile_defun" (args)
+  "Compile one top-level form of a buffer in the user's running Lisp, as the editor's
+compile-defun does (unsaved changes included), and return the compiler's notes. LINE is
+any line inside the form. The user approves this unless they allowed compiling for the session."
+  (("buffer" "string" "Buffer name or file path" :required t)
+   ("line" "integer" "A line (from 1) inside the top-level form" :required t))
+  (let* ((buffer (tool-lisp-buffer (tool-argument args "buffer" :required t)))
+         (line (1- (tool-argument args "line" :required t))))
+    (multiple-value-bind (text position sl el package filename)
+        (on-main
+          (let ((syntax (or (buffer-syntax buffer) (tool-error "~a is not a Lisp buffer" (buffer-name buffer)))))
+            (multiple-value-bind (sl sc el ec) (toplevel-form-bounds syntax (max 0 line) 0)
+              (unless sl (tool-error "No top-level form at line ~d" (1+ line)))
+              (let ((gtk-buffer (buffer-text buffer)))
+                (values (text-string gtk-buffer (text-line-position gtk-buffer sl sc) (text-line-position gtk-buffer el ec))
+                        (1+ (text-line-position gtk-buffer sl sc)) sl el
+                        (or (buffer-package-name syntax sl) (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))
+                        (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer))))))))
+      (require-approval "compile" "Claude wants to compile" text)
+      (let ((result (swank-sync (swank-call "swank:compile-string-for-emacs" text (on-main (buffer-name buffer))
+                                            (list (list :position position) (list :line (1+ sl) 1))
+                                            filename nil)
+                                :package package :timeout 300)))
+        (multiple-value-bind (notes successp) (parse-compilation-result result)
+          (on-main (show-notes notes :buffer buffer :replace-lines (cons sl el))
+                   (image-changed))
+          (notes-report notes successp "Compiled"))))))
+
+(define-mcp-tool "load_system" (args)
+  "Load an ASDF system (with Quicklisp, if the Lisp has it) in the user's running Lisp, and
+return the output. Systems in the project folder are found. The user approves this unless
+they allowed loading for the session."
+  (("system" "string" "The system's name" :required t))
+  (let ((system (tool-argument args "system" :required t))
+        (directory (on-main (window-project *window*))))
+    (require-approval "load" "Claude wants to load the system" system)
+    (destructuring-bind (output value)
+        (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source (load-system-form directory system)))
+                    :timeout 900)
+      (on-main (image-changed) (refresh-systems))
+      (format nil "~@[Output:~%~a~%~]Value: ~a" (and (plusp (length output)) output) value))))
+
+(define-mcp-tool "run_tests" (args)
+  "Run an ASDF system's tests (asdf:test-system) in the user's running Lisp and return the
+output. The user approves this unless they allowed running tests for the session."
+  (("system" "string" "The system's name" :required t))
+  (let ((system (tool-argument args "system" :required t))
+        (directory (on-main (window-project *window*))))
+    (require-approval "tests" "Claude wants to run the tests of" system)
+    (destructuring-bind (output value)
+        (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source (test-system-form directory system)))
+                    :timeout 1800)
+      (format nil "~@[Output:~%~a~%~]Value: ~a" (and (plusp (length output)) output) value))))
+
+(define-mcp-tool "open_file" (args)
+  "Show a file (or buffer) to the user in the editor, at a line. Use this to point at
+code you are talking about."
+  (("file" "string" "The file path or buffer name" :required t)
+   ("line" "integer" "The line to show (from 1)"))
+  (let ((buffer (tool-lisp-buffer (tool-argument args "file" :required t)))
+        (line (tool-argument args "line")))
+    (on-main
+      (let ((view (show-buffer *window* buffer :focus nil)))
+        (when line (goto-line-column view (max 0 (1- line)) 0 :extend nil))
+        (format nil "Showing ~a~@[ at line ~d~]." (buffer-name buffer) line)))))
+
+(define-mcp-tool "save_file" (args)
+  "Save a buffer's unsaved changes to its file (for instance before compile_file). The
+user approves this unless they allowed saving for the session."
+  (("buffer" "string" "Buffer name or file path" :required t))
+  (let ((buffer (tool-lisp-buffer (tool-argument args "buffer" :required t))))
+    (unless (on-main (buffer-file buffer)) (tool-error "~a has no file" (on-main (buffer-name buffer))))
+    (if (not (on-main (buffer-modified-p buffer)))
+        "It has no unsaved changes."
+        (progn
+          (require-approval "save" "Claude wants to save" (on-main (buffer-name buffer)))
+          (if (wait-for (lambda (done) (write-buffer buffer (buffer-file buffer) done)))
+              (format nil "Saved ~a." (on-main (buffer-name buffer)))
+              (tool-error "Saving failed"))))))
+
 ;;; Claude Code's permission prompts
 
 (defun summarize-tool-input (tool input)

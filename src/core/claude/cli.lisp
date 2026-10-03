@@ -9,17 +9,21 @@
 
 (define-option *claude-program* nil (or null string)
   "The Claude Code CLI. Nil: `claude` on PATH, then ~/.local/bin/claude,
-then the copy inside the Claude desktop app.")
+then the copy inside the Claude desktop app."
+  :category "Claude")
 
 (define-option *claude-model* "sonnet" string
-  "The model for Claude chats: an alias (sonnet, opus, haiku) or a full name.")
+  "The model for Claude chats: an alias (sonnet, opus, haiku) or a full name."
+  :category "Claude")
 
 (define-option *claude-effort* nil (or null string)
-  "The effort level for Claude chats (low, medium, high, xhigh, max), or nil for the default.")
+  "The effort level for Claude chats (low, medium, high, xhigh, max), or nil for the default."
+  :category "Claude")
 
 (define-option *claude-isolated* nil boolean
   "Start Claude without the user's own MCP servers and settings: only the
-project's settings and Cadre's tools.")
+project's settings and Cadre's tools."
+  :category "Claude")
 
 ;;; Random identifiers
 
