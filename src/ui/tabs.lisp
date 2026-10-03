@@ -49,9 +49,14 @@
 (defun add-view (win buffer)
   (let* ((view (make-editor-view buffer :on-cursor-moved
                                  (lambda (view)
+                                   (update-cursor-decorations view)
                                    (when (eq view (selected-view win)) (update-status win)))))
          (gtk-buffer (buffer-text buffer)))
     (setf (gethash (view-widget view) (window-views win)) view)
+    (attach-syntax buffer)
+    (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
+                     (lambda (adjustment) (declare (ignore adjustment))
+                       (schedule-highlight buffer)))
     (adw:tab-view-append (window-tab-view win) (view-widget view))
     (unless (buffer-local buffer :tab-title-handler)
       (setf (buffer-local buffer :tab-title-handler)
@@ -65,7 +70,9 @@
   (let ((tabs (window-tab-view win)))
     (gobject:connect tabs "notify::selected-page"
                      (lambda (tv pspec) (declare (ignore tv pspec))
-                       (update-status win)))
+                       (update-status win)
+                       (when (find-bar-open-p (window-find-bar win))
+                         (find-update (window-find-bar win)))))
     (gobject:connect tabs :close-page
                      (lambda (tv page)
                        (declare (ignore tv))

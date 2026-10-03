@@ -9,9 +9,6 @@
 
 (in-package #:cadre-ui)
 
-(defvar *window* nil
-  "The Cadre window. M0 has one.")
-
 (defclass cadre-window ()
   ((window :reader window-gtk-window)
    (project :initform nil :accessor window-project
@@ -33,6 +30,8 @@
    (layout-button :reader window-layout-button)
    (message-timer :initform nil :accessor window-message-timer)
    (dispatcher :initform (make-key-dispatcher) :reader window-dispatcher)
+   (picker :initform nil :accessor window-picker-object)
+   (find-bar :initform (make-find-bar) :reader window-find-bar)
    (sidebar-toggles :initform '() :accessor window-sidebar-toggles
                     :documentation "Toggle buttons that show the sidebar's state.")
    ;; Layout state (layout.lisp)
@@ -209,6 +208,7 @@ and, if given, LABEL."
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
                                        (adw:tab-bar :view tab-view :autohide nil)
+                                       (find-bar-widget (window-find-bar win))
                                        tab-view))
                              "tabs"))
       (adw:bin-set-child (window-explorer-holder win) (make-no-folder-page))

@@ -52,6 +52,38 @@
                                   (#\s :super-mask) (#\S :shift-mask)))))
       (cadre-ui::handle-key *window* keyval state))))
 
+(defun has-face-p (line column face)
+  "True if the current buffer's text at (LINE, COLUMN) has FACE's tag."
+  (let* ((gtk-buffer (buffer-text (current-buffer)))
+         (tag (cadre-ui::face-tag gtk-buffer face)))
+    (gtk:text-iter-has-tag (cadre-ui::line-iter gtk-buffer line column) tag)))
+
+(defun cursor ()
+  (multiple-value-list (cadre-ui::cursor-line-column (current-view))))
+
+(defun set-cursor (line column)
+  (cadre-ui::goto-line-column (current-view) line column :extend nil))
+
+(defun line-text (line)
+  (text-line-string (buffer-text (current-buffer)) line))
+
+(defun picker () (cadre-ui::window-picker-object *window*))
+
+(defmacro timed (&body body)
+  `(let ((start (get-internal-real-time)))
+     ,@body
+     (round (* 1000 (- (get-internal-real-time) start)) internal-time-units-per-second)))
+
+(defun insert-at-cursor (string)
+  (gtk:text-buffer-insert-at-cursor (buffer-text (current-buffer)) string -1))
+
+(defun cadre-ensure-all ()
+  (let ((syntax (cadre-ui::buffer-syntax (current-buffer))))
+    (ensure-lexed syntax (1- (syntax-line-count syntax)))))
+
+(defun show-buffer-named (name)
+  (cadre-ui::show-buffer *window* (find-buffer name)))
+
 (defun tab-titles ()
   (mapcar #'adw:tab-page-get-title (cadre-ui::window-pages *window*)))
 
@@ -81,6 +113,10 @@
   (format o "(defun hello (name)~%  (format t \"Hello, ~~a!~~%\" name))~%"))
 (with-open-file (o (merge-pathnames "notes.txt" *root*) :direction :output)
   (format o "Some notes.~%"))
+(with-open-file (o (merge-pathnames "src/m1.lisp" *root*) :direction :output)
+  (format o "(defun area (w h)~%  (* w h))~%~%(defvar *x* 1)~%; done~%"))
+(uiop:copy-file (merge-pathnames "../gtk4/src/generated/gtk-functions-1.lisp" (truename "."))
+                (merge-pathnames "src/big.lisp" *root*))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -96,10 +132,16 @@
   (open-file-path (merge-pathnames "notes.txt" *root*)))
 
 (then 1000
-  (check "two tabs open" (equal '("hello.lisp" "notes.txt") (tab-titles)) (tab-titles))
+  (check "two tabs open" (equal '("hello.lisp" "notes.txt") (sort (copy-list (tab-titles)) #'string<))
+         (tab-titles))
   (check "opening an open file reuses its tab"
          (progn (open-file-path (merge-pathnames "notes.txt" *root*))
                 (= 2 (length (tab-titles)))))
+  ;; Files load asynchronously, so either may have opened first.
+  (unless (string= "hello.lisp" (first (tab-titles)))
+    (adw:tab-view-reorder-first (cadre-ui::window-tab-view *window*)
+                                (cadre-ui::view-page *window* (first (cadre-ui::buffer-views *window* (find-buffer "hello.lisp"))))))
+  (show-buffer-named "notes.txt")
   (press "C-S-TAB")
   (check "previous-tab selects hello.lisp"
          (string= "hello.lisp" (buffer-name (view-buffer (current-view)))))
@@ -174,7 +216,110 @@
   (setf cadre-ui::*keybinding-profile* :standard))
 
 (then 300
-  (screenshot "04-end"))
+  (screenshot "04-end")
+  (press "C-w")
+  (open-file-path (merge-pathnames "src/m1.lisp" *root*)))
+
+;;; M1: Lisp editing
+(then 800
+  (check "m1.lisp is open" (string= "m1.lisp" (buffer-name (current-buffer))))
+  (check "defun is highlighted as a definer" (has-face-p 0 1 :definer))
+  (check "the function name is highlighted" (has-face-p 0 7 :definition-name))
+  (check "*x* is highlighted as a special variable" (has-face-p 3 8 :special-variable))
+  (check "comments are highlighted" (has-face-p 4 0 :comment))
+  (check "parens are colored by depth"
+         (and (has-face-p 0 0 '(:paren 0)) (has-face-p 0 12 '(:paren 1))))
+  (check "the cursor's line is highlighted" (has-face-p 0 3 :current-line))
+  (set-cursor 1 9)                      ; just after (* w h)
+  )
+
+(then 300
+  (check "the paren before the cursor and its match are marked"
+         (and (has-face-p 1 2 :paren-match) (has-face-p 1 8 :paren-match)))
+  (set-cursor 0 0)
+  (press "C-M-f")
+  (check "C-M-f moves over the defun" (equal '(1 10) (cursor)) (cursor))
+  (press "C-M-b")
+  (check "C-M-b moves back" (equal '(0 0) (cursor)) (cursor))
+  (set-cursor 0 19)                     ; end of "(defun area (w h)"
+  (press "RET")
+  (check "RET indents the new line as a body" (equal '(1 2) (cursor)) (cursor))
+  (insert-at-cursor "(let ((a 1)")
+  (press "RET")
+  (check "RET aligns let bindings" (equal '(2 8) (cursor)) (cursor))
+  (insert-at-cursor "(b 2))")
+  (gtk:text-buffer-insert (buffer-text (current-buffer))
+                          (cadre-ui::line-iter (buffer-text (current-buffer)) 3 0) "      " -1)
+  (set-cursor 3 0)
+  (press "TAB")
+  (check "TAB fixes a line's indentation" (string= "    (* w h))" (line-text 3)) (line-text 3))
+  (screenshot "05-lisp"))
+
+(then 300
+  (press "C-S-p")
+  (check "C-S-p opens the command palette"
+         (and (picker) (gtk:widget-get-visible (cadre-ui::picker-popover (picker)))))
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "toggle lay"))
+
+(then 300
+  (check "the palette filters by fuzzy match"
+         (string= "Toggle layout"
+                  (command-title (gobject:lisp-object-value
+                                  (gio:list-model-get-item (cadre-ui::picker-store (picker)) 0)))))
+  (screenshot "06-palette")
+  (cadre-ui::choose (picker)))
+
+(then 500
+  (check "choosing a command runs it" (eq :vertical (cadre-ui::window-layout *window*)))
+  (call-command 'toggle-layout)
+  (press "C-p")
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "notes"))
+
+(then 300
+  (cadre-ui::choose (picker)))
+
+(then 800
+  (check "quick open opens a file by name" (string= "notes.txt" (buffer-name (current-buffer))))
+  (call-command 'previous-tab)
+  (press "C-f")
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (cadre-ui::window-find-bar *window*)) "w"))
+
+(then 400
+  (let ((fb (cadre-ui::window-find-bar *window*)))
+    (check "find counts every match"
+           (= 2 (length (cadre-ui::find-bar-matches fb)))
+           (gtk:label-get-text (cadre-ui::find-bar-status fb)))
+    (check "every match is highlighted" (and (has-face-p 0 13 :search) (has-face-p 3 7 :search)))
+    (screenshot "07-find")
+    (let ((before (cadre-ui::find-bar-current fb)))
+      (cadre-ui::find-step fb 1)
+      (check "Enter moves to the next match"
+             (= (mod (1+ before) 2) (cadre-ui::find-bar-current fb))))
+    (cadre-ui::find-close fb)
+    (check "closing the find bar selects the match"
+           (gtk:text-buffer-get-has-selection (buffer-text (current-buffer))))
+    (setf (buffer-modified-p (current-buffer)) nil)
+    (call-command 'close-tab)
+    (open-file-path (merge-pathnames "src/big.lisp" *root*))))
+
+(then 2000
+  (check "big.lisp is open" (string= "big.lisp" (buffer-name (current-buffer))))
+  (let* ((view (current-view))
+         (gtk-buffer (buffer-text (current-buffer)))
+         (lines (gtk:text-buffer-get-line-count gtk-buffer))
+         (end-ms (timed (gtk:text-buffer-place-cursor gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer))
+                        (cadre-ui::scroll-to-cursor view)
+                        (cadre-ensure-all)))
+         (type-ms (timed (gtk:text-buffer-insert gtk-buffer (cadre-ui::line-iter gtk-buffer 10 0) "x" -1)
+                         (cadre-ui::highlight-view view))))
+    (check "lexing to the end of a big file is quick" (< end-ms 1500) (format nil "~d lines in ~d ms" lines end-ms))
+    (check "an edit re-highlights quickly" (< type-ms 50) (format nil "~d ms" type-ms))
+    (setf (buffer-modified-p (current-buffer)) nil)))
+
+(then 500
+  (check "continuation lines of a docstring are highlighted as string"
+         (and (has-face-p 4534 1 :string) (has-face-p 4536 1 :string)))
+  (screenshot "08-end"))
 
 (setf *steps* (reverse *steps*))
 
@@ -187,6 +332,6 @@
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
-(cadre-ui:main :project *root* :init-file nil :quit-after 60)
+(cadre-ui:main :project *root* :init-file nil :quit-after 120)
 (format t "~&Timed out.~%")
 (uiop:quit 1)

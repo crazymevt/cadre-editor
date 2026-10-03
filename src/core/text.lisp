@@ -36,8 +36,48 @@
   (:documentation "Replace all of TEXT with STRING, as when loading a file: the
 change cannot be undone, the cursor moves to the start, and TEXT is marked unmodified."))
 
+(defgeneric text-line-count (text)
+  (:documentation "The number of lines in TEXT. Text ending in a newline has an empty last line."))
+
+(defgeneric text-line-string (text line)
+  (:documentation "The characters of LINE (from 0) in TEXT, without its newline."))
+
+(defgeneric text-line-position (text line &optional column)
+  (:documentation "The position of COLUMN (default 0) on LINE in TEXT."))
+
+(defgeneric text-position-line (text position)
+  (:documentation "The line and column of POSITION in TEXT, as two values."))
+
 (defmethod text-char (text position)
   (char (text-string text position (1+ position)) 0))
+
+;;; Line functions in terms of TEXT-STRING, for implementations without
+;;; their own. They scan the whole text, so they suit small texts and tests.
+
+(defun line-starts (string)
+  (cons 0 (loop for i from 0 below (length string)
+                when (char= (char string i) #\Newline) collect (1+ i))))
+
+(defmethod text-line-count (text)
+  (length (line-starts (text-string text))))
+
+(defmethod text-line-string (text line)
+  (let* ((string (text-string text))
+         (start (nth line (line-starts string))))
+    (unless start (error "Line ~d is past the end of the text." line))
+    (subseq string start (or (position #\Newline string :start start) (length string)))))
+
+(defmethod text-line-position (text line &optional (column 0))
+  (let ((start (nth line (line-starts (text-string text)))))
+    (unless start (error "Line ~d is past the end of the text." line))
+    (+ start column)))
+
+(defmethod text-position-line (text position)
+  (let ((starts (line-starts (text-string text))))
+    (loop for (start next) on starts
+          for line from 0
+          when (or (null next) (< position next))
+            return (values line (- position start)))))
 
 ;;; A plain Lisp implementation
 

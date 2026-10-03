@@ -34,6 +34,13 @@
   "C-j" 'toggle-panel
   "C-k C-l" 'toggle-layout
   "C-S-u" 'show-output
+  "C-S-p" 'execute-command
+  "F1" 'execute-command
+  "C-p" 'quick-open
+  "C-f" 'find-text
+  "F3" 'find-next
+  "S-F3" 'find-previous
+  "C-g" 'go-to-line
   "C-q" 'quit)
 
 (bind-keys *standard-editing-keymap*
@@ -59,7 +66,28 @@
   "C-c C-z" 'toggle-panel
   "C-x t l" 'toggle-layout
   "C-x C-c" 'quit
+  "M-x" 'execute-command
+  "C-x b" 'switch-to-buffer
+  "C-x p f" 'quick-open
+  "C-s" 'find-text
+  "C-r" 'find-previous
+  "M-g g" 'go-to-line
+  "M-g M-g" 'go-to-line
   "C-g" 'keyboard-quit)
+
+;;; Lisp mode, in both profiles
+(bind-keys (major-mode-keymap (find-major-mode 'lisp-mode))
+  "C-M-f" 'forward-sexp
+  "C-M-b" 'backward-sexp
+  "C-M-u" 'backward-up-list
+  "C-M-d" 'down-list
+  "C-M-a" 'beginning-of-defun
+  "C-M-e" 'end-of-defun
+  "C-M-SPC" 'mark-sexp
+  "C-M-q" 'indent-defun
+  "C-M-\\" 'indent-region
+  "TAB" 'indent-line
+  "RET" 'newline-and-indent)
 
 (bind-keys *emacs-editing-keymap*
   "C-f" 'forward-char
@@ -122,17 +150,24 @@ Emacs keys want M-f."
 
 (defun handle-key (win keyval state &optional keycode)
   "Route a key press to a command. Returns t if Cadre used the key."
-  (when (and keycode (macos-p) (eq *keybinding-profile* :emacs)
-             (member :alt-mask (modifier-list state)))
-    (setf keyval (or (base-keyval keycode state) keyval)))
+  (let ((mods (modifier-list state)))
+    ;; On macOS, Option changes the character typed; for Meta and for
+    ;; chords like Ctrl+Option+F, use the key's character without it.
+    (when (and keycode (macos-p) (member :alt-mask mods)
+               (or (eq *keybinding-profile* :emacs)
+                   (member :control-mask mods) (member :super-mask mods) (member :meta-mask mods)))
+      (setf keyval (or (base-keyval keycode state) keyval))))
   (let ((key (event-key keyval state
                         :super-as-control (and (macos-p) (not (eq *keybinding-profile* :emacs)))))
         (dispatcher (window-dispatcher win)))
-    (when (and key
-               (or (dispatcher-pending dispatcher) (not (plain-key-p key))
-                   (string= key "ESC")))
+    (when key
       (multiple-value-bind (action keys command)
-          (dispatch-key dispatcher key (active-keymaps win))
+          (dispatch-key dispatcher key
+                        (if (or (dispatcher-pending dispatcher) (not (plain-key-p key)) (string= key "ESC"))
+                            (active-keymaps win)
+                            ;; Plain keys (typing) only go to the major mode,
+                            ;; and only in the editor: RET and TAB in Lisp.
+                            (and (editor-focused-p win) (list (first (active-keymaps win))))))
         (ecase action
           (:prefix (show-pending-keys win keys) t)
           (:command (show-pending-keys win nil) (call-command command) t)

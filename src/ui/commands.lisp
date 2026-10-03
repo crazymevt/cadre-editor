@@ -57,6 +57,7 @@ messages, and other errors as messages with details in the Output panel."
                      (setf (buffer-name buffer) (cadre::unique-buffer-name
                                                  (file-namestring pathname))
                            (buffer-major-mode buffer) (major-mode-for-file pathname))
+                     (attach-syntax buffer)
                      (update-tab-titles *window* buffer)
                      (update-status *window*)))
                  (run-hook '*after-save-hook* buffer)
@@ -208,7 +209,11 @@ messages, and other errors as messages with details in the Output panel."
   (set-keybinding-profile :emacs))
 
 (define-command keyboard-quit ()
-  "Cancel: clear the selection and any pending keys."
+  "Cancel: close the find bar or a picker, and clear the selection."
+  (when (window-picker-object *window*)
+    (close-picker (window-picker-object *window*)))
+  (when (find-bar-open-p (window-find-bar *window*))
+    (find-close (window-find-bar *window*)))
   (let ((view (and *window* (selected-view *window*))))
     (when view
       (setf (buffer-local (view-buffer view) :mark-active) nil)

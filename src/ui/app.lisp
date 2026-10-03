@@ -41,6 +41,7 @@ command. Menus and buttons use it."
   (install-css)
   (install-icons)
   (install-command-action app)
+  (setup-theme-following)
   (let ((win (make-cadre-window app)))
     (setf *window* win
           *frontend* win)

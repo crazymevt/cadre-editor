@@ -12,6 +12,7 @@
                (:file "gtk-text")
                (:file "settings")
                (:file "keys")
+               (:file "highlight")
                (:file "editor-view")
                (:file "explorer")
                (:file "panel")
@@ -19,6 +20,9 @@
                (:file "tabs")
                (:file "layout")
                (:file "commands")
+               (:file "picker")
+               (:file "search")
+               (:file "lisp-commands")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -36,7 +40,14 @@
                (:file "modes")
                (:file "buffers")
                (:file "editor")
-               (:file "commands")))
+               (:file "commands")
+               (:file "fuzzy")
+               (:module "lisp"
+                :serial t
+                :components ((:file "lexer")
+                             (:file "syntax")
+                             (:file "indent")
+                             (:file "faces")))))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -47,5 +58,6 @@
                (:file "text")
                (:file "buffers")
                (:file "commands")
-               (:file "keymaps"))
+               (:file "keymaps")
+               (:file "lisp"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

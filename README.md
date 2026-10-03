@@ -3,13 +3,17 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M0 (the skeleton). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M1 (Lisp editing). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
-M0 has a window with a file explorer, tabs, an editor with line numbers, a
-panel (Output; REPL and Problems arrive in M2), a status bar, the horizontal
-and vertical layouts, opening and saving files, and two keybinding profiles
-(Standard and Emacs) on top of Cadre's command and keymap model.
+- **M0:** a window with a file explorer, tabs, an editor with line numbers, a
+  panel (Output; REPL and Problems arrive in M2), a status bar, the horizontal
+  and vertical layouts, opening and saving files, and two keybinding profiles
+  (Standard and Emacs) on top of Cadre's command and keymap model.
+- **M1:** syntax highlighting from Cadre's own Lisp lexer (re-lexing only the
+  lines that change), rainbow parentheses, matching-paren and current-line
+  highlighting, Lisp indentation, moving over s-expressions, a command
+  palette, quick open, switching buffers, go to line, and a find bar.
 
 ## Running
 
@@ -33,7 +37,25 @@ The first run asks which keyboard shortcuts to use.
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `C-x →` / `C-x ←` |
 | Toggle sidebar / panel | `Ctrl+B` / `Ctrl+J` | `C-x t s` / `C-x t p` |
 | Toggle layout | `Ctrl+K Ctrl+L` | `C-x t l` |
+| Command palette | `Ctrl+Shift+P`, `F1` | `M-x` |
+| Quick open (file by name) | `Ctrl+P` | `C-x p f` |
+| Switch buffer | (palette) | `C-x b` |
+| Find / next / previous | `Ctrl+F` / `F3` / `Shift+F3` | `C-s` / `C-s` / `C-r` |
+| Go to line | `Ctrl+G` | `M-g g` |
 | Quit | `Ctrl+Q` | `C-x C-c` |
+
+In Lisp files, in both profiles:
+
+| Action | Keys |
+| --- | --- |
+| Indent line or selection / new line, indented | `Tab` / `Return` |
+| Forward / backward s-expression | `C-M-f` / `C-M-b` |
+| Up / down a list | `C-M-u` / `C-M-d` |
+| Start / end of top-level form | `C-M-a` / `C-M-e` |
+| Select s-expression | `C-M-Space` |
+| Indent top-level form / selection | `C-M-q` / `C-M-\` |
+
+(`C-M-` is Ctrl+Alt; on macOS, Ctrl+Option.)
 
 ## Configuration
 
@@ -42,6 +64,7 @@ The first run asks which keyboard shortcuts to use.
 ```lisp
 (setf *editor-font* "JetBrains Mono 13pt")
 (bind-key *standard-global-keymap* "C-k C-s" 'save-all)
+(define-indentation my-with-macro 1)   ; indent like WHEN
 (define-command insert-date ()
   "Insert today's date."
   (multiple-value-bind (s m h day month year) (get-decoded-time)
@@ -61,7 +84,8 @@ make smoke    # drive a real window through the M0 features; screenshots in buil
 
 | Path | Contents |
 | --- | --- |
-| `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options |
+| `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
+| `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings |
 | `tests/` | Parachute tests for `src/core/` |
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp` |

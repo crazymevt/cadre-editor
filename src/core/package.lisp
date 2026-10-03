@@ -34,4 +34,19 @@
    #:keymap #:make-keymap #:keymap-name #:bind-key #:unbind-key #:keymap-lookup
    #:lookup-keys #:parse-keys #:canonical-key #:keys-string #:make-key
    #:key-dispatcher #:make-key-dispatcher #:dispatch-key #:dispatcher-pending
-   #:reset-dispatcher #:where-is))
+   #:reset-dispatcher #:where-is
+   ;; text lines
+   #:text-line-count #:text-line-string #:text-line-position #:text-position-line
+   ;; fuzzy matching
+   #:fuzzy-match #:fuzzy-filter
+   ;; Lisp syntax
+   #:lex-line #:token #:token-type #:token-start #:token-end #:token-depth #:token-subtype
+   #:make-lisp-syntax #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
+   #:ensure-lexed #:line-tokens #:line-start-state #:line-end-state
+   #:line-info #:line-info-highlighted #:line-info-tokens
+   #:depth-at #:context-at
+   #:forward-sexp-position #:backward-sexp-position #:up-list-position #:down-list-position
+   #:beginning-of-defun-position #:end-of-defun-position #:toplevel-form-bounds
+   #:paren-match-at
+   #:lisp-indentation #:define-indentation #:indentation-spec
+   #:token-face #:*faces* #:*paren-face-count*))

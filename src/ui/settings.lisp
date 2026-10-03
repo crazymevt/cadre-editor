@@ -6,6 +6,9 @@
 
 (in-package #:cadre-ui)
 
+(defvar *window* nil
+  "The Cadre window. There is one, for now.")
+
 (define-option *keybinding-profile* nil (member nil :standard :emacs)
   "The keyboard shortcuts: :standard (VS Code style) or :emacs. Nil means
 not chosen yet; Cadre asks on first run.")
