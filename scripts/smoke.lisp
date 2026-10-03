@@ -165,6 +165,7 @@
 (with-open-file (o (merge-pathnames "smoke.asd" *root*) :direction :output)
   (format o "(defsystem \"smoke\" :components ((:file \"src/lib\")))~%"))
 (setf *lisp-command* '("sbcl" "--noinform" "--no-userinit"))
+(setf *claude-program* (namestring (truename "scripts/fake-claude")))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -619,10 +620,15 @@
 (defvar *signed-out* (merge-pathnames "fake-claude-signed-out" *root*))
 
 (then 300
+  (check "Cadre checked Claude Code at startup"
+         (and cadre-ui::*claude-status* (cadre-ui::claude-ready-p)))
   (with-open-file (o *signed-out* :direction :output :if-exists :supersede) (write-line "out" o))
   (sb-posix:setenv "FAKE_CLAUDE_SIGNED_OUT" (namestring *signed-out*) 1)
-  (setf *claude-program* (namestring (truename "scripts/fake-claude")))
-  (call-command 'cadre-ui::claude))
+  (setf cadre-ui::*claude-status* nil)
+  ;; Opening the Claude tab by clicking it checks too.
+  (cadre-ui::set-panel-visible *window* t)
+  (cadre-ui::panel-show (cadre-ui::window-panel *window*) "repl")
+  (cadre-ui::panel-show (cadre-ui::window-panel *window*) "claude"))
 
 (then-when ((and cadre-ui::*claude-status* (not cadre-ui::*claude-checking*)))
   (check "a signed-out CLI shows the sign-in page"

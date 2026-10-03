@@ -51,7 +51,14 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "debugger" (make-debugger-widget))
       (panel-set-page-child panel "inspector" (make-inspector-widget))
       (panel-set-page-child panel "references" (make-references-widget))
-      (panel-set-page-child panel "claude" (make-claude-widget)))
+      (panel-set-page-child panel "claude" (make-claude-widget))
+      ;; However the Claude tab is opened (its tab, a key, the menu), find out
+      ;; whether Claude Code is ready.
+      (gobject:connect (panel-stack panel) "notify::visible-child"
+                       (lambda (stack pspec)
+                         (declare (ignore pspec))
+                         (when (equal (gtk:stack-get-visible-child-name stack) "claude")
+                           (check-claude-status)))))
     (update-connection-status)
     (let ((directory (initial-project project)))
       (when directory (open-project directory)))
@@ -59,6 +66,8 @@ command. Menus and buttons use it."
     (gtk:window-present (window-gtk-window win))
     (unless *keybinding-profile*
       (ask-keybinding-profile win))
+    ;; In the background, so the Claude tab is ready when opened.
+    (check-claude-status)
     (message "Welcome to Cadre")))
 
 (defun main (&key project files quit-after (init-file t))

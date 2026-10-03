@@ -131,6 +131,7 @@ compile_file ask in Cadre themselves.")
 
 (defvar *claude-status-label* nil)
 (defvar *claude-status-detail* nil)
+(defvar *claude-status-buttons* nil)
 (defvar *sign-in-box* nil)
 (defvar *sign-in-link* nil)
 (defvar *sign-in-code* nil)
@@ -139,7 +140,7 @@ compile_file ask in Cadre themselves.")
 
 (defun claude-status-page ()
   (setf *claude-status-label* (make-instance 'gtk:label :wrap t :justify :center :max-width-chars 60
-                                                        :selectable t)
+                                                        :selectable t :label "Checking Claude Code…")
         *claude-status-detail* (make-instance 'gtk:label :wrap t :justify :center :max-width-chars 70
                                                          :selectable t :css-classes '("dim-label" "caption"))
         *sign-in-link* (make-instance 'gtk:link-button :label "Browser didn't open?" :uri "https://claude.ai")
@@ -147,6 +148,13 @@ compile_file ask in Cadre themselves.")
                                                  :hexpand t)
         *sign-in-progress* (make-instance 'gtk:label :wrap t :xalign 0.0 :selectable t :css-classes '("dim-label")))
   (gobject:connect *sign-in-code* :activate (lambda (e) (declare (ignore e)) (submit-sign-in-code)))
+  (setf *claude-status-buttons*
+        (gtk:build
+          (gtk:box :spacing 8 :halign :center :visible nil
+            (gtk:button :label "Sign In…" :tooltip-text "Sign in to Claude Code (claude auth login)"
+                        :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-sign-in)))
+            (gtk:button :label "Check Again" :css-classes '("suggested-action")
+                        :on-clicked (lambda (b) (declare (ignore b)) (check-claude-status :force t))))))
   (setf *sign-in-box*
         (gtk:build
           (gtk:box :orientation :vertical :spacing 6 :visible nil :css-classes '("cadre-chat-approval")
@@ -169,11 +177,7 @@ compile_file ask in Cadre themselves.")
                      :margin-start 20 :margin-end 20 :margin-top 12 :margin-bottom 12
               *claude-status-label*
               *sign-in-box*
-              (gtk:box :spacing 8 :halign :center
-                (gtk:button :label "Sign In…" :tooltip-text "Sign in to Claude Code (claude auth login)"
-                            :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-sign-in)))
-                (gtk:button :label "Check Again" :css-classes '("suggested-action")
-                            :on-clicked (lambda (b) (declare (ignore b)) (check-claude-status :force t))))
+              *claude-status-buttons*
               *claude-status-detail*))))
 
 ;;; Signing in, by running `claude auth login` and passing it the code
@@ -251,6 +255,7 @@ chat or what is missing. THEN is called if Claude is ready."
       (setf *claude-checking* t
             *claude-when-checked* (if then (list then) '()))
       (chat-set-status "Checking Claude Code…")
+      (show-claude-status)
       (sb-thread:make-thread
        (lambda ()
          (let ((status (check-claude)))
@@ -272,7 +277,12 @@ chat or what is missing. THEN is called if Claude is ready."
 (defun show-claude-status ()
   (when *chat*
     (let ((s *claude-status*))
-      (cond ((null s))
+      (gtk:widget-set-visible *claude-status-buttons* (and s (not *claude-checking*) t))
+      (cond ((or (null s) *claude-checking*)
+             (gtk:label-set-text *claude-status-label* "Checking Claude Code…")
+             (gtk:label-set-text *claude-status-detail* "")
+             (unless (claude-ready-p)
+               (gtk:stack-set-visible-child-name (chat-stack *chat*) "status")))
             ((null (claude-status-program s))
              (gtk:label-set-text *claude-status-label*
                                  (format nil "Claude Code isn't installed.~%~%Install it from https://claude.com/claude-code, or set *claude-program* to its path, then Check Again."))
