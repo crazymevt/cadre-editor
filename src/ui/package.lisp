@@ -25,7 +25,14 @@
            #:beginning-of-defun #:end-of-defun #:mark-sexp
            #:indent-line #:newline-and-indent #:indent-region #:indent-defun
            #:execute-command #:quick-open #:switch-to-buffer #:go-to-line
-           #:find-text #:find-next #:find-previous))
+           #:find-text #:find-next #:find-previous
+           #:lisp #:connect #:disconnect #:restart-lisp #:interrupt-lisp
+           #:*connection* #:with-connection
+           #:show-repl #:clear-repl #:repl-return #:repl-previous-input #:repl-next-input #:repl-mode
+           #:eval-last-expression #:eval-defun #:eval-region #:eval-expression-or-region
+           #:compile-defun #:compile-and-load-file #:load-file
+           #:edit-definition #:pop-definition #:describe-symbol #:complete-symbol
+           #:next-note #:previous-note #:clear-notes #:debugger-abort))
 
 (defpackage #:cadre-user
   (:use #:cl #:cadre #:cadre-ui)

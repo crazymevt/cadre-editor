@@ -13,6 +13,15 @@
 (defvar *emacs-global-keymap* (make-keymap :emacs-global))
 (defvar *emacs-editing-keymap* (make-keymap :emacs-editing))
 
+(defvar *mode-profile-keymaps* (make-hash-table :test 'equal)
+  "(mode . profile) → the keymap of that mode's keys in that profile.")
+
+(defun mode-profile-keymap (mode profile)
+  "The keymap for MODE's keys that differ between profiles."
+  (let ((key (cons mode profile)))
+    (or (gethash key *mode-profile-keymaps*)
+        (setf (gethash key *mode-profile-keymaps*) (make-keymap (list mode profile))))))
+
 (defun bind-keys (keymap &rest pairs)
   (loop for (keys command) on pairs by #'cddr
         do (bind-key keymap keys command)))
@@ -89,6 +98,57 @@
   "TAB" 'indent-line
   "RET" 'newline-and-indent)
 
+;;; Talking to the Lisp. Emacs keys follow SLIME/SLY. Standard keys avoid
+;;; Ctrl+C and Ctrl+X prefixes, which would take over copying and cutting.
+(bind-keys (mode-profile-keymap 'lisp-mode :emacs)
+  "C-c C-c" 'compile-defun
+  "C-M-x" 'eval-defun
+  "C-x C-e" 'eval-last-expression
+  "C-c C-r" 'eval-region
+  "C-c C-k" 'compile-and-load-file
+  "C-c C-l" 'load-file
+  "C-c C-z" 'show-repl
+  "M-." 'edit-definition
+  "M-," 'pop-definition
+  "C-c C-d d" 'describe-symbol
+  "C-c C-d C-d" 'describe-symbol
+  "C-M-i" 'complete-symbol
+  "M-TAB" 'complete-symbol
+  "M-n" 'next-note
+  "M-p" 'previous-note
+  "C-c C-b" 'interrupt-lisp)
+
+(bind-keys (mode-profile-keymap 'lisp-mode :standard)
+  "C-RET" 'compile-defun
+  "C-S-RET" 'eval-expression-or-region
+  "F5" 'compile-and-load-file
+  "F12" 'edit-definition
+  "C-M--" 'pop-definition
+  "C-k C-i" 'describe-symbol
+  "C-SPC" 'complete-symbol
+  "F8" 'next-note
+  "S-F8" 'previous-note)
+
+(bind-keys (major-mode-keymap (find-major-mode 'repl-mode))
+  "RET" 'repl-return
+  "M-p" 'repl-previous-input
+  "M-n" 'repl-next-input
+  "C-Up" 'repl-previous-input
+  "C-Down" 'repl-next-input
+  "TAB" 'complete-symbol)
+
+(bind-keys (mode-profile-keymap 'repl-mode :emacs)
+  "C-c C-c" 'interrupt-lisp
+  "C-c M-o" 'clear-repl
+  "C-M-i" 'complete-symbol)
+
+(bind-keys (mode-profile-keymap 'repl-mode :standard)
+  "C-l" 'clear-repl
+  "C-SPC" 'complete-symbol)
+
+(bind-keys *standard-global-keymap*
+  "C-`" 'show-repl)
+
 (bind-keys *emacs-editing-keymap*
   "C-f" 'forward-char
   "C-b" 'backward-char
@@ -119,18 +179,28 @@
     ((:standard nil) (values *standard-global-keymap* *standard-editing-keymap*))
     (:emacs (values *emacs-global-keymap* *emacs-editing-keymap*))))
 
+(defun focused-view (win)
+  "The view (a tab's, or the REPL's) whose text has the keyboard focus, or nil."
+  (let ((focus (gtk:root-get-focus (window-gtk-window win))))
+    (and focus
+         (or (loop for view being the hash-values of (window-views win)
+                   when (eq focus (view-text-view view)) return view)
+             (let ((repl (repl-view)))
+               (and repl (eq focus (view-text-view repl)) repl))))))
+
 (defun editor-focused-p (win)
-  (let ((view (selected-view win))
-        (focus (gtk:root-get-focus (window-gtk-window win))))
-    (and view focus (eq focus (view-text-view view)))))
+  (and (focused-view win) t))
 
 (defun active-keymaps (win)
   "The keymaps that apply now, most important first."
   (multiple-value-bind (global editing) (profile-keymaps *keybinding-profile*)
-    (if (editor-focused-p win)
-        (list (major-mode-keymap (find-major-mode (buffer-major-mode (view-buffer (selected-view win)))))
-              editing global)
-        (list global))))
+    (let ((view (focused-view win)))
+      (if view
+          (let ((mode (buffer-major-mode (view-buffer view))))
+            (list (mode-profile-keymap mode (or *keybinding-profile* :standard))
+                  (major-mode-keymap (find-major-mode mode))
+                  editing global))
+          (list global)))))
 
 (defun set-keybinding-profile (profile)
   (setf *keybinding-profile* profile
@@ -150,6 +220,8 @@ Emacs keys want M-f."
 
 (defun handle-key (win keyval state &optional keycode)
   "Route a key press to a command. Returns t if Cadre used the key."
+  (when (and (null (dispatcher-pending (window-dispatcher win))) (completion-key keyval))
+    (return-from handle-key t))
   (let ((mods (modifier-list state)))
     ;; On macOS, Option changes the character typed; for Meta and for
     ;; chords like Ctrl+Option+F, use the key's character without it.
@@ -165,9 +237,9 @@ Emacs keys want M-f."
           (dispatch-key dispatcher key
                         (if (or (dispatcher-pending dispatcher) (not (plain-key-p key)) (string= key "ESC"))
                             (active-keymaps win)
-                            ;; Plain keys (typing) only go to the major mode,
-                            ;; and only in the editor: RET and TAB in Lisp.
-                            (and (editor-focused-p win) (list (first (active-keymaps win))))))
+                            ;; Plain keys (typing) only go to the major mode's
+                            ;; keymaps, and only in an editor: RET and TAB in Lisp.
+                            (and (editor-focused-p win) (subseq (active-keymaps win) 0 2))))
         (ecase action
           (:prefix (show-pending-keys win keys) t)
           (:command (show-pending-keys win nil) (call-command command) t)

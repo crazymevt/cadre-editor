@@ -27,6 +27,8 @@
    (status-keys :reader window-status-keys)
    (status-position :reader window-status-position)
    (status-mode :reader window-status-mode)
+   (status-connection :reader window-status-connection)
+   (status-arglist :reader window-status-arglist)
    (layout-button :reader window-layout-button)
    (message-timer :initform nil :accessor window-message-timer)
    (dispatcher :initform (make-key-dispatcher) :reader window-dispatcher)
@@ -42,7 +44,8 @@
 ;;; As the editor's frontend
 
 (defmethod frontend-current-buffer ((window cadre-window))
-  (let ((view (selected-view window)))
+  "The buffer of the view with the focus (a tab or the REPL), else of the selected tab."
+  (let ((view (or (focused-view window) (selected-view window))))
     (and view (view-buffer view))))
 
 (defmethod frontend-message ((window cadre-window) string)
@@ -183,7 +186,12 @@ and, if given, LABEL."
                     (gtk:stack :id :editor-stack :hexpand t :vexpand t)
                     (panel-widget panel))))
               (gtk:box :child-type "bottom" :css-classes '("cadre-status" "toolbar")
-                (gtk:label :id :status-message :xalign 0.0 :hexpand t :ellipsize :end)
+                (gtk:button :id :status-connection :label "○ No Lisp" :css-classes '("flat")
+                            :action-name "app.command"
+                            :action-target (glib:variant-new-string "show-repl"))
+                (gtk:label :id :status-arglist :xalign 0.0 :ellipsize :end :max-width-chars 90
+                           :css-classes '("monospace"))
+                (gtk:label :id :status-message :xalign 1.0 :hexpand t :ellipsize :end)
                 (gtk:label :id :status-keys :css-classes '("accent"))
                 (gtk:label :id :status-position)
                 (gtk:label :id :status-mode)))))
@@ -201,6 +209,8 @@ and, if given, LABEL."
               (slot-value win 'status-keys) (id :status-keys)
               (slot-value win 'status-position) (id :status-position)
               (slot-value win 'status-mode) (id :status-mode)
+              (slot-value win 'status-connection) (id :status-connection)
+              (slot-value win 'status-arglist) (id :status-arglist)
               (slot-value win 'layout-button) (gethash :layout-button *named-widgets*))
         (setf (window-sidebar-toggles win) (list (id :sidebar-button) (id :explorer-button))))
       (let ((stack (window-editor-stack win)))

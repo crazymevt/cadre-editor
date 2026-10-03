@@ -8,6 +8,7 @@
 (defclass panel ()
   ((widget :reader panel-widget)
    (stack :reader panel-stack)
+   (holders :initform '() :accessor panel-holders :documentation "Page name → adw:bin holding its content.")
    (output :reader panel-output :documentation "The Output page's text buffer.")))
 
 (defun placeholder-page (icon title description)
@@ -20,12 +21,10 @@
                                                     :cursor-visible nil :wrap-mode :word-char
                                                     :left-margin 8 :top-margin 4))
          (stack (make-instance 'gtk:stack :vexpand t :hexpand t)))
-    (gtk:stack-add-titled stack (placeholder-page "cadre-terminal-symbolic" "REPL"
-                                                  "Connecting to a Lisp arrives in M2.")
-                          "repl" "REPL")
-    (gtk:stack-add-titled stack (placeholder-page "dialog-warning-symbolic" "No problems"
-                                                  "Compiler notes appear here once Cadre can compile (M2).")
-                          "problems" "Problems")
+    (dolist (page '(("repl" "REPL") ("problems" "Problems") ("debugger" "Debugger")))
+      (let ((holder (make-instance 'adw:bin :vexpand t)))
+        (push (cons (first page) holder) (panel-holders panel))
+        (gtk:stack-add-titled stack holder (first page) (second page))))
     (gtk:stack-add-titled stack (make-instance 'gtk:scrolled-window :child output-view)
                           "output" "Output")
     (gtk:stack-set-visible-child-name stack "output")
@@ -51,6 +50,24 @@
          (time (multiple-value-bind (s m h) (get-decoded-time) (format nil "~2,'0d:~2,'0d:~2,'0d" h m s))))
     (gtk:text-buffer-insert buffer (gtk:text-buffer-get-end-iter buffer)
                             (format nil "[~a] ~a~%" time string) -1)))
+
+(defun panel-log-raw (panel string)
+  "Add STRING, a line of the Lisp's own output, to the Output page."
+  (let ((buffer (panel-output panel)))
+    (gtk:text-buffer-insert buffer (gtk:text-buffer-get-end-iter buffer) (format nil "~a~%" string) -1)))
+
+(defun panel-set-page-child (panel name widget)
+  (adw:bin-set-child (cdr (assoc name (panel-holders panel) :test #'string=)) widget))
+
+(defun panel-show (panel name)
+  (gtk:stack-set-visible-child-name (panel-stack panel) name))
+
+(defun panel-visible-name (panel)
+  (or (gtk:stack-get-visible-child-name (panel-stack panel)) ""))
+
+(defun panel-set-title (panel name title)
+  (let ((page (gtk:stack-get-page (panel-stack panel) (gtk:stack-get-child-by-name (panel-stack panel) name))))
+    (gtk:stack-page-set-title page title)))
 
 (defun panel-output-string (panel)
   (text-string (panel-output panel)))

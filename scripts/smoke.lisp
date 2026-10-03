@@ -84,6 +84,9 @@
 (defun show-buffer-named (name)
   (cadre-ui::show-buffer *window* (find-buffer name)))
 
+(defun repl-text ()
+  (buffer-string (cadre-ui::repl-buffer cadre-ui::*repl*)))
+
 (defun tab-titles ()
   (mapcar #'adw:tab-page-get-title (cadre-ui::window-pages *window*)))
 
@@ -91,21 +94,40 @@
   `(push (cons ,delay (lambda () ,@body)) *steps*))
 
 (defun finish ()
+  (format t "~&--- Output panel ---~%~a~%---~%" (cadre-ui::panel-output-string (cadre-ui::window-panel *window*)))
   (let ((failed (count nil *results* :key #'second)))
     (format t "~&~%~d checks, ~d failed. Screenshots in ~a~%" (length *results*) failed *out*)
     (uiop:delete-directory-tree *root* :validate t :if-does-not-exist :ignore)
     (uiop:quit (if (zerop failed) 0 1))))
 
+(defmacro then-when ((condition &key (timeout 30)) &body body)
+  "A step that runs once CONDITION is true (checked every 100 ms), or after TIMEOUT seconds."
+  `(push (list :wait (lambda () ,condition) ,timeout (lambda () ,@body)) *steps*))
+
+(defun run-step (fn)
+  (handler-case (funcall fn)
+    (error (e) (check "step ran without error" nil (princ-to-string e)))))
+
 (defun run-steps (steps)
   (if (null steps)
       (finish)
-      (destructuring-bind ((delay . fn) . rest) steps
-        (glib:timeout-add glib:+priority-default+ delay
-                          (lambda ()
-                            (handler-case (funcall fn)
-                              (error (e) (check "step ran without error" nil (princ-to-string e))))
-                            (run-steps rest)
-                            nil)))))
+      (let ((step (first steps)))
+        (if (eq (car step) :wait)
+            (destructuring-bind (condition timeout fn) (rest step)
+              (let ((deadline (+ (get-internal-real-time) (* timeout internal-time-units-per-second))))
+                (glib:timeout-add glib:+priority-default+ 100
+                                  (lambda ()
+                                    (cond ((or (ignore-errors (funcall condition))
+                                               (> (get-internal-real-time) deadline))
+                                           (run-step fn)
+                                           (run-steps (rest steps))
+                                           nil)
+                                          (t t))))))
+            (glib:timeout-add glib:+priority-default+ (car step)
+                              (lambda ()
+                                (run-step (cdr step))
+                                (run-steps (rest steps))
+                                nil))))))
 
 ;;; A throwaway project
 (ensure-directories-exist (merge-pathnames "src/" *root*))
@@ -117,6 +139,9 @@
   (format o "(defun area (w h)~%  (* w h))~%~%(defvar *x* 1)~%; done~%"))
 (uiop:copy-file (merge-pathnames "../gtk4/src/generated/gtk-functions-1.lisp" (truename "."))
                 (merge-pathnames "src/big.lisp" *root*))
+(with-open-file (o (merge-pathnames "src/m2.lisp" *root*) :direction :output)
+  (format o "(defun twice (x) (* 2 x))~%(defun bad (y) (+ y undefined-thing))~%(twice 21)~%~%"))
+(setf *lisp-command* '("sbcl" "--noinform" "--no-userinit"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -319,7 +344,101 @@
 (then 500
   (check "continuation lines of a docstring are highlighted as string"
          (and (has-face-p 4534 1 :string) (has-face-p 4536 1 :string)))
-  (screenshot "08-end"))
+  (screenshot "08-end")
+  (call-command 'close-tab)
+  (open-file-path (merge-pathnames "src/m2.lisp" *root*))
+  (call-command 'lisp))
+
+;;; M2: the connected Lisp
+(then-when ((cadre-ui::connected-p) :timeout 120)
+  (check "M-x lisp starts a Lisp and connects" (cadre-ui::connected-p))
+  (check "the status bar shows the connection"
+         (search "SBCL" (gtk:button-get-label (cadre-ui::window-status-connection *window*))))
+  (check "the REPL shows a prompt" (search "CL-USER> " (repl-text)))
+  (cadre-ui::show-repl-page :focus t)
+  (cadre-ui::set-repl-input "(progn (princ \"hi\") (* 6 7))")
+  (call-command 'repl-return))
+
+(then-when ((search (format nil "42~%CL-USER> ") (repl-text)))
+  (check "the REPL evaluates and prints the result" (search (format nil "42~%CL-USER> ") (repl-text))
+         (substitute #\| #\Newline (repl-text)))
+  (check "the REPL shows output" (search "hi" (repl-text)))
+  (show-buffer-named "m2.lisp")
+  (set-cursor 1 3)
+  (call-command 'compile-defun))
+
+(then-when (cadre-ui::*notes*)
+  (check "compiling a defun reports its warning"
+         (find :warning cadre-ui::*notes* :key (lambda (s) (compiler-note-severity (cadre-ui::sn-note s)))))
+  (check "the warning is underlined in the buffer" (has-face-p 1 23 :note-warning))
+  (check "the Problems tab shows the count"
+         (let ((stack (cadre-ui::panel-stack (cadre-ui::window-panel *window*))))
+           (search "(1)" (gtk:stack-page-get-title
+                          (gtk:stack-get-page stack (gtk:stack-get-child-by-name stack "problems"))))))
+  (set-cursor 0 3)
+  (call-command 'compile-defun))
+
+(then 1000
+  (set-cursor 2 10)                     ; after (twice 21)
+  (call-command 'eval-last-expression))
+
+(then-when ((search "=> 42" (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+  (check "evaluating an expression shows its value"
+         (search "=> 42" (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+  (set-cursor 2 7)                      ; (twice |21)
+  (cadre-ui::focus-view (current-view))
+  (cadre-ui::request-autodoc (current-view)))
+
+(then-when ((search "twice" (gtk:label-get-text (cadre-ui::window-status-arglist *window*))))
+  (check "the status bar shows the arglist"
+         (search "(twice x)" (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+         (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+  (set-cursor 2 3)
+  (call-command 'edit-definition))
+
+(then 1000
+  (check "M-. goes to the definition" (equal '(0 0) (cursor)) (cursor))
+  (call-command 'pop-definition)
+  (check "M-, comes back" (equal 2 (first (cursor))) (cursor))
+  (set-cursor 3 0)
+  (insert-at-cursor "(mvb")
+  (call-command 'complete-symbol))
+
+(then-when ((cadre-ui::completion-open-p))
+  (check "completion offers candidates" (cadre-ui::completion-open-p))
+  (cadre-ui::accept-completion)
+  (check "accepting a completion inserts it" (search "(multiple-value-bind" (line-text 3)) (line-text 3))
+  (setf (buffer-modified-p (current-buffer)) nil)
+  (cadre-ui::show-repl-page :focus t)
+  (cadre-ui::set-repl-input "(error \"boom\")")
+  (call-command 'repl-return))
+
+(then-when (cadre-ui::*debug-levels*)
+  (check "an error opens the debugger" cadre-ui::*debug-levels*)
+  (check "the debugger shows the condition"
+         (search "boom" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))))
+
+(then 300
+  (screenshot "09-debugger")
+  (call-command 'debugger-abort))
+
+(then-when ((null cadre-ui::*debug-levels*))
+  (check "aborting leaves the debugger" (null cadre-ui::*debug-levels*))
+  (show-buffer-named "m2.lisp")
+  (set-cursor 0 9)                      ; on "twice"
+  (call-command 'describe-symbol))
+
+(then-when ((find-buffer "*Help*"))
+  (check "describe-symbol shows documentation" (search "TWICE" (buffer-string (find-buffer "*Help*")))
+         (let ((b (find-buffer "*Help*"))) (if b (subseq (buffer-string b) 0 (min 200 (length (buffer-string b)))) "no *Help* buffer")))
+  (call-command 'show-repl))
+
+(then 500
+  (screenshot "10-repl")
+  (call-command 'disconnect))
+
+(then-when ((not (cadre-ui::connected-p)))
+  (check "disconnect closes the connection" (not (cadre-ui::connected-p))))
 
 (setf *steps* (reverse *steps*))
 
@@ -332,6 +451,6 @@
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
-(cadre-ui:main :project *root* :init-file nil :quit-after 120)
+(cadre-ui:main :project *root* :init-file nil :quit-after 240)
 (format t "~&Timed out.~%")
 (uiop:quit 1)

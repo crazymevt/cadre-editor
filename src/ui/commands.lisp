@@ -12,6 +12,13 @@ messages, and other errors as messages with details in the Output panel."
       nil)))
 
 (defun current-view ()
+  "The view with the keyboard focus (a tab or the REPL), else the selected
+tab's. Signals an editor-error if there is none."
+  (or (and *window* (focused-view *window*))
+      (and *window* (selected-view *window*))
+      (editor-error "No file is open.")))
+
+(defun current-tab-view ()
   "The view in the selected tab. Signals an editor-error if there is none."
   (or (and *window* (selected-view *window*))
       (editor-error "No file is open.")))
@@ -22,11 +29,13 @@ messages, and other errors as messages with details in the Output panel."
   (handler-case (sb-ext:octets-to-string octets :external-format :utf-8)
     (error () (sb-ext:octets-to-string octets :external-format :latin-1))))
 
-(defun open-file-path (pathname)
-  "Open the file at PATHNAME in a tab, or select its tab if it is open."
+(defun open-file-path (pathname &key then)
+  "Open the file at PATHNAME in a tab, or select its tab if it is open.
+THEN, if given, is called with the view once the file is showing."
   (let ((existing (find-file-buffer pathname)))
     (if existing
-        (show-buffer *window* existing)
+        (let ((view (show-buffer *window* existing)))
+          (when then (funcall then view)))
         (let ((file (gio:file-new-for-path (uiop:native-namestring pathname))))
           (gio:async (gio:file-load-contents-async file)
                      (lambda (ok contents etag)
@@ -37,7 +46,8 @@ messages, and other errors as messages with details in the Output panel."
                                                       :text (make-gtk-text
                                                              (decode-file-contents
                                                               (coerce contents '(vector (unsigned-byte 8)))))))))
-                         (show-buffer *window* buffer)))
+                         (let ((view (show-buffer *window* buffer)))
+                           (when then (funcall then view)))))
                      :error (lambda (e)
                               (message "Could not open ~a: ~a" (uiop:native-namestring pathname)
                                        (glib:glib-error-message e))))))))
@@ -128,14 +138,14 @@ messages, and other errors as messages with details in the Output panel."
 
 (define-command save-buffer ()
   "Save the current buffer to its file, asking for a name if it has none."
-  (let ((buffer (view-buffer (current-view))))
+  (let ((buffer (view-buffer (current-tab-view))))
     (if (or (buffer-modified-p buffer) (null (buffer-file buffer)))
         (save-one *window* buffer (lambda (ok) (declare (ignore ok))))
         (message "No changes to save"))))
 
 (define-command save-buffer-as ()
   "Save the current buffer to a file you choose."
-  (save-buffer-to-chosen-file *window* (view-buffer (current-view))
+  (save-buffer-to-chosen-file *window* (view-buffer (current-tab-view))
                               (lambda (ok) (declare (ignore ok)))))
 
 (define-command save-all ()
@@ -149,7 +159,7 @@ messages, and other errors as messages with details in the Output panel."
 
 (define-command close-tab ()
   "Close the selected tab, asking about unsaved changes."
-  (let ((view (current-view)))
+  (let ((view (current-tab-view)))
     (adw:tab-view-close-page (window-tab-view *window*) (view-page *window* view))))
 
 (define-command next-tab ()

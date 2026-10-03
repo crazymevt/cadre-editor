@@ -50,10 +50,12 @@
   (let* ((view (make-editor-view buffer :on-cursor-moved
                                  (lambda (view)
                                    (update-cursor-decorations view)
+                                   (schedule-autodoc view)
                                    (when (eq view (selected-view win)) (update-status win)))))
          (gtk-buffer (buffer-text buffer)))
     (setf (gethash (view-widget view) (window-views win)) view)
     (attach-syntax buffer)
+    (setup-note-tooltips view)
     (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
                      (lambda (adjustment) (declare (ignore adjustment))
                        (schedule-highlight buffer)))

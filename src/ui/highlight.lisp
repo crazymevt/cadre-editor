@@ -109,7 +109,10 @@
 (defun restyle-all-buffers ()
   (dolist (buffer (buffer-list))
     (when (typep (buffer-text buffer) 'gtk:text-buffer)
-      (style-buffer-tags (buffer-text buffer)))))
+      (style-buffer-tags (buffer-text buffer))
+      (style-note-tags (buffer-text buffer))
+      (when (eq (buffer-major-mode buffer) 'repl-mode)
+        (style-repl-tags (buffer-text buffer))))))
 
 ;;; Keeping the syntax in step with the text
 
@@ -122,6 +125,7 @@
 for instance after the buffer's major mode changes."
   (let ((gtk-buffer (buffer-text buffer)))
     (ensure-tags gtk-buffer)
+    (ensure-note-tags gtk-buffer)
     (unless (buffer-local buffer :change-handlers)
       (setf (buffer-local buffer :change-handlers)
             (list
@@ -142,7 +146,9 @@ for instance after the buffer's major mode changes."
                                                             (1+ (- (gtk:text-iter-get-line end) first))
                                                             1))))))
              (gobject:connect gtk-buffer :changed
-                              (lambda (b) (declare (ignore b)) (schedule-highlight buffer))))))
+                              (lambda (b) (declare (ignore b))
+                                (schedule-highlight buffer)
+                                (completion-buffer-changed buffer))))))
     (let ((lisp (eq (buffer-major-mode buffer) 'lisp-mode)))
       (cond ((and lisp (not (buffer-syntax buffer)))
              (setf (buffer-local buffer :syntax) (make-lisp-syntax gtk-buffer)))
@@ -202,7 +208,9 @@ for instance after the buffer's major mode changes."
                    (lambda ()
                      (setf (buffer-local buffer :highlight-pending) nil)
                      (when *window*
-                       (dolist (view (buffer-views *window* buffer))
+                       (dolist (view (append (buffer-views *window* buffer)
+                                             (and (repl-view) (eq (view-buffer (repl-view)) buffer)
+                                                  (list (repl-view)))))
                          (highlight-view view)
                          (update-cursor-decorations view)))
                      nil))))

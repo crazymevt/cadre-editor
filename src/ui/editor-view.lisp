@@ -21,8 +21,9 @@
 (defun view-gtk-buffer (view)
   (buffer-text (view-buffer view)))
 
-(defun make-editor-view (buffer &key on-cursor-moved)
-  "A new view of BUFFER, whose text must be a gtk:text-buffer."
+(defun make-editor-view (buffer &key on-cursor-moved (gutter t))
+  "A new view of BUFFER, whose text must be a gtk:text-buffer. With GUTTER
+nil, there are no line numbers."
   (let* ((view (make-instance 'editor-view :buffer buffer :on-cursor-moved on-cursor-moved))
          (text-view (make-instance 'gtk:text-view
                                    :buffer (buffer-text buffer)
@@ -30,30 +31,33 @@
                                    :left-margin 8 :right-margin 8
                                    :top-margin 4 :bottom-margin 200
                                    :css-classes '("cadre-editor")))
-         (gutter (make-instance 'gtk:drawing-area :css-classes '("cadre-gutter")))
+         (gutter (and gutter (make-instance 'gtk:drawing-area :css-classes '("cadre-gutter"))))
          (scrolled (make-instance 'gtk:scrolled-window :child text-view
                                                        :hexpand t :vexpand t)))
     (setf (slot-value view 'text-view) text-view
           (slot-value view 'gutter) gutter
           (slot-value view 'widget) scrolled)
-    (gtk:text-view-set-gutter text-view :left gutter)
-    (gtk:drawing-area-set-draw-func gutter (lambda (area cr width height)
-                                             (declare (ignore height))
-                                             (draw-line-numbers view area cr width)))
-    (update-gutter-width view)
+    (when gutter
+      (gtk:text-view-set-gutter text-view :left gutter)
+      (gtk:drawing-area-set-draw-func gutter (lambda (area cr width height)
+                                               (declare (ignore height))
+                                               (draw-line-numbers view area cr width)))
+      (update-gutter-width view))
     (let ((gtk-buffer (buffer-text buffer)))
       (gobject:connect gtk-buffer :changed
                        (lambda (b) (declare (ignore b))
-                         (update-gutter-width view)
-                         (gtk:widget-queue-draw gutter)))
+                         (when gutter
+                           (update-gutter-width view)
+                           (gtk:widget-queue-draw gutter))))
       (gobject:connect gtk-buffer "notify::cursor-position"
                        (lambda (b pspec) (declare (ignore b pspec))
-                         (gtk:widget-queue-draw gutter)
+                         (when gutter (gtk:widget-queue-draw gutter))
                          (when (view-on-cursor-moved view)
                            (funcall (view-on-cursor-moved view) view)))))
-    (gobject:connect (gtk:scrolled-window-get-vadjustment scrolled) :value-changed
-                     (lambda (adjustment) (declare (ignore adjustment))
-                       (gtk:widget-queue-draw gutter)))
+    (when gutter
+      (gobject:connect (gtk:scrolled-window-get-vadjustment scrolled) :value-changed
+                       (lambda (adjustment) (declare (ignore adjustment))
+                         (gtk:widget-queue-draw gutter))))
     view))
 
 (defun view-cursor-line-column (view)

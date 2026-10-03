@@ -3,7 +3,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M1 (Lisp editing). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M2 (talking to a running Lisp). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -14,6 +14,11 @@ for the design and the milestones.
   lines that change), rainbow parentheses, matching-paren and current-line
   highlighting, Lisp indentation, moving over s-expressions, a command
   palette, quick open, switching buffers, go to line, and a find bar.
+- **M2:** a Swank client and a bundled Swank (SLIME 2.32): start a Lisp or
+  connect to one, a REPL, evaluating and compiling forms and files, compiler
+  notes (Problems page and underlines), argument hints in the status bar,
+  completion, go to definition and back, describe, and a debugger page with
+  restarts and the backtrace.
 
 ## Running
 
@@ -57,6 +62,25 @@ In Lisp files, in both profiles:
 
 (`C-M-` is Ctrl+Alt; on macOS, Ctrl+Option.)
 
+Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
+`sbcl` by default, the first time one is needed):
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Compile top-level form | `Ctrl+Return` | `C-c C-c` |
+| Evaluate top-level form | (palette) | `C-M-x` |
+| Evaluate expression before cursor / selection | `Ctrl+Shift+Return` | `C-x C-e` / `C-c C-r` |
+| Compile and load file | `F5` | `C-c C-k` |
+| Go to definition / back | `F12` / `Ctrl+Alt+-` | `M-.` / `M-,` |
+| Describe symbol | `Ctrl+K Ctrl+I` | `C-c C-d d` |
+| Complete symbol | `Ctrl+Space` | `C-M-i` |
+| Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
+| Show the REPL | `` Ctrl+` `` | `C-c C-z` |
+
+In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
+walk the history, `Tab` completes. `M-x connect` connects to a Swank server
+you started yourself.
+
 ## Configuration
 
 `~/.config/cadre/init.lisp` is loaded at startup in the `cadre-user` package:
@@ -86,6 +110,8 @@ make smoke    # drive a real window through the M0 features; screenshots in buil
 | --- | --- |
 | `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
 | `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
+| `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers |
+| `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings |
 | `tests/` | Parachute tests for `src/core/` |
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp` |

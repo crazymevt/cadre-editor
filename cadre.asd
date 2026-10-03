@@ -23,13 +23,19 @@
                (:file "picker")
                (:file "search")
                (:file "lisp-commands")
+               (:file "session")
+               (:file "repl")
+               (:file "notes")
+               (:file "debugger")
+               (:file "completion")
+               (:file "lisp-eval")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ()
+  :depends-on ("sb-bsd-sockets" "sb-posix")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -47,7 +53,13 @@
                 :components ((:file "lexer")
                              (:file "syntax")
                              (:file "indent")
-                             (:file "faces")))))
+                             (:file "faces")))
+               (:module "swank"
+                :serial t
+                :components ((:file "sexp")
+                             (:file "connection")
+                             (:file "inferior")
+                             (:file "forms")))))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -59,5 +71,6 @@
                (:file "buffers")
                (:file "commands")
                (:file "keymaps")
-               (:file "lisp"))
+               (:file "lisp")
+               (:file "swank"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

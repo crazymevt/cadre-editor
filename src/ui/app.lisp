@@ -45,6 +45,11 @@ command. Menus and buttons use it."
   (let ((win (make-cadre-window app)))
     (setf *window* win
           *frontend* win)
+    (let ((panel (window-panel win)))
+      (panel-set-page-child panel "repl" (make-repl-widget))
+      (panel-set-page-child panel "problems" (make-problems-widget))
+      (panel-set-page-child panel "debugger" (make-debugger-widget)))
+    (update-connection-status)
     (let ((directory (initial-project project)))
       (when directory (open-project directory)))
     (dolist (file files) (open-file-path (pathname file)))
