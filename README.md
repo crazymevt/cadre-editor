@@ -1,0 +1,72 @@
+# Cadre
+
+A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
+interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
+
+**Status:** milestone M0 (the skeleton). See [docs/DESIGN.md](docs/DESIGN.md)
+for the design and the milestones.
+
+M0 has a window with a file explorer, tabs, an editor with line numbers, a
+panel (Output; REPL and Problems arrive in M2), a status bar, the horizontal
+and vertical layouts, opening and saving files, and two keybinding profiles
+(Standard and Emacs) on top of Cadre's command and keymap model.
+
+## Running
+
+Requirements: SBCL with Quicklisp, GTK 4.14+, libadwaita 1.5+, and the gtk4
+bindings checked out next to this directory (`../gtk4`).
+
+```sh
+make run                      # open the last folder (or none)
+make run DIR=~/projects/foo   # open a folder
+```
+
+The first run asks which keyboard shortcuts to use.
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Open file | `Ctrl+O` | `C-x C-f` |
+| Open folder | `Ctrl+K Ctrl+O` | `C-x d` |
+| Save / Save as | `Ctrl+S` / `Ctrl+Shift+S` | `C-x C-s` / `C-x C-w` |
+| New file | `Ctrl+N` | — |
+| Close tab | `Ctrl+W` | `C-x k` |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `C-x →` / `C-x ←` |
+| Toggle sidebar / panel | `Ctrl+B` / `Ctrl+J` | `C-x t s` / `C-x t p` |
+| Toggle layout | `Ctrl+K Ctrl+L` | `C-x t l` |
+| Quit | `Ctrl+Q` | `C-x C-c` |
+
+## Configuration
+
+`~/.config/cadre/init.lisp` is loaded at startup in the `cadre-user` package:
+
+```lisp
+(setf *editor-font* "JetBrains Mono 13pt")
+(bind-key *standard-global-keymap* "C-k C-s" 'save-all)
+(define-command insert-date ()
+  "Insert today's date."
+  (multiple-value-bind (s m h day month year) (get-decoded-time)
+    (declare (ignore s m h))
+    (buffer-insert (current-buffer) (format nil "~d-~2,'0d-~2,'0d" year month day))))
+```
+
+Cadre writes its own choices (keybindings, layout, last folder) to
+`~/.config/cadre/settings.sexp`.
+
+## Development
+
+```sh
+make test     # headless tests of the editor model (src/core)
+make smoke    # drive a real window through the M0 features; screenshots in build/smoke/
+```
+
+| Path | Contents |
+| --- | --- |
+| `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options |
+| `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings |
+| `tests/` | Parachute tests for `src/core/` |
+| `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp` |
+| `icons/` | Cadre's own symbolic icons |
+
+## License
+
+MIT.
