@@ -468,6 +468,8 @@
 
 (then-when ((null cadre-ui::*debug-levels*))
   (check "aborting leaves the debugger" (null cadre-ui::*debug-levels*))
+  (check "the Debugger tab goes away when there is no error"
+         (not (gtk:stack-page-get-visible (cadre-ui::panel-page (cadre-ui::window-panel *window*) "debugger"))))
   (show-buffer-named "m2.lisp")
   (set-cursor 0 9)                      ; on "twice"
   (call-command 'describe-symbol))

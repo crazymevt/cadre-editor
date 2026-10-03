@@ -249,13 +249,14 @@
   (image-changed)
   (unless *debug-levels*
     (panel-set-title (window-panel *window*) "debugger" "Debugger")
-    (when (string= (panel-visible-name (window-panel *window*)) "debugger")
-      (panel-show (window-panel *window*) "repl"))))
+    (panel-hide-page (window-panel *window*) "debugger")))
 
 (defun debugger-clear ()
   (setf *debug-levels* '())
   (debugger-render)
-  (when *window* (panel-set-title (window-panel *window*) "debugger" "Debugger")))
+  (when *window*
+    (panel-set-title (window-panel *window*) "debugger" "Debugger")
+    (panel-hide-page (window-panel *window*) "debugger")))
 
 (defun invoke-restart-number (n)
   (let ((level (or (first *debug-levels*) (editor-error "Not in the debugger"))))

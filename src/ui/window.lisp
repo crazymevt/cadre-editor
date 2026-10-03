@@ -73,6 +73,7 @@
     (".cadre-status label" :margin ("0" "6px"))
     (".cadre-activity" :padding "4px")
     (".cadre-panel" :background-color "@view_bg_color")
+    (".cadre-panel-switcher button" :padding ("2px" "10px") :min-width "0")
     (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))
@@ -259,7 +260,12 @@ and, if given, LABEL."
         (gtk:stack-add-named stack (make-empty-page) "empty")
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
-                                       (adw:tab-bar :view tab-view :autohide nil)
+                                       ;; The tab bar scrolls when the tabs don't fit; the
+                                       ;; button at its end lists them all.
+                                       (adw:tab-bar :view tab-view :autohide nil
+                                                    :end-action-widget
+                                                    (command-button "cadre-tabs-symbolic" "Show all open tabs"
+                                                                    'switch-to-buffer :id :tabs-button))
                                        (make-review-bar)
                                        (find-bar-widget (window-find-bar win))
                                        tab-view))

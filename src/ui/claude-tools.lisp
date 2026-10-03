@@ -50,7 +50,7 @@ wait for that result here."
 
 (defun tool-package (args)
   (or (tool-argument args "package")
-      (on-main (let ((view (current-tab-view)))
+      (on-main (let ((view (selected-view *window*)))
                  (if view (view-package view) (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))))))
 
 ;;; Buffers and files
@@ -129,7 +129,7 @@ a file that isn't open is read from disk. Prefer this to reading files directly.
 the code's package, the project folder, and the connected Lisp."
   ()
   (on-main
-    (let ((view (current-tab-view)))
+    (let ((view (selected-view *window*)))
       (with-output-to-string (out)
         (format out "Project: ~a~%" (if (window-project *window*) (uiop:native-namestring (window-project *window*)) "none"))
         (format out "Lisp: ~a~%" (if (connected-p) (connection-implementation *connection*) "not connected"))

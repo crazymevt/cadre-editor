@@ -36,6 +36,7 @@ compile_file ask in Cadre themselves.")
 (defvar *mcp-config* nil)
 (defvar *claude-status* nil "A claude-status, once checked.")
 (defvar *claude-checking* nil)
+(defvar *claude-when-checked* '() "Functions to call once the check finishes and Claude is ready.")
 
 (defstruct (chat (:conc-name chat-))
   process session-id (started nil) (busy nil) (cost 0)
@@ -142,9 +143,14 @@ compile_file ask in Cadre themselves.")
 (defun check-claude-status (&key force then)
   "Find the CLI and whether it is signed in (on a thread), then show the
 chat or what is missing. THEN is called if Claude is ready."
+  (when *claude-checking*
+    ;; A check is running: act on its result.
+    (when then (setf *claude-when-checked* (append *claude-when-checked* (list then))))
+    (return-from check-claude-status))
   (when (or force (null *claude-status*))
-    (unless *claude-checking*
-      (setf *claude-checking* t)
+    (progn
+      (setf *claude-checking* t
+            *claude-when-checked* (if then (list then) '()))
       (chat-set-status "Checking Claude Code…")
       (sb-thread:make-thread
        (lambda ()
@@ -153,7 +159,9 @@ chat or what is missing. THEN is called if Claude is ready."
             (lambda ()
               (setf *claude-status* status *claude-checking* nil)
               (show-claude-status)
-              (when (and then (claude-ready-p)) (funcall then))))))
+              (let ((pending *claude-when-checked*))
+                (setf *claude-when-checked* '())
+                (when (claude-ready-p) (mapc #'funcall pending)))))))
        :name "check claude")
       (return-from check-claude-status)))
   (show-claude-status)
@@ -269,7 +277,7 @@ chat or what is missing. THEN is called if Claude is ready."
                                      (gdk:clipboard-set-text (gtk:widget-get-clipboard (chat-messages *chat*)) code)
                                      (message "Copied")))
     (gobject:connect insert :clicked (lambda (b) (declare (ignore b))
-                                       (let ((view (current-tab-view)))
+                                       (let ((view (selected-view *window*)))
                                          (if view
                                              (with-user-action ((view-gtk-buffer view))
                                                (gtk:text-buffer-insert-at-cursor (view-gtk-buffer view) code -1))
@@ -403,7 +411,7 @@ chat or what is missing. THEN is called if Claude is ready."
 
 (defun message-context ()
   (with-output-to-string (out)
-    (let ((view (current-tab-view)))
+    (let ((view (selected-view *window*)))
       (when (and view (gtk:toggle-button-get-active (chat-context-file *chat*)))
         (let ((buffer (view-buffer view)))
           (multiple-value-bind (line column) (view-cursor-line-column view)
