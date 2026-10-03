@@ -20,7 +20,7 @@ edit small and focused, one call per change. After an edit is accepted and saved
 compile_file to check it. eval runs code in the user's image after they approve it.")
 
 (defparameter *claude-allowed-tools*
-  '("Read" "Grep" "Glob" "mcp__cadre__list_buffers" "mcp__cadre__read_buffer" "mcp__cadre__current_context"
+  '("Read" "Grep" "Glob" "ToolSearch" "mcp__cadre__list_buffers" "mcp__cadre__read_buffer" "mcp__cadre__current_context"
     "mcp__cadre__get_problems" "mcp__cadre__get_backtrace" "mcp__cadre__describe_symbol"
     "mcp__cadre__arglist" "mcp__cadre__find_definitions" "mcp__cadre__who_calls"
     "mcp__cadre__who_references" "mcp__cadre__macroexpand" "mcp__cadre__apropos"
