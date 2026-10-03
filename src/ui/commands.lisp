@@ -160,7 +160,7 @@ THEN, if given, is called with the view once the file is showing."
 (define-command close-tab ()
   "Close the selected tab, asking about unsaved changes."
   (let ((view (current-tab-view)))
-    (adw:tab-view-close-page (window-tab-view *window*) (view-page *window* view))))
+    (adw:tab-view-close-page (group-tab-view (view-group view)) (view-page *window* view))))
 
 (define-command next-tab ()
   "Select the tab to the right, wrapping around."
@@ -223,11 +223,18 @@ THEN, if given, is called with the view once the file is showing."
   (set-keybinding-profile :emacs))
 
 (define-command keyboard-quit ()
-  "Cancel: close the find bar or a picker, and clear the selection."
+  "Cancel: a prefix argument, query-replace, a search, a picker, the
+keyboard macro being defined, and the selection."
+  (clear-prefix-arg)
+  (setf *key-reader* nil)
+  (when *query-replace* (query-replace-finish))
+  (cancel-kbd-macro)
   (when (window-picker-object *window*)
     (close-picker (window-picker-object *window*)))
   (when (find-bar-open-p (window-find-bar *window*))
-    (find-close (window-find-bar *window*)))
+    (if (isearch-active-p)
+        (isearch-abort)
+        (find-close (window-find-bar *window*))))
   (let ((view (and *window* (selected-view *window*))))
     (when view
       (setf (buffer-local (view-buffer view) :mark-active) nil)
@@ -252,40 +259,30 @@ THEN, if given, is called with the view once the file is showing."
                   (and (buffer-local (view-buffer view) :mark-active) t))
     (scroll-to-cursor view)))
 
-(define-command forward-char () "Move forward one character." (move :logical-positions 1))
-(define-command backward-char () "Move back one character." (move :logical-positions -1))
-(define-command next-line () "Move down one line." (move :display-lines 1))
-(define-command previous-line () "Move up one line." (move :display-lines -1))
-(define-command forward-word () "Move forward one word." (move :words 1))
-(define-command backward-word () "Move back one word." (move :words -1))
+(define-command forward-char () "Move forward one character." (:repeat t) (move :logical-positions 1))
+(define-command backward-char () "Move back one character." (:repeat t) (move :logical-positions -1))
+(define-command next-line () "Move down one line." (:repeat t) (move :display-lines 1))
+(define-command previous-line () "Move up one line." (:repeat t) (move :display-lines -1))
+(define-command forward-word () "Move forward one word." (:repeat t) (move :words 1))
+(define-command backward-word () "Move back one word." (:repeat t) (move :words -1))
 (define-command beginning-of-line () "Move to the start of the line." (move :paragraph-ends -1))
 (define-command end-of-line () "Move to the end of the line." (move :paragraph-ends 1))
-(define-command scroll-down-page () "Move down one screen." (move :pages 1))
-(define-command scroll-up-page () "Move up one screen." (move :pages -1))
-(define-command beginning-of-buffer () "Move to the start of the buffer." (move :buffer-ends -1))
-(define-command end-of-buffer () "Move to the end of the buffer." (move :buffer-ends 1))
+(define-command scroll-down-page () "Move down one screen." (:repeat t) (move :pages 1))
+(define-command scroll-up-page () "Move up one screen." (:repeat t) (move :pages -1))
+(define-command beginning-of-buffer ()
+  "Move to the start of the buffer, leaving the mark where the cursor was."
+  (push-mark (view-buffer (current-view)) (point-offset (current-view)))
+  (move :buffer-ends -1))
 
-(define-command set-mark ()
-  "Start selecting: movement extends the selection until Quit (C-g)."
-  (let ((buffer (view-buffer (current-view))))
-    (setf (buffer-local buffer :mark-active) t)
-    (message "Mark set")))
+(define-command end-of-buffer ()
+  "Move to the end of the buffer, leaving the mark where the cursor was."
+  (push-mark (view-buffer (current-view)) (point-offset (current-view)))
+  (move :buffer-ends 1))
 
 (define-command delete-char ()
   "Delete the character after the cursor."
+  (:repeat t)
   (gobject:emit (view-text-view (current-view)) :delete-from-cursor :chars 1))
-
-(define-command kill-line ()
-  "Cut from the cursor to the end of the line, or the line break if at the end."
-  (let* ((view (current-view))
-         (buffer (view-gtk-buffer view))
-         (start (cursor-iter buffer))
-         (end (cursor-iter buffer)))
-    (if (gtk:text-iter-ends-line end)
-        (gtk:text-iter-forward-char end)
-        (gtk:text-iter-forward-to-line-end end))
-    (gtk:text-buffer-select-range buffer start end)
-    (gobject:emit (view-text-view view) :cut-clipboard)))
 
 (define-command cut ()
   "Cut the selection to the clipboard."

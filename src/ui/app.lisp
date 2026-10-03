@@ -62,8 +62,13 @@ command. Menus and buttons use it."
     (update-connection-status)
     (let ((directory (initial-project project)))
       (when directory (open-project directory)))
-    (dolist (file files) (open-file-path (pathname file)))
+    (if files
+        (dolist (file files) (open-file-path (pathname file)))
+        (restore-session win))
+    (setup-clipboard)
     (gtk:window-present (window-gtk-window win))
+    (let ((view (selected-view win)))
+      (when view (focus-view view)))
     (unless *keybinding-profile*
       (ask-keybinding-profile win))
     ;; In the background, so the Claude tab is ready when opened.

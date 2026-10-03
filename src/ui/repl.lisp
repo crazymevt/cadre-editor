@@ -15,9 +15,30 @@
   (history (make-array 0 :adjustable t :fill-pointer 0))
   (history-index nil)
   (busy nil)
-  (reading nil))                        ; (thread tag) while the Lisp reads a line
+  (reading nil)                         ; (thread tag) while the Lisp reads a line
+  evaluator                             ; nil: the connected Lisp; else a function of the input
+  prompter)                             ; nil: the connected Lisp's prompt; else a function
 
-(defvar *repl* nil)
+(defvar *repl* nil
+  "The REPL of the connected Lisp. Commands in another REPL buffer (the
+editor REPL) bind it to that buffer's REPL.")
+
+(defmacro with-buffer-repl (() &body body)
+  "Run BODY with *REPL* the current buffer's REPL."
+  `(let ((*repl* (or (let ((b (current-buffer))) (and b (buffer-local b :repl))) *repl*)))
+     ,@body))
+
+(defun make-repl-for-buffer (buffer &key editor-view evaluator prompter)
+  "Set up BUFFER (whose text is a gtk:text-buffer) as a REPL."
+  (let ((gtk-buffer (buffer-text buffer)))
+    (ensure-repl-tags gtk-buffer)
+    (attach-syntax buffer)
+    (setf (buffer-local buffer :repl)
+          (make-repl :buffer buffer :editor-view editor-view :evaluator evaluator :prompter prompter
+                     :output-mark (gtk:text-buffer-create-mark gtk-buffer "cadre-output"
+                                                               (gtk:text-buffer-get-end-iter gtk-buffer) nil)
+                     :input-mark (gtk:text-buffer-create-mark gtk-buffer "cadre-input"
+                                                              (gtk:text-buffer-get-end-iter gtk-buffer) t)))))
 
 (defun repl-gtk-buffer () (buffer-text (repl-buffer *repl*)))
 
@@ -43,15 +64,8 @@
 (defun make-repl-widget ()
   "Create the REPL (once) and return the widget for the panel's REPL page."
   (let* ((buffer (make-buffer :name "*repl*" :text (make-gtk-text) :major-mode 'repl-mode))
-         (gtk-buffer (buffer-text buffer))
          (view (make-editor-view buffer :gutter nil)))
-    (ensure-repl-tags gtk-buffer)
-    (attach-syntax buffer)
-    (setf *repl* (make-repl :buffer buffer :editor-view view
-                            :output-mark (gtk:text-buffer-create-mark gtk-buffer "cadre-output"
-                                                                      (gtk:text-buffer-get-end-iter gtk-buffer) nil)
-                            :input-mark (gtk:text-buffer-create-mark gtk-buffer "cadre-input"
-                                                                     (gtk:text-buffer-get-end-iter gtk-buffer) t)))
+    (setf *repl* (make-repl-for-buffer buffer :editor-view view))
     (gtk:text-view-set-wrap-mode (view-text-view view) :word-char)
     (repl-insert (format nil "; Not connected. Evaluate something, or press ~a, to start a Lisp.~%"
                          "the ● button below")
@@ -65,7 +79,9 @@
           (command-button "document-open-symbolic" "Load the project's ASDF system" 'load-project))
         (view-widget view)))))
 
-(defun repl-view () (and *repl* (repl-editor-view *repl*)))
+(defun repl-view ()
+  (and *repl* (or (repl-editor-view *repl*)
+                  (and *window* (first (buffer-views *window* (repl-buffer *repl*)))))))
 
 (defun mark-iter (mark)
   (gtk:text-buffer-get-iter-at-mark (repl-gtk-buffer) mark))
@@ -104,7 +120,8 @@
   (let ((gtk-buffer (repl-gtk-buffer)))
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))
     (repl-fresh-line)
-    (let ((prompt (format nil "~a> " (if (connected-p) (connection-prompt *connection*) "CL-USER")))
+    (let ((prompt (cond ((repl-prompter *repl*) (funcall (repl-prompter *repl*)))
+                        (t (format nil "~a> " (if (connected-p) (connection-prompt *connection*) "CL-USER")))))
           (start (gtk:text-iter-get-offset (gtk:text-buffer-get-end-iter gtk-buffer))))
       (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) prompt -1)
       (let ((prompt-start (iter-at gtk-buffer start))
@@ -148,6 +165,8 @@
 
 (defun repl-eval (string)
   "Evaluate STRING in the REPL, as if typed."
+  (when (repl-evaluator *repl*)
+    (return-from repl-eval (funcall (repl-evaluator *repl*) string)))
   (with-connection (connection)
     (setf (repl-busy *repl*) t)
     (rex connection (swank-call "swank-repl:listener-eval" string)
@@ -206,8 +225,9 @@
 
 (define-command repl-return ()
   "Send the input if it is complete; otherwise start a new line."
-  (:modes repl-mode)
-  (let ((input (repl-input)))
+  (:modes repl-mode editor-repl-mode)
+  (with-buffer-repl ()
+   (let ((input (repl-input)))
     (cond
       ((repl-reading *repl*)
        (destructuring-bind (thread tag) (repl-reading *repl*)
@@ -223,7 +243,7 @@
        (setf (repl-history-index *repl*) nil)
        (repl-freeze-input)
        (repl-eval input))
-      (t (gtk:text-buffer-insert-at-cursor (repl-gtk-buffer) (string #\Newline) -1)))))
+      (t (gtk:text-buffer-insert-at-cursor (repl-gtk-buffer) (string #\Newline) -1))))))
 
 (defun repl-history-step (delta)
   (let* ((history (repl-history *repl*))
@@ -237,20 +257,21 @@
 
 (define-command repl-previous-input ()
   "Replace the input with the previous one from the history."
-  (:modes repl-mode)
-  (repl-history-step -1))
+  (:modes repl-mode editor-repl-mode)
+  (with-buffer-repl () (repl-history-step -1)))
 
 (define-command repl-next-input ()
   "Replace the input with the next one from the history."
-  (:modes repl-mode)
-  (repl-history-step 1))
+  (:modes repl-mode editor-repl-mode)
+  (with-buffer-repl () (repl-history-step 1)))
 
 (define-command clear-repl ()
   "Clear the REPL's output."
-  (when *repl*
+  (with-buffer-repl ()
+   (when *repl*
     (let ((gtk-buffer (repl-gtk-buffer)))
       (gtk:text-buffer-delete gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
-                              (mark-iter (repl-output-mark *repl*))))))
+                              (mark-iter (repl-output-mark *repl*)))))))
 
 (defun show-repl-page (&key focus)
   (set-panel-visible *window* t)

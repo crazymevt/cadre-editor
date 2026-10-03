@@ -23,6 +23,9 @@
                (:file "picker")
                (:file "search")
                (:file "lisp-commands")
+               (:file "editing")
+               (:file "paredit")
+               (:file "macros")
                (:file "session")
                (:file "repl")
                (:file "notes")
@@ -37,6 +40,8 @@
                (:file "review")
                (:file "claude-tools")
                (:file "claude")
+               (:file "editor-repl")
+               (:file "restore")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -55,13 +60,15 @@
                (:file "buffers")
                (:file "editor")
                (:file "commands")
+               (:file "editing")
                (:file "fuzzy")
                (:module "lisp"
                 :serial t
                 :components ((:file "lexer")
                              (:file "syntax")
                              (:file "indent")
-                             (:file "faces")))
+                             (:file "faces")
+                             (:file "paredit")))
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")
@@ -88,6 +95,7 @@
                (:file "commands")
                (:file "keymaps")
                (:file "lisp")
+               (:file "editing")
                (:file "swank")
                (:file "claude"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

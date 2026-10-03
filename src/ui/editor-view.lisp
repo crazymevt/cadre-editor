@@ -11,6 +11,7 @@
    (gutter :reader view-gutter)
    (widget :reader view-widget :documentation "The scrolled window holding the text view.")
    (gutter-digits :initform 0 :accessor view-gutter-digits)
+   (group :initform nil :accessor view-group :documentation "The editor group whose tab holds this view.")
    (on-cursor-moved :initarg :on-cursor-moved :initform nil :accessor view-on-cursor-moved
                     :documentation "Called with the view when its cursor moves.")))
 

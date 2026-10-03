@@ -166,6 +166,8 @@
   (format o "(defsystem \"smoke\" :components ((:file \"src/lib\")))~%"))
 (setf *lisp-command* '("sbcl" "--noinform" "--no-userinit"))
 (setf *claude-program* (namestring (truename "scripts/fake-claude")))
+(with-open-file (o (merge-pathnames "src/m5.lisp" *root*) :direction :output)
+  (format o "(a b) c~%"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -725,6 +727,225 @@
 (then-when ((not (cadre-ui::connected-p)))
   (check "disconnect closes the connection" (not (cadre-ui::connected-p))))
 
+
+;;; M5: Emacs depth
+(defun type-keys (keys)
+  "Type KEYS (\"C-u 3 x\") as if pressed, letting Cadre type the keys GTK would."
+  (dolist (key (parse-keys keys))
+    (cadre-ui::process-key *window* key
+                           (cond ((string= key "SPC") " ")
+                                 ((= 1 (length key)) key)
+                                 ((and (= 3 (length key)) (string= "S-" key :end2 2)) (string-upcase (subseq key 2))))
+                           :replaying t)))
+
+(defun m5-text (string &optional (line 0) (column 0))
+  (let ((buffer (find-buffer "m5.lisp")))
+    (show-buffer-named "m5.lisp")
+    (text-replace-contents (buffer-text buffer) string)
+    (set-cursor line column)))
+
+(defun buffer-text-string () (buffer-string (current-buffer)))
+(defun point () (text-point (buffer-text (current-buffer))))
+
+(then 300
+  (open-file-path (merge-pathnames "src/m5.lisp" *root*)))
+
+(then-when ((find-buffer "m5.lisp"))
+  (setf *keybinding-profile* :emacs)
+  (m5-text "(a b) c" 0 4)
+  (type-keys "C-)")
+  (check "C-) slurps the next expression" (string= "(a b c)" (line-text 0)) (line-text 0))
+  (type-keys "C-}")
+  (check "C-} barfs it again" (string= "(a b) c" (line-text 0)) (line-text 0))
+  (m5-text "(f (g x))" 0 6)
+  (type-keys "M-r")
+  (check "M-r raises the expression at the cursor" (string= "(f x)" (line-text 0)) (line-text 0))
+  (m5-text "(a (b c) d)" 0 5)
+  (type-keys "M-s")
+  (check "M-s splices the list" (string= "(a b c d)" (line-text 0)) (line-text 0))
+  (m5-text "(f x)" 0 3)
+  (type-keys "M-(")
+  (check "M-( wraps the next expression" (string= "(f (x))" (line-text 0)) (line-text 0))
+  ;; Paredit mode
+  (call-command 'cadre-ui::paredit-mode)
+  (check "paredit mode turns on in Lisp buffers" (minor-mode-enabled-p (find-buffer "m5.lisp") 'cadre-ui::paredit-mode))
+  (m5-text "" 0 0)
+  (type-keys "( d e f SPC (")
+  (check "( inserts a pair in paredit mode" (string= "(def ())" (buffer-text-string)) (buffer-text-string))
+  (type-keys ") )")
+  (check ") moves past the close paren" (= (point) 8) (point))
+  (type-keys "DEL")
+  (check "DEL steps into a list instead of unbalancing it" (and (string= "(def ())" (buffer-text-string)) (= (point) 7)))
+  (m5-text "(a ())" 0 4)
+  (type-keys "DEL")
+  (check "DEL deletes an empty pair" (string= "(a )" (buffer-text-string)) (buffer-text-string))
+  (m5-text "(a (b
+ c) d)" 0 3)
+  (type-keys "C-k")
+  (check "C-k kills whole expressions in paredit mode" (string= "(a  d)" (buffer-text-string)) (buffer-text-string))
+  (call-command 'cadre-ui::paredit-mode)
+  (check "paredit mode turns off" (not (minor-mode-enabled-p (find-buffer "m5.lisp") 'cadre-ui::paredit-mode)))
+  ;; The kill ring
+  (m5-text "one two three" 0 0)
+  (kill-new "older")
+  (setf *last-command-kind* nil)
+  (type-keys "M-d M-d")
+  (check "kills in a row join" (string= "one two" (first *kill-ring*)) (first *kill-ring*))
+  (type-keys "C-e C-y")
+  (check "C-y yanks the last kill" (string= " threeone two" (buffer-text-string)) (buffer-text-string))
+  (type-keys "M-y")
+  (check "M-y replaces it with the kill before" (string= " threeolder" (buffer-text-string)) (buffer-text-string))
+  (type-keys "C-a C-k")
+  (check "C-k kills to the end of the line" (and (string= "" (buffer-text-string))
+                                                 (string= " threeolder" (first *kill-ring*))))
+  ;; Prefix arguments
+  (m5-text "abcdefgh" 0 0)
+  (type-keys "C-u 3 C-f")
+  (check "C-u 3 C-f moves three characters" (= 3 (point)) (point))
+  (type-keys "C-u 4 x")
+  (check "C-u 4 x types four x's" (string= "abcxxxxdefgh" (buffer-text-string)) (buffer-text-string))
+  (type-keys "C-u C-u C-b")
+  (check "C-u C-u means 16" (= 0 (point)) (point))
+  ;; Case, comments, transposing
+  (m5-text "hello world" 0 0)
+  (type-keys "M-u M-c")
+  (check "M-u and M-c change a word's case" (string= "HELLO World" (buffer-text-string)) (buffer-text-string))
+  (m5-text "(foo)" 0 0)
+  (type-keys "M-;")
+  (check "M-; adds a comment at the end of the line" (search "(foo)" (line-text 0)) (line-text 0))
+  (check "it starts with ; " (search "; " (line-text 0)))
+  (m5-text "(def-thing 1)
+(def" 1 4)
+  (type-keys "M-/")
+  (check "M-/ expands a word from the buffer" (string= "(def-thing" (line-text 1)) (line-text 1))
+  ;; Incremental search
+  (m5-text "alpha beta alpha gamma" 0 0)
+  (type-keys "C-s")
+  (check "C-s opens incremental search" (cadre-ui::isearch-active-p))
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (cadre-ui::window-find-bar *window*)) "alpha"))
+
+(then 300
+  (check "the cursor follows the first match" (= 5 (point)) (point))
+  (type-keys "C-s")
+  (check "C-s goes to the next match" (= 16 (point)) (point))
+  (type-keys "C-g")
+  (check "C-g goes back to where the search began" (and (= 0 (point)) (not (cadre-ui::isearch-active-p))))
+  (type-keys "C-s")
+  (gtk:editable-set-text (cadre-ui::find-bar-entry (cadre-ui::window-find-bar *window*)) "gam"))
+
+(then 300
+  (check "a new search starts from the cursor" (= 20 (point)) (point))
+  (type-keys "C-f")
+  (check "another command ends the search at the match and runs" (and (not (cadre-ui::isearch-active-p)) (= 21 (point)))
+         (point))
+  (check "the mark is left where the search began" (= 0 (cadre-ui::mark-offset (current-buffer))))
+  ;; Query-replace
+  (m5-text "foo Foo foo foo" 0 0)
+  (cadre-ui::start-query-replace (current-view) "foo" "bar")
+  (type-keys "y n y")
+  (check "query-replace asks about each match" (string= "bar Foo bar foo" (buffer-text-string)) (buffer-text-string))
+  (type-keys "!")
+  (check "! replaces the rest" (and (string= "bar Foo bar bar" (buffer-text-string)) (null cadre-ui::*query-replace*))
+         (buffer-text-string))
+  (m5-text "Foo foo" 0 0)
+  (cadre-ui::start-query-replace (current-view) "foo" "bar")
+  (type-keys "!")
+  (check "replacing keeps the case of each match" (string= "Bar bar" (buffer-text-string)) (buffer-text-string))
+  ;; Keyboard macros
+  (m5-text "a
+b
+c
+d" 0 0)
+  (type-keys "C-x ( C-a - SPC C-n C-x )")
+  (check "a keyboard macro records keys" (and (string= "- a" (line-text 0)) cadre-ui::*last-macro*
+                                              (not cadre-ui::*macro-recording-p*)))
+  (type-keys "C-x e e")
+  (check "C-x e runs it, and e again" (and (string= "- b" (line-text 1)) (string= "- c" (line-text 2)))
+         (list (line-text 1) (line-text 2)))
+  (type-keys "C-g C-u 1 C-x e")
+  (check "with a count" (string= "- d" (line-text 3)) (line-text 3))
+  ;; Help
+  (type-keys "C-h k C-x C-f")
+  (check "C-h k describes a key" (and (find-buffer "*Help*") (search "open-file" (buffer-string (find-buffer "*Help*")))))
+  (call-command 'close-tab)
+  ;; Splits
+  (show-buffer-named "m5.lisp")
+  (type-keys "C-x 3")
+  (check "C-x 3 splits the editor" (= 2 (length (cadre-ui::window-groups *window*))))
+  (check "both groups show the file"
+         (= 2 (length (cadre-ui::buffer-views *window* (find-buffer "m5.lisp"))))))
+
+(then 300
+  (screenshot "19-split")
+  (let ((before (cadre-ui::window-active-group *window*)))
+    (type-keys "C-x o")
+    (check "C-x o moves to the other group" (not (eq before (cadre-ui::window-active-group *window*)))))
+  (type-keys "C-x 2")
+  (check "C-x 2 splits again, below" (= 3 (length (cadre-ui::window-groups *window*))))
+  (cadre-ui::save-session *window*)
+  (let ((state (cdr (assoc (uiop:native-namestring (cadre-ui::window-project *window*)) (cadre-ui::read-sessions)
+                           :test #'equal))))
+    (check "the session remembers the split groups"
+           (eq :split (first (getf state :layout))) (getf state :layout))
+    (check "the session remembers the files"
+           (search "m5.lisp" (prin1-to-string (getf state :layout))))))
+
+(then 300
+  (type-keys "C-x 1"))
+
+(then 300
+  (check "C-x 1 leaves one group" (= 1 (length (cadre-ui::window-groups *window*))))
+  (check "files open in other groups move into it" (find-buffer "m5.lisp"))
+  (check "and no buffer is shown twice in it"
+         (= 1 (length (cadre-ui::buffer-views *window* (find-buffer "m5.lisp")))))
+  (cadre-ui::restore-layout *window* (cadre-ui::window-active-group *window*)
+                            (list :split :below 0.5
+                                  (list :group :files '())
+                                  (list :group :files (list (list (namestring (merge-pathnames "src/m1.lisp" *root*)) 1 2))))))
+
+(then 300
+  (check "restoring a session rebuilds its split groups" (= 2 (length (cadre-ui::window-groups *window*))))
+  (let ((second (second (cadre-ui::groups-in-order *window*))))
+    (check "and reopens the files in them, with the cursor where it was"
+           (let ((view (cadre-ui::group-selected-view *window* second)))
+             (and view (string= "m1.lisp" (buffer-name (view-buffer view)))
+                  (equal '(2 3) (multiple-value-list (cadre-ui::view-cursor-line-column view))))))))
+
+(then 300
+  (call-command 'cadre-ui::delete-other-groups))
+
+(then 300
+  (check "groups merge back" (= 1 (length (cadre-ui::window-groups *window*))))
+  ;; The editor REPL
+  (call-command 'cadre-ui::editor-repl)
+  (let ((buffer (find-buffer "*cadre-repl*")))
+    (check "the editor REPL opens in a tab" (and buffer (eq buffer (current-buffer))))
+    (let ((view (first (cadre-ui::buffer-views *window* buffer))))
+      (check "its tab is in the window's only group, selected"
+             (and view (member (cadre-ui::view-group view) (cadre-ui::window-groups *window*))
+                  (eq view (cadre-ui::selected-view *window*)))
+             (list (length (cadre-ui::window-groups *window*))
+                   (and view (member (cadre-ui::view-group view) (cadre-ui::window-groups *window*)) t)
+                   (tab-titles))))
+    (insert-at-cursor "(+ 1 2)")
+    (type-keys "RET")
+    (check "it evaluates in Cadre's image" (search (format nil "~%3~%") (buffer-string buffer)) (buffer-string buffer))
+    (insert-at-cursor "(length (cadre:buffer-list))")
+    (type-keys "RET")
+    (check "with the editor's own functions"
+           (search (format nil "~%~d~%" (length (buffer-list))) (buffer-string buffer)))
+    (insert-at-cursor "(error \"boom\")")
+    (type-keys "RET")
+    (check "errors are reported, not fatal" (search "; Error: boom" (buffer-string buffer)))))
+
+(then 300
+  (screenshot "20-editor-repl")
+  (check "no command shadows a core function"
+         (null (loop for s being the external-symbols of :cadre
+                     when (and (find-command s) (not (eq s 'cadre:lisp-mode))) collect s)))
+  (call-command 'close-tab)
+  (setf *keybinding-profile* :standard))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
@@ -733,7 +954,8 @@
   (ensure-directories-exist (merge-pathnames "cadre/" config))
   (with-open-file (o (merge-pathnames "cadre/settings.sexp" config) :direction :output)
     (prin1 '(:keybinding-profile :standard) o))
-  (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1))
+  (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1)
+  (sb-posix:setenv "XDG_STATE_HOME" (namestring (merge-pathnames "state/" config)) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
 (cadre-ui:main :project *root* :init-file nil :quit-after 480)

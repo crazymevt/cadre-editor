@@ -1,0 +1,145 @@
+(in-package #:cadre-tests)
+
+;;; Paredit. Texts mark the cursor with |.
+
+(defun text-with-cursor (string)
+  (let* ((point (position #\| string))
+         (text (c:make-string-text (remove #\| string :count 1))))
+    (setf (c:text-point text) point)
+    text))
+
+(defun shown-with-cursor (text)
+  (let ((s (c:text-string text)) (p (c:text-point text)))
+    (concatenate 'string (subseq s 0 p) "|" (subseq s p))))
+
+(defun paredit (function string &rest args)
+  "STRING after FUNCTION, with the cursor shown as |."
+  (let* ((text (text-with-cursor string))
+         (syntax (c:make-lisp-syntax text)))
+    (multiple-value-bind (line column) (c:text-position-line text (c:text-point text))
+      (multiple-value-bind (edits point stick delta) (apply function syntax line column args)
+        (c:apply-edits text edits point (or stick :before) (or delta 0))
+        (shown-with-cursor text)))))
+
+(define-test paredit :parent cadre-tests
+  (is string= "(a b| c)" (paredit #'c:paredit-slurp-forward "(a b|) c"))
+  (is string= "(a (b| c d))" (paredit #'c:paredit-slurp-forward "(a (b| c) d)"))
+  (is string= "(a b|) c" (paredit #'c:paredit-barf-forward "(a b| c)"))
+  (is string= "(|)a" (paredit #'c:paredit-barf-forward "(|a)"))
+  (is string= "(a b| c)" (paredit #'c:paredit-slurp-backward "a (b| c)"))
+  (is string= "a (b| c)" (paredit #'c:paredit-barf-backward "(a b| c)"))
+  (is string= "(let ((x 1)) |(foo x))" (paredit #'c:paredit-raise "(let ((x 1)) (when t |(foo x)))"))
+  (is string= "(f |x)" (paredit #'c:paredit-raise "(f (g |x y))"))
+  (is string= "(a b| c d)" (paredit #'c:paredit-splice "(a (b| c) d)"))
+  (is string= "(a |c d)" (paredit #'c:paredit-splice-killing-backward "(a (b |c d))"))
+  (is string= "(a b|)" (paredit #'c:paredit-splice-killing-forward "(a (b| c d))"))
+  (is string= "((|(a b)) c)" (paredit #'c:paredit-wrap "(|(a b) c)"))
+  (is string= "(f (|x))" (paredit #'c:paredit-wrap "(f |x)"))
+  (is string= "(|)" (paredit #'c:paredit-wrap "|"))
+  (is string= "(a b)| (c)" (paredit #'c:paredit-split "(a b| c)"))
+  (is string= "\"ab\"| \"cd\"" (paredit #'c:paredit-split "\"ab|cd\""))
+  (is string= "(a b |c d)" (paredit #'c:paredit-join "(a b) |(c d)"))
+  (fail (paredit #'c:paredit-slurp-forward "(a b|)"))
+  (fail (paredit #'c:paredit-raise "|a"))
+  ;; Typing
+  (is string= "(f (|))" (paredit #'c:paredit-open "(f |)"))
+  (is string= "\"(|\"" (paredit #'c:paredit-open "\"|\""))
+  (is string= "#\\(|" (paredit #'c:paredit-open "#\\|"))
+  (is string= "(a (b c)|)" (paredit #'c:paredit-close "(a (b c|  ))"))
+  (is string= "(a (b c)|)" (paredit #'c:paredit-close "(a (b c|))"))
+  (is string= "(f \"|\")" (paredit #'c:paredit-quote "(f |)"))
+  (is string= "\"ab\"|" (paredit #'c:paredit-quote "\"ab|\""))
+  (is string= "\"a\\\"|b\"" (paredit #'c:paredit-quote "\"a|b\""))
+  ;; Deleting
+  (is string= "(a (|))" (paredit #'c:paredit-delete-before "(a ()|)"))
+  (is string= "(a |)" (paredit #'c:paredit-delete-before "(a (|))"))
+  (is string= "(a (b)|)" (paredit #'c:paredit-delete-before "(a (b))|"))
+  (is string= "(a |(b))" (paredit #'c:paredit-delete-before "(a (|b))"))
+  (is string= "(a |)" (paredit #'c:paredit-delete-before "(a \"|\")"))
+  (is string= "(a \"x|\")" (paredit #'c:paredit-delete-before "(a \"x\"|)"))
+  (is string= "(ab|)" (paredit #'c:paredit-delete-before "(abc|)"))
+  (is string= "(a |)" (paredit #'c:paredit-delete-after "(a |())"))
+  (is string= "(a (|b))" (paredit #'c:paredit-delete-after "(a |(b))"))
+  (is string= "(a b)|" (paredit #'c:paredit-delete-after "(a b|)"))
+  (is string= "\"a|\"" (paredit #'c:paredit-delete-after "\"a|\\n\""))
+  ;; How far C-k kills
+  (flet ((kill-end (string)
+           (let* ((text (text-with-cursor string))
+                  (syntax (c:make-lisp-syntax text)))
+             (multiple-value-bind (line column) (c:text-position-line text (c:text-point text))
+               (let ((end (c:paredit-kill-end syntax line column)))
+                 (concatenate 'string (c:text-string text 0 (c:text-point text)) (c:text-string text end)))))))
+    (is string= "(a )" (kill-end "(a |b c)"))
+    (is string= "(defun f ()
+  
+   (bar))" (kill-end "(defun f ()
+  |(foo)
+   (bar))"))
+    (is string= "x ; c
+y" (kill-end "x|(a
+ b) ; c
+y"))
+    (is string= "(f \"ab\")" (kill-end "(f \"ab|cd\")"))
+    (is string= "ab" (kill-end "a|
+b"))))
+
+;;; The kill ring
+
+(define-test kill-ring :parent cadre-tests
+  (let ((c:*kill-ring* '()) (c::*kill-ring-yank-index* 0) (c:*last-command-kind* nil) (c:*this-command-kind* nil))
+    (fail (c:current-kill))
+    (c:kill-text "one")
+    (is string= "one" (c:current-kill))
+    ;; A second kill right after joins the first.
+    (setf c:*last-command-kind* :kill)
+    (c:kill-text " two")
+    (c:kill-text "zero " :direction :backward)
+    (is equal '("zero one two") c:*kill-ring*)
+    (setf c:*last-command-kind* nil)
+    (c:kill-text "three")
+    (c:kill-new "four")
+    (is string= "four" (c:current-kill))
+    (is string= "three" (c:current-kill 1))
+    (is string= "zero one two" (c:current-kill 1))
+    (is string= "four" (c:current-kill 1))
+    (let ((c:*kill-ring-max* 2))
+      (c:kill-new "five")
+      (is = 2 (length c:*kill-ring*)))))
+
+(define-test replacing :parent cadre-tests
+  (is equal '((0 . 3) (8 . 11)) (c:find-all "foo" "Foo bar foo"))
+  (is equal '((8 . 11)) (c:find-all "foo" "Foo bar foo" :case-fold nil))
+  (is equal '((4 . 7)) (c:find-all "Bar" "foo Bar bar"))
+  (is string= "bar" (c:replacement-for "foo" "bar"))
+  (is string= "Bar" (c:replacement-for "Foo" "bar"))
+  (is string= "BAR" (c:replacement-for "FOO" "bar"))
+  (is string= "bAr" (c:replacement-for "FOO" "bAr"))
+  (is equal '("Bar baz BAR" 2) (multiple-value-list (c:replace-all "foo" "bar" "Foo baz FOO")))
+  (is string= "Hello" (c:capitalize-string "hELLO"))
+  (is equal '("defun" "define-command") (c:dabbrev-candidates "def" "(defun x) (def| y) (define-command z) (defun w)" 14))
+  (is equal '("make-buffer") (c:dabbrev-candidates "make-" "(make-buffer) make-" 19)))
+
+(define-test minor-modes :parent cadre-tests
+  (c:define-minor-mode test-minor-mode ())
+  (let ((buffer (c:make-buffer :name "minor")))
+    (unwind-protect
+         (progn
+           (false (c:minor-mode-enabled-p buffer 'test-minor-mode))
+           (c:set-minor-mode buffer 'test-minor-mode t)
+           (true (c:minor-mode-enabled-p buffer 'test-minor-mode))
+           (is = 1 (length (c:buffer-minor-mode-keymaps buffer)))
+           (c:set-minor-mode buffer 'test-minor-mode nil)
+           (false (c:minor-mode-enabled-p buffer 'test-minor-mode)))
+      (c:kill-buffer buffer))))
+
+(define-test prefix-argument :parent cadre-tests
+  (let ((count 0))
+    (eval `(c:define-command test-repeated () (:repeat t) (incf ,(intern "*TEST-COUNT*" :cadre-tests))))
+    (defparameter *test-count* 0)
+    (let ((c:*prefix-arg* 3)) (c:run-command 'test-repeated))
+    (is = 3 *test-count*)
+    (let ((c:*prefix-arg* '(4))) (c:run-command 'test-repeated))
+    (is = 7 *test-count*)
+    (is = 1 (c:prefix-numeric-value nil))
+    (setf count 0)
+    count))

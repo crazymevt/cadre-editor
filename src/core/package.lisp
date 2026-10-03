@@ -29,7 +29,16 @@
    ;; commands
    #:define-command #:find-command #:list-commands #:run-command #:command-applicable-p
    #:command-name #:command-documentation #:command-modes #:command-title
-   #:*this-command* #:*last-command*
+   #:*this-command* #:*last-command* #:*this-command-kind* #:*last-command-kind*
+   #:*prefix-arg* #:prefix-numeric-value #:command-repeat
+   ;; minor modes
+   #:define-minor-mode #:find-minor-mode #:minor-mode-enabled-p #:set-minor-mode
+   #:buffer-minor-mode-keymaps #:minor-mode-name #:minor-mode-title #:minor-mode-keymap
+   #:minor-mode-documentation #:*minor-modes* #:*minor-mode-hook*
+   ;; the kill ring and other editing
+   #:*kill-ring-max* #:*kill-ring* #:*kill-hook* #:kill-new #:kill-text #:current-kill
+   #:case-fold-p #:find-all #:replacement-for #:replace-all
+   #:word-char-p #:word-bounds-after #:capitalize-string #:symbol-constituent-p #:dabbrev-candidates
    ;; keymaps
    #:keymap #:make-keymap #:keymap-name #:bind-key #:unbind-key #:keymap-lookup
    #:lookup-keys #:parse-keys #:canonical-key #:keys-string #:make-key
@@ -48,6 +57,13 @@
    #:forward-sexp-position #:backward-sexp-position #:up-list-position #:down-list-position
    #:beginning-of-defun-position #:end-of-defun-position #:toplevel-form-bounds
    #:paren-match-at
+   ;; structural editing
+   #:apply-edits #:map-offset #:offset-of #:line-column-of #:enclosing-list #:sexp-at
+   #:list-bounds #:lb-open-start #:lb-open-end #:lb-close-start #:lb-close-end
+   #:paredit-slurp-forward #:paredit-barf-forward #:paredit-slurp-backward #:paredit-barf-backward
+   #:paredit-raise #:paredit-splice #:paredit-splice-killing-backward #:paredit-splice-killing-forward
+   #:paredit-wrap #:paredit-split #:paredit-join #:paredit-open #:paredit-close #:paredit-quote
+   #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec
    #:token-face #:*faces* #:*paren-face-count*
    ;; Swank

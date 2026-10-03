@@ -50,9 +50,22 @@
   "F3" 'find-next
   "S-F3" 'find-previous
   "C-g" 'go-to-line
+  "C-h" 'find-replace
+  "C-\\" 'split-editor
+  "C-1" 'focus-first-group
+  "C-2" 'focus-second-group
+  "C-3" 'focus-third-group
+  "C-k C-\\" 'split-below
+  "C-k w" 'delete-group
+  "C-k C-w" 'delete-other-groups
+  "C-M-Right" 'move-tab-to-next-group
+  "C-S-r" 'editor-repl
+  "C-k C-k" 'describe-key
   "C-q" 'quit)
 
 (bind-keys *standard-editing-keymap*
+  "C-/" 'toggle-comment
+  "C-S-k" 'kill-whole-line
   "C-z" 'undo
   "C-S-z" 'redo
   "C-y" 'redo
@@ -78,8 +91,34 @@
   "M-x" 'execute-command
   "C-x b" 'switch-to-buffer
   "C-x p f" 'quick-open
-  "C-s" 'find-text
-  "C-r" 'find-previous
+  "C-s" 'isearch-forward
+  "C-r" 'isearch-backward
+  "M-%" 'query-replace
+  "C-u" 'universal-argument
+  "M--" 'negative-argument
+  "M-0" 'digit-argument "M-1" 'digit-argument "M-2" 'digit-argument "M-3" 'digit-argument
+  "M-4" 'digit-argument "M-5" 'digit-argument "M-6" 'digit-argument "M-7" 'digit-argument
+  "M-8" 'digit-argument "M-9" 'digit-argument
+  "C-x (" 'start-kbd-macro
+  "C-x )" 'end-kbd-macro
+  "C-x e" 'call-last-kbd-macro
+  "F3" 'start-or-end-kbd-macro
+  "F4" 'end-or-call-kbd-macro
+  "C-x 0" 'delete-group
+  "C-x 1" 'delete-other-groups
+  "C-x 2" 'split-below
+  "C-x 3" 'split-right
+  "C-x o" 'other-group
+  "C-x C-b" 'switch-to-buffer
+  "M-:" 'eval-expression
+  "C-h k" 'describe-key
+  "C-h f" 'describe-command
+  "C-h x" 'describe-command
+  "C-h w" 'where-is-command
+  "C-h b" 'describe-bindings
+  "C-c R" 'editor-repl
+  "M-g n" 'next-note
+  "M-g p" 'previous-note
   "M-g g" 'go-to-line
   "M-g M-g" 'go-to-line
   "C-g" 'keyboard-quit)
@@ -147,6 +186,30 @@
   "C-k C-m" 'expand-macro-once
   "C-k C-a" 'expand-macro-all)
 
+(defparameter *emacs-structural-keys*
+  '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward
+    "C-(" slurp-backward "C-M-Left" slurp-backward "C-{" barf-backward "C-M-Right" barf-backward
+    "M-r" raise-sexp "M-s" splice-sexp "M-Up" splice-sexp-killing-backward
+    "M-Down" splice-sexp-killing-forward "M-(" wrap-round "M-S" split-sexp "M-J" join-sexps
+    "C-M-k" kill-sexp "C-M-DEL" backward-kill-sexp))
+
+(defparameter *standard-structural-keys*
+  '("C-M-S-Right" slurp-forward "C-M-S-Left" barf-forward "C-M-S-Up" raise-sexp
+    "C-M-S-Down" splice-sexp "C-M-S-9" wrap-round "C-M-S-k" kill-sexp))
+
+(dolist (mode '(lisp-mode repl-mode editor-repl-mode))
+  (apply #'bind-keys (mode-profile-keymap mode :emacs) *emacs-structural-keys*)
+  (apply #'bind-keys (mode-profile-keymap mode :standard) *standard-structural-keys*))
+
+;;; Paredit mode's typing keys
+(bind-keys (minor-mode-keymap (find-minor-mode 'paredit-mode))
+  "(" 'paredit-open-round
+  ")" 'paredit-close-round
+  "\"" 'paredit-doublequote
+  "DEL" 'paredit-backward-delete
+  "C-d" 'paredit-forward-delete
+  "Delete" 'paredit-forward-delete)
+
 (bind-keys (major-mode-keymap (find-major-mode 'repl-mode))
   "RET" 'repl-return
   "M-p" 'repl-previous-input
@@ -193,9 +256,31 @@
   "C-SPC" 'set-mark
   "C-d" 'delete-char
   "C-k" 'kill-line
-  "C-w" 'cut
-  "M-w" 'copy
-  "C-y" 'paste
+  "C-w" 'kill-region
+  "M-w" 'copy-region-as-kill
+  "C-y" 'yank
+  "M-y" 'yank-pop
+  "M-d" 'kill-word
+  "M-DEL" 'backward-kill-word
+  "C-DEL" 'backward-kill-word
+  "C-S-DEL" 'kill-whole-line
+  "C-x C-x" 'exchange-point-and-mark
+  "C-x h" 'mark-whole-buffer
+  "C-o" 'open-line
+  "C-t" 'transpose-chars
+  "M-u" 'upcase-word
+  "M-l" 'downcase-word
+  "M-c" 'capitalize-word
+  "C-x C-u" 'upcase-region
+  "C-x C-l" 'downcase-region
+  "M-\\" 'delete-horizontal-space
+  "M-SPC" 'just-one-space
+  "M-^" 'delete-indentation
+  "M-m" 'back-to-indentation
+  "C-l" 'recenter
+  "M-;" 'comment-dwim
+  "M-/" 'dabbrev-expand
+  "M-%" 'query-replace
   "C-/" 'undo
   "C-_" 'undo
   "C-x u" 'undo
@@ -219,15 +304,22 @@
 (defun editor-focused-p (win)
   (and (focused-view win) t))
 
+(defun view-keymaps (view)
+  "The keymaps of VIEW's buffer that come before the profile's: the major
+mode's keys for this profile, the minor modes', then the major mode's."
+  (let* ((buffer (view-buffer view))
+         (mode (buffer-major-mode buffer)))
+    (append (list (mode-profile-keymap mode (or *keybinding-profile* :standard)))
+            (buffer-minor-mode-keymaps buffer)
+            (list (major-mode-keymap (find-major-mode mode))))))
+
 (defun active-keymaps (win)
   "The keymaps that apply now, most important first."
   (multiple-value-bind (global editing) (profile-keymaps *keybinding-profile*)
-    (let ((view (focused-view win)))
+    ;; During an incremental search, keys act as in the editor (ending the search).
+    (let ((view (or (focused-view win) (and (isearch-active-p) (selected-view win)))))
       (if view
-          (let ((mode (buffer-major-mode (view-buffer view))))
-            (list (mode-profile-keymap mode (or *keybinding-profile* :standard))
-                  (major-mode-keymap (find-major-mode mode))
-                  editing global))
+          (append (view-keymaps view) (list editing global))
           (list global)))))
 
 (defun set-keybinding-profile (profile)
@@ -235,8 +327,73 @@
         (setting :keybinding-profile) profile)
   (message "Keyboard shortcuts: ~:[Standard~;Emacs~]" (eq profile :emacs)))
 
+;;; Prefix arguments (C-u, M-0 … M-9)
+
+(defvar *pending-prefix-arg* nil "The prefix argument typed so far, for the next command.")
+(defvar *prefix-collecting* nil
+  ":universal just after C-u, :digits while digits follow it, else nil.")
+(defvar *this-command-keys* '() "The keys that ran the current command.")
+
+(defun prefix-arg-string (arg)
+  (cond ((null arg) "")
+        ((consp arg) (format nil "C-u~v@{ C-u~:*~}" (1- (round (log (car arg) 4))) nil))
+        (t (format nil "C-u ~a" arg))))
+
 (defun show-pending-keys (win keys)
-  (gtk:label-set-text (window-status-keys win) (if keys (format nil "~a –" (keys-string keys)) "")))
+  (gtk:label-set-text (window-status-keys win)
+                      (string-trim " " (format nil "~a~@[ ~a –~]"
+                                               (prefix-arg-string *pending-prefix-arg*)
+                                               (and keys (keys-string keys))))))
+
+(defun clear-prefix-arg ()
+  (setf *pending-prefix-arg* nil *prefix-collecting* nil))
+
+(defun collect-prefix-digit (key)
+  "While a prefix argument is being typed, add KEY to it if it is a digit or
+a minus sign. Returns t if it was."
+  (when (and *prefix-collecting* (= (length key) 1))
+    (let ((c (char key 0)))
+      (cond ((digit-char-p c)
+             (setf *pending-prefix-arg*
+                   (cond ((eq *pending-prefix-arg* '-) (- (digit-char-p c)))
+                         ((and (eq *prefix-collecting* :digits) (integerp *pending-prefix-arg*))
+                          (+ (* 10 *pending-prefix-arg*) (if (minusp *pending-prefix-arg*)
+                                                              (- (digit-char-p c))
+                                                              (digit-char-p c))))
+                         (t (digit-char-p c)))
+                   *prefix-collecting* :digits)
+             t)
+            ((and (char= c #\-) (eq *prefix-collecting* :universal))
+             (setf *pending-prefix-arg* '- *prefix-collecting* :digits)
+             t)))))
+
+(define-command universal-argument ()
+  "Give the next command a numeric argument: C-u alone means 4, C-u C-u 16,
+and digits after C-u give that number. Most editing commands repeat that many times."
+  (setf *pending-prefix-arg* (if (consp *prefix-arg*) (list (* 4 (car *prefix-arg*))) '(4))
+        *prefix-collecting* :universal))
+
+(define-command digit-argument ()
+  "Start or continue a numeric argument with the digit typed (M-0 … M-9)."
+  (let* ((key (car (last *this-command-keys*)))
+         (digit (digit-char-p (char key (1- (length key))))))
+    (setf *pending-prefix-arg* (if (integerp *prefix-arg*) (+ (* 10 *prefix-arg*) digit) digit)
+          *prefix-collecting* :digits)))
+
+(define-command negative-argument ()
+  "Start a negative numeric argument (M--)."
+  (setf *pending-prefix-arg* '- *prefix-collecting* :digits))
+
+(defparameter *prefix-commands* '(universal-argument digit-argument negative-argument)
+  "Commands that build the prefix argument rather than use it.")
+
+;;; Reading keys for a command (describe-key, query-replace)
+
+(defvar *key-reader* nil
+  "A function given each key before the keymaps. It returns t if it used
+the key; nil lets the key go on as usual.")
+
+;;; Processing a key
 
 (defun base-keyval (keycode state)
   "The keyval KEYCODE gives without Alt: on macOS, Option+f types ƒ, but
@@ -246,9 +403,64 @@ Emacs keys want M-f."
                                  (remove :alt-mask (modifier-list state)) 0)
     (and ok keyval)))
 
+(defun keymaps-for-key (win key)
+  (let ((dispatcher (window-dispatcher win)))
+    (cond ((or (dispatcher-pending dispatcher) (not (plain-key-p key)) (string= key "ESC"))
+           (active-keymaps win))
+          ;; Plain keys (typing) only go to the buffer's own keymaps, and
+          ;; only in an editor: RET and TAB in Lisp, ( and ) with paredit.
+          ((focused-view win) (view-keymaps (focused-view win)))
+          (t '()))))
+
+(defun run-key-command (win command keys)
+  "Run COMMAND, typed as KEYS, with the prefix argument typed before it."
+  (let ((*prefix-arg* *pending-prefix-arg*)
+        (*this-command-keys* keys))
+    (unless (member command *prefix-commands*)
+      (clear-prefix-arg))
+    (when (and (isearch-active-p) (not (member command *isearch-commands*)))
+      (isearch-exit))
+    (call-command command)
+    (show-pending-keys win nil)))
+
+(defun process-key (win key text &key replaying)
+  "Act on KEY (a canonical key) typed in WIN; TEXT is the character it
+types, if any. Returns t if Cadre used the key, nil to let the focused
+widget have it. When REPLAYING a keyboard macro, keys nothing binds are
+typed into the focused widget here."
+  (record-macro-key key text)
+  (let ((dispatcher (window-dispatcher win)))
+    (cond
+      ((and *key-reader* (funcall *key-reader* key)) t)
+      ((and (null (dispatcher-pending dispatcher)) (collect-prefix-digit key))
+       (show-pending-keys win nil)
+       t)
+      (t
+       (multiple-value-bind (action keys command) (dispatch-key dispatcher key (keymaps-for-key win key))
+         (ecase action
+           (:prefix (show-pending-keys win keys) t)
+           (:command (run-key-command win command keys) t)
+           (:undefined (clear-prefix-arg) (show-pending-keys win nil)
+            (message "~a is undefined" (keys-string keys)) t)
+           (:unbound (unbound-key win key text :replaying replaying))))))))
+
+(defun unbound-key (win key text &key replaying)
+  "A key no keymap binds: typing. It ends a run of kills. With a prefix
+argument, a printable key is typed that many times."
+  (setf *last-command-kind* nil)
+  (let ((count (and *pending-prefix-arg* (prefix-numeric-value *pending-prefix-arg*))))
+    (clear-prefix-arg)
+    (show-pending-keys win nil)
+    (cond ((and count text (plain-key-p key))
+           (dotimes (i (max 0 count)) (type-into-focus win key text))
+           t)
+          (replaying (type-into-focus win key text) t)
+          (t nil))))
+
 (defun handle-key (win keyval state &optional keycode)
   "Route a key press to a command. Returns t if Cadre used the key."
-  (when (and (null (dispatcher-pending (window-dispatcher win))) (completion-key keyval))
+  (when (and (null (dispatcher-pending (window-dispatcher win))) (null *key-reader*)
+             (completion-key keyval))
     (return-from handle-key t))
   (let ((mods (modifier-list state)))
     ;; On macOS, Option changes the character typed; for Meta and for
@@ -259,21 +471,10 @@ Emacs keys want M-f."
       (setf keyval (or (base-keyval keycode state) keyval))))
   (let ((key (event-key keyval state
                         :super-as-control (and (macos-p) (not (eq *keybinding-profile* :emacs)))))
-        (dispatcher (window-dispatcher win)))
+        (text (let ((code (gdk:keyval-to-unicode keyval)))
+                (and (>= code 32) (/= code 127) (string (code-char code))))))
     (when key
-      (multiple-value-bind (action keys command)
-          (dispatch-key dispatcher key
-                        (if (or (dispatcher-pending dispatcher) (not (plain-key-p key)) (string= key "ESC"))
-                            (active-keymaps win)
-                            ;; Plain keys (typing) only go to the major mode's
-                            ;; keymaps, and only in an editor: RET and TAB in Lisp.
-                            (and (editor-focused-p win) (subseq (active-keymaps win) 0 2))))
-        (ecase action
-          (:prefix (show-pending-keys win keys) t)
-          (:command (show-pending-keys win nil) (call-command command) t)
-          (:undefined (show-pending-keys win nil)
-           (message "~a is undefined" (keys-string keys)) t)
-          (:unbound nil))))))
+      (process-key win key text))))
 
 (defun setup-keys (win)
   (let ((controller (gtk:event-controller-key-new)))

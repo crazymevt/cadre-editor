@@ -250,6 +250,17 @@ Keys we don't bind fall through to GtkTextView, which keeps input methods
   highlighted matches. Search across the project uses a ripgrep-style
   backend and opens results in a panel.
 
+**As built (M5):** paredit's edits are computed in `core` from the syntax
+cache as lists of `(start end replacement)` plus a cursor position, so they
+are tested headlessly on plain-string text and applied to a
+`gtk:text-buffer` as one undo step. Keys go through one path,
+`process-key`, for typing and for keyboard-macro replay; keys nothing binds
+are typed into the focused widget during replay. Splits are editor groups
+(an `adw:tab-view` and tab bar each) in a tree of `gtk:paned`s; since a
+buffer dies with its last view, closing a group moves its tabs to a
+neighbour. The session is saved per project to
+`~/.local/state/cadre/session.sexp`.
+
 ### 5.6 Configuration
 
 - `~/.config/cadre/init.lisp` (with an XDG fallback; `~/.cadre.lisp`

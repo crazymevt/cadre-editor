@@ -22,12 +22,15 @@
    (explorer-holder :reader window-explorer-holder)
    (main-paned :reader window-main-paned)
    (editor-stack :reader window-editor-stack :documentation "The empty page, or the tabs.")
-   (tab-view :reader window-tab-view)
+   (groups :initform '() :accessor window-groups :documentation "The editor groups (tabs.lisp).")
+   (active-group :initform nil :accessor window-active-group)
+   (groups-holder :reader window-groups-holder)
    (views :initform (make-hash-table :test 'eq) :reader window-views
           :documentation "Tab page child widget → editor-view.")
    (panel :reader window-panel)
    (status-message :reader window-status-message)
    (status-keys :reader window-status-keys)
+   (status-macro :reader window-status-macro)
    (status-position :reader window-status-position)
    (status-mode :reader window-status-mode)
    (status-connection :reader window-status-connection)
@@ -170,7 +173,7 @@ and, if given, LABEL."
 
 (defun make-cadre-window (app)
   (let* ((win (make-instance 'cadre-window))
-         (tab-view (make-instance 'adw:tab-view))
+         (groups-holder (make-instance 'adw:bin :hexpand t :vexpand t))
          (panel (make-panel :on-hide (lambda () (set-panel-visible win nil))))
          (title (make-instance 'adw:window-title :title "Cadre" :subtitle "")))
     (multiple-value-bind (window ids)
@@ -223,6 +226,8 @@ and, if given, LABEL."
                 (gtk:label :id :status-arglist :xalign 0.0 :ellipsize :end :max-width-chars 90
                            :css-classes '("monospace"))
                 (gtk:label :id :status-message :xalign 1.0 :hexpand t :ellipsize :end)
+                (gtk:label :id :status-macro :label "● Recording macro" :visible nil
+                           :css-classes '("error") :tooltip-text "Defining a keyboard macro: C-x ) ends it")
                 (gtk:label :id :status-keys :css-classes '("accent"))
                 (gtk:label :id :status-position)
                 (gtk:label :id :status-mode)))))
@@ -235,10 +240,11 @@ and, if given, LABEL."
               (slot-value win 'explorer-holder) (make-instance 'adw:bin :vexpand t)
               (slot-value win 'main-paned) (id :main-paned)
               (slot-value win 'editor-stack) (id :editor-stack)
-              (slot-value win 'tab-view) tab-view
+              (slot-value win 'groups-holder) groups-holder
               (slot-value win 'panel) panel
               (slot-value win 'status-message) (id :status-message)
               (slot-value win 'status-keys) (id :status-keys)
+              (slot-value win 'status-macro) (id :status-macro)
               (slot-value win 'status-position) (id :status-position)
               (slot-value win 'status-mode) (id :status-mode)
               (slot-value win 'status-connection) (id :status-connection)
@@ -260,15 +266,9 @@ and, if given, LABEL."
         (gtk:stack-add-named stack (make-empty-page) "empty")
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
-                                       ;; The tab bar scrolls when the tabs don't fit; the
-                                       ;; button at its end lists them all.
-                                       (adw:tab-bar :view tab-view :autohide nil
-                                                    :end-action-widget
-                                                    (command-button "cadre-tabs-symbolic" "Show all open tabs"
-                                                                    'switch-to-buffer :id :tabs-button))
                                        (make-review-bar)
                                        (find-bar-widget (window-find-bar win))
-                                       tab-view))
+                                       groups-holder))
                              "tabs"))
       (adw:bin-set-child (window-explorer-holder win) (make-no-folder-page))
       (setup-tabs win)

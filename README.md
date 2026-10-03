@@ -3,7 +3,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
-**Status:** milestone M4 (Claude). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M5 (Emacs depth). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -31,6 +31,11 @@ for the design and the milestones.
   asks your running Lisp (describe, arglists, definitions, cross-references,
   macroexpansion, compiler notes, the backtrace); and edits proposed as inline
   diffs in the editor, which you accept or reject.
+- **M5:** Emacs depth: structural editing and paredit mode, a kill ring
+  shared with the system clipboard, the mark and mark ring, incremental
+  search and query-replace (and replace in the find bar), keyboard macros,
+  numeric arguments, help about keys and commands, split editors, session
+  restore, and a REPL in Cadre's own image.
 
 ## Running
 
@@ -138,6 +143,53 @@ are options for your init file.
 Symbols are colored by what the connected Lisp knows: your macros like Common
 Lisp's, special variables and constants, and calls to functions that don't
 exist underlined. Set `*highlight-from-image*` to `nil` to turn this off.
+
+### Emacs depth
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Split right / below | `Ctrl+\` / `Ctrl+K Ctrl+\` | `C-x 3` / `C-x 2` |
+| Next group / group 1, 2, 3 | — / `Ctrl+1`, `Ctrl+2`, `Ctrl+3` | `C-x o` |
+| Close this group / all other groups | `Ctrl+K W` / `Ctrl+K Ctrl+W` | `C-x 0` / `C-x 1` |
+| Move tab to the next group | `Ctrl+Alt+→` | (palette) |
+| Find and replace | `Ctrl+H` | `M-%` (query-replace) |
+| Incremental search forward / backward | (find bar) | `C-s` / `C-r` |
+| Toggle comment | `Ctrl+/` | `M-;` |
+| Delete line | `Ctrl+Shift+K` | `C-S-Backspace` |
+| Editor REPL (Cadre's own image) | `Ctrl+Shift+R` | `C-c R` |
+| Evaluate in Cadre's image | (palette) | `M-:` |
+| Describe key | `Ctrl+K Ctrl+K` | `C-h k` |
+| Describe command / where is / all bindings | (palette) | `C-h f` / `C-h w` / `C-h b` |
+
+The Emacs profile also has the kill ring (`C-k`, `C-w`, `M-w`, `C-y`, `M-y`,
+`M-d`, `M-DEL`, `C-M-k`), the mark (`C-SPC`, `C-u C-SPC` to go back,
+`C-x C-x`, `C-x h`), `C-u` and `M-0`…`M-9` numeric arguments, keyboard macros
+(`C-x (`, `C-x )`, `C-x e` then `e` to repeat, or `F3`/`F4`), and `C-o`,
+`C-t`, `M-u`/`M-l`/`M-c`, `M-\`, `M-SPC`, `M-^`, `M-m`, `C-l` and `M-/`. The
+kill ring and the system clipboard stay in step, so `C-y` pastes what you
+copied elsewhere and `M-y` (not right after a yank) picks from the ring.
+
+Structural editing works in Lisp buffers and REPLs in both profiles:
+
+| Action | Standard | Emacs |
+| --- | --- | --- |
+| Slurp / barf forward | `Ctrl+Alt+Shift+→` / `←` | `C-)` / `C-}` (or `C-→` / `C-←`) |
+| Slurp / barf backward | (palette) | `C-(` / `C-{` |
+| Raise / splice | `Ctrl+Alt+Shift+↑` / `↓` | `M-r` / `M-s` |
+| Splice, killing backward / forward | (palette) | `M-↑` / `M-↓` |
+| Wrap in parentheses | `Ctrl+Alt+Shift+9` | `M-(` |
+| Split / join | (palette) | `M-S` / `M-J` |
+| Kill expression | `Ctrl+Alt+Shift+K` | `C-M-k` |
+
+`M-x paredit-mode` (saved as a setting) also keeps parentheses balanced as you
+type: `(` and `"` insert pairs, `)` moves past the end of the list, `DEL` and
+`C-d` step over parentheses instead of deleting half a pair, and `C-k` kills
+whole expressions.
+
+Cadre remembers each folder's open files, splits, cursor positions, panel and
+sidebar, and whether a Lisp was running, and restores them the next time you
+open that folder (without naming files). Turn this off with
+`*restore-session*`, or just the Lisp with `*restore-lisp*`.
 
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server
