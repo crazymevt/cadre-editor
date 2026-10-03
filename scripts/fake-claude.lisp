@@ -89,10 +89,30 @@
      (say (format nil "Hello from fake Claude. Here is some **code**:~%~%```lisp~%(defun hi () :hi)~%```~%Done."))
      (finish "hello"))))
 
+(defun signed-out-marker ()
+  "If FAKE_CLAUDE_SIGNED_OUT names a file that exists, we are signed out."
+  (let ((path (uiop:getenv "FAKE_CLAUDE_SIGNED_OUT")))
+    (and path (plusp (length path)) path)))
+
 (cond
   ((member "--version" *args* :test #'string=) (write-line "9.9.9 (Claude Code)"))
   ((and (member "auth" *args* :test #'string=) (member "status" *args* :test #'string=))
-   (write-line "{\"loggedIn\": true, \"authMethod\": \"fake\"}"))
+   (if (and (signed-out-marker) (probe-file (signed-out-marker)))
+       (write-line "{\"loggedIn\": false, \"authMethod\": \"none\"}")
+       (write-line "{\"loggedIn\": true, \"authMethod\": \"fake\"}")))
+  ((and (member "auth" *args* :test #'string=) (member "login" *args* :test #'string=))
+   (write-line "Opening browser to sign in…")
+   (write-line "If the browser didn't open, visit: https://example.invalid/fake-sign-in?code=true")
+   (write-string "Paste code here if prompted > ")
+   (finish-output)
+   (let ((code (read-line *standard-input* nil "")))
+     (cond ((string= (string-trim " " code) "good-code")
+            (when (signed-out-marker) (ignore-errors (delete-file (signed-out-marker))))
+            (write-line "Login successful.")
+            (finish-output))
+           (t (write-line "Invalid code. Please make sure the full code was copied.")
+              (finish-output)
+              (uiop:quit 1)))))
   (t
    (let ((initialized nil))
      (loop for line = (read-line *standard-input* nil)

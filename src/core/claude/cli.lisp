@@ -68,7 +68,8 @@ project's settings and Cadre's tools.")
 
 (defstruct (claude-status (:conc-name claude-status-))
   "What Cadre found out about the CLI."
-  program version logged-in auth-method error)
+  program version logged-in auth-method error
+  detail)                               ; what `auth status` printed, when not signed in
 
 (defun check-claude ()
   "Run the CLI's --version and auth status. Slow: call it off the GUI thread."
@@ -79,12 +80,15 @@ project's settings and Cadre's tools.")
             (let* ((version (string-trim '(#\Newline #\Space)
                                          (uiop:run-program (list program "--version") :output :string
                                                                                      :ignore-error-status t)))
-                   (auth (ignore-errors
-                          (parse-json (uiop:run-program (list program "auth" "status") :output :string
-                                                                                       :ignore-error-status t)))))
+                   (output (uiop:run-program (list program "auth" "status") :output :string
+                                                                            :error-output :output
+                                                                            :ignore-error-status t))
+                   (auth (ignore-errors (parse-json output)))
+                   (logged-in (jtrue-p (jget auth "loggedIn"))))
               (make-claude-status :program program :version version
-                                  :logged-in (jtrue-p (jget auth "loggedIn"))
-                                  :auth-method (jget auth "authMethod")))
+                                  :logged-in logged-in
+                                  :auth-method (jget auth "authMethod")
+                                  :detail (unless logged-in (string-trim '(#\Newline #\Space) output))))
           (error (e) (make-claude-status :program program :error (princ-to-string e)))))))
 
 ;;; The command line

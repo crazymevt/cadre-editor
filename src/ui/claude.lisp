@@ -40,7 +40,7 @@ compile_file ask in Cadre themselves.")
 
 (defstruct (chat (:conc-name chat-))
   process session-id (started nil) (busy nil) (cost 0)
-  messages scroller input send-button status model-dropdown stack
+  messages scroller input send-button status model-dropdown stack composer
   context-file context-problems context-debugger
   (stream-box nil)                      ; the box of the reply being streamed
   (stream-label nil)
@@ -103,6 +103,20 @@ compile_file ask in Cadre themselves.")
     (gtk:stack-add-named stack (claude-status-page) "status")
     (gtk:stack-add-named stack scroller "chat")
     (show-claude-intro)
+    ;; The context chips and the message box; hidden while Claude isn't
+    ;; ready, so the sign-in page has the room.
+    (setf (chat-composer chat)
+          (gtk:build
+            (gtk:box :orientation :vertical
+              (gtk:separator)
+              (gtk:box :spacing 2 :margin-start 6 :margin-top 2
+                (gtk:label :label "Context:" :css-classes '("dim-label") :margin-end 4)
+                file problems debugger)
+              (gtk:box :spacing 6 :margin-start 8 :margin-end 8 :margin-bottom 6
+                (gtk:frame :hexpand t
+                  (gtk:scrolled-window :max-content-height 160 :propagate-natural-height t
+                                       :hscrollbar-policy :never :child input))
+                send))))
     (gtk:build
       (gtk:box :orientation :vertical
         (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-top 2 :margin-bottom 2
@@ -113,30 +127,115 @@ compile_file ask in Cadre themselves.")
                       :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-new-chat))))
         (gtk:separator)
         stack
-        (gtk:separator)
-        (gtk:box :spacing 2 :margin-start 6 :margin-top 2
-          (gtk:label :label "Context:" :css-classes '("dim-label") :margin-end 4)
-          file problems debugger)
-        (gtk:box :spacing 6 :margin-start 8 :margin-end 8 :margin-bottom 6
-          (gtk:frame :hexpand t
-            (gtk:scrolled-window :max-content-height 160 :propagate-natural-height t
-                                 :hscrollbar-policy :never :child input))
-          send)))))
+        (chat-composer chat)))))
 
 (defvar *claude-status-label* nil)
+(defvar *claude-status-detail* nil)
+(defvar *sign-in-box* nil)
+(defvar *sign-in-link* nil)
+(defvar *sign-in-code* nil)
+(defvar *sign-in-progress* nil)
+(defvar *sign-in-process* nil "The running `claude auth login`, or nil.")
 
 (defun claude-status-page ()
   (setf *claude-status-label* (make-instance 'gtk:label :wrap t :justify :center :max-width-chars 60
-                                                        :selectable t))
-  (gtk:build
-    (gtk:box :orientation :vertical :spacing 12 :valign :center :halign :center :margin-start 20 :margin-end 20
-      (gtk:label :label "Claude" :css-classes '("title-2"))
-      *claude-status-label*
-      (gtk:box :spacing 8 :halign :center
-        (gtk:button :label "Sign In…" :tooltip-text "Run claude auth login in a terminal"
-                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-sign-in)))
-        (gtk:button :label "Check Again" :css-classes '("suggested-action")
-                    :on-clicked (lambda (b) (declare (ignore b)) (check-claude-status :force t)))))))
+                                                        :selectable t)
+        *claude-status-detail* (make-instance 'gtk:label :wrap t :justify :center :max-width-chars 70
+                                                         :selectable t :css-classes '("dim-label" "caption"))
+        *sign-in-link* (make-instance 'gtk:link-button :label "Browser didn't open?" :uri "https://claude.ai")
+        *sign-in-code* (make-instance (quote gtk:entry) :width-chars 32 :placeholder-text "Paste the code from the browser here"
+                                                 :hexpand t)
+        *sign-in-progress* (make-instance 'gtk:label :wrap t :xalign 0.0 :selectable t :css-classes '("dim-label")))
+  (gobject:connect *sign-in-code* :activate (lambda (e) (declare (ignore e)) (submit-sign-in-code)))
+  (setf *sign-in-box*
+        (gtk:build
+          (gtk:box :orientation :vertical :spacing 6 :visible nil :css-classes '("cadre-chat-approval")
+            (gtk:label :wrap t :xalign 0.0
+                       :label "Sign in in your browser, then paste the code it shows:")
+            (gtk:box :spacing 6
+              *sign-in-code*
+              (gtk:button :label "Submit Code" :css-classes '("suggested-action")
+                          :on-clicked (lambda (b) (declare (ignore b)) (submit-sign-in-code)))
+              (gtk:button :label "Cancel"
+                          :on-clicked (lambda (b) (declare (ignore b)) (cancel-sign-in))))
+            (gtk:box :spacing 6
+              *sign-in-progress*
+              (gtk:label :hexpand t)
+              *sign-in-link*))))
+  (make-instance
+   'gtk:scrolled-window :hscrollbar-policy :never
+   :child (gtk:build
+            (gtk:box :orientation :vertical :spacing 10 :valign :start :halign :center
+                     :margin-start 20 :margin-end 20 :margin-top 12 :margin-bottom 12
+              *claude-status-label*
+              *sign-in-box*
+              (gtk:box :spacing 8 :halign :center
+                (gtk:button :label "Sign In…" :tooltip-text "Sign in to Claude Code (claude auth login)"
+                            :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-sign-in)))
+                (gtk:button :label "Check Again" :css-classes '("suggested-action")
+                            :on-clicked (lambda (b) (declare (ignore b)) (check-claude-status :force t))))
+              *claude-status-detail*))))
+
+;;; Signing in, by running `claude auth login` and passing it the code
+
+(defun sign-in-url (line)
+  (let ((start (search "https://" line)))
+    (and start (subseq line start (position #\Space line :start start)))))
+
+(defun start-sign-in (program)
+  (let ((process (sb-ext:run-program program '("auth" "login")
+                                     :wait nil :search t :input :stream :output :stream :error :output
+                                     :external-format :utf-8)))
+    (setf *sign-in-process* process)
+    (gtk:editable-set-text *sign-in-code* "")
+    (gtk:label-set-text *sign-in-progress* "Starting…")
+    (show-sign-in-box t)
+    (sb-thread:make-thread
+     (lambda ()
+       (let ((stream (sb-ext:process-output process)))
+         (loop for line = (ignore-errors (read-line stream nil))
+               while line
+               do (let ((line (string-trim '(#\Space #\Return) line)))
+                    (glib:call-in-main-thread
+                     (lambda ()
+                       (let ((url (sign-in-url line)))
+                         (cond (url (gtk:link-button-set-uri *sign-in-link* url)
+                                    (gtk:label-set-text *sign-in-progress* "Waiting for you to sign in…"))
+                               ((plusp (length line)) (gtk:label-set-text *sign-in-progress* line)))))))))
+       (sb-ext:process-wait process)
+       (let ((code (sb-ext:process-exit-code process)))
+         (glib:call-in-main-thread
+          (lambda ()
+            (when (eq process *sign-in-process*)
+              (setf *sign-in-process* nil)
+              (show-sign-in-box nil)
+              (message (if (eql code 0) "Signed in to Claude Code" "Signing in did not finish"))
+              (check-claude-status :force t))))))
+     :name "claude auth login")))
+
+(defun show-sign-in-box (visible)
+  "Show or hide the sign-in box; the status text makes way for it."
+  (gtk:widget-set-visible *sign-in-box* visible)
+  (gtk:widget-set-visible *claude-status-label* (not visible))
+  (gtk:widget-set-visible *claude-status-detail* (not visible))
+  (when visible (gtk:widget-grab-focus *sign-in-code*)))
+
+(defun submit-sign-in-code ()
+  (let ((code (string-trim " " (gtk:editable-get-text *sign-in-code*))))
+    (cond ((null *sign-in-process*) (message "Press Sign In first"))
+          ((string= code "") (message "Paste the code from the browser first"))
+          (t (gtk:label-set-text *sign-in-progress* "Checking the code…")
+             (ignore-errors
+              (let ((in (sb-ext:process-input *sign-in-process*)))
+                (write-line code in)
+                (force-output in)))))))
+
+(defun cancel-sign-in ()
+  (let ((process *sign-in-process*))
+    (setf *sign-in-process* nil)
+    (show-sign-in-box nil)
+    (when (and process (sb-ext:process-alive-p process))
+      (sb-ext:process-kill process 15))))
 
 ;;; Checking the CLI
 
@@ -177,13 +276,19 @@ chat or what is missing. THEN is called if Claude is ready."
             ((null (claude-status-program s))
              (gtk:label-set-text *claude-status-label*
                                  (format nil "Claude Code isn't installed.~%~%Install it from https://claude.com/claude-code, or set *claude-program* to its path, then Check Again."))
+             (gtk:label-set-text *claude-status-detail* (or (claude-status-error s) ""))
              (gtk:stack-set-visible-child-name (chat-stack *chat*) "status"))
             ((not (claude-status-logged-in s))
              (gtk:label-set-text *claude-status-label*
-                                 (format nil "Claude Code ~a is installed but not signed in.~%~%Sign in with your Claude subscription or Console account (claude auth login), then Check Again."
+                                 (format nil "Claude Code ~a is installed but not signed in.~%~%Sign in with your Claude subscription or Console account."
                                          (claude-status-version s)))
+             (gtk:label-set-text *claude-status-detail*
+                                 (format nil "Checked ~a~@[~%~a~]" (claude-status-program s)
+                                         (let ((d (or (claude-status-error s) (claude-status-detail s))))
+                                           (and d (if (> (length d) 600) (subseq d 0 600) d)))))
              (gtk:stack-set-visible-child-name (chat-stack *chat*) "status"))
             (t (gtk:stack-set-visible-child-name (chat-stack *chat*) "chat")))
+      (gtk:widget-set-visible (chat-composer *chat*) (claude-ready-p))
       (chat-update-status))))
 
 (defun chat-set-status (text)
@@ -529,16 +634,17 @@ chat or what is missing. THEN is called if Claude is ready."
   (chat-update-status))
 
 (define-command claude-sign-in ()
-  "Sign in to Claude Code, in a terminal window."
-  (let ((program (and *claude-status* (claude-status-program *claude-status*))))
-    (unless program (editor-error "Claude Code was not found"))
-    (let ((command (format nil "'~a' auth login" program)))
-      (cond ((macos-p)
-             (uiop:launch-program (list "osascript" "-e"
-                                        (format nil "tell application \"Terminal\" to do script ~s" command)
-                                        "-e" "tell application \"Terminal\" to activate")))
-            (t (uiop:launch-program (list "x-terminal-emulator" "-e" "sh" "-c" command))))
-      (message "Sign in in the terminal, then press Check Again"))))
+  "Sign in to Claude Code: runs `claude auth login`, which opens the browser,
+and passes it the code the browser shows."
+  (show-claude-page)
+  (let ((program (or (and *claude-status* (claude-status-program *claude-status*))
+                     (find-claude-program)
+                     (editor-error "Claude Code was not found"))))
+    (gtk:stack-set-visible-child-name (chat-stack *chat*) "status")
+    (gtk:widget-set-visible (chat-composer *chat*) nil)
+    (if (and *sign-in-process* (sb-ext:process-alive-p *sign-in-process*))
+        (show-sign-in-box t)
+        (start-sign-in program))))
 
 (define-command ask-claude-about-error ()
   "Ask Claude to explain the error in the debugger."

@@ -616,12 +616,30 @@
   (text-replace-contents (gtk:text-view-get-buffer (cadre-ui::chat-input cadre-ui::*chat*)) text)
   (call-command 'cadre-ui::chat-send))
 
+(defvar *signed-out* (merge-pathnames "fake-claude-signed-out" *root*))
+
 (then 300
+  (with-open-file (o *signed-out* :direction :output :if-exists :supersede) (write-line "out" o))
+  (sb-posix:setenv "FAKE_CLAUDE_SIGNED_OUT" (namestring *signed-out*) 1)
   (setf *claude-program* (namestring (truename "scripts/fake-claude")))
   (call-command 'cadre-ui::claude))
 
+(then-when ((and cadre-ui::*claude-status* (not cadre-ui::*claude-checking*)))
+  (check "a signed-out CLI shows the sign-in page"
+         (equal "status" (gtk:stack-get-visible-child-name (cadre-ui::chat-stack cadre-ui::*chat*))))
+  (check "the sign-in page says which claude it checked"
+         (search "fake-claude" (gtk:label-get-text cadre-ui::*claude-status-detail*))
+         (gtk:label-get-text cadre-ui::*claude-status-detail*))
+  (call-command 'cadre-ui::claude-sign-in))
+
+(then-when ((search "fake-sign-in" (gtk:link-button-get-uri cadre-ui::*sign-in-link*)))
+  (check "Sign In shows the sign-in link" t)
+  (screenshot "16-sign-in")
+  (gtk:editable-set-text cadre-ui::*sign-in-code* "good-code")
+  (cadre-ui::submit-sign-in-code))
+
 (then-when ((equal "chat" (gtk:stack-get-visible-child-name (cadre-ui::chat-stack cadre-ui::*chat*))))
-  (check "the Claude panel finds a signed-in CLI" (cadre-ui::claude-ready-p))
+  (check "pasting the code signs in and opens the chat" (cadre-ui::claude-ready-p))
   (chat-type "hello"))
 
 (then-when ((chat-says "Done."))

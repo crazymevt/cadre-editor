@@ -80,7 +80,7 @@
    #:*claude-program* #:*claude-model* #:*claude-effort* #:*claude-isolated*
    #:make-uuid #:random-token #:find-claude-program #:check-claude
    #:claude-status #:claude-status-program #:claude-status-version #:claude-status-logged-in
-   #:claude-status-auth-method #:claude-status-error
+   #:claude-status-auth-method #:claude-status-error #:claude-status-detail
    #:claude-arguments #:user-message-line #:parse-claude-event #:content-text #:tool-display-name
    #:claude-event #:event-kind #:event-text #:event-name #:event-id #:event-input #:event-error
    #:event-cost #:event-duration #:event-session-id #:event-model #:event-data #:event-subagent
