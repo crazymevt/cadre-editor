@@ -93,3 +93,34 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
                             :flags '(:non-unique)
                             :quit-after quit-after)
     (stop-claude-session)))
+
+;;; The macOS app (scripts/build-app.lisp saves an image that starts here)
+
+(defun bundle-resource-directory ()
+  "Contents/Resources/cadre/ of the app bundle this executable is in, or nil."
+  (let* ((exe (and sb-ext:*runtime-pathname* (probe-file sb-ext:*runtime-pathname*)))
+         (resources (and exe (merge-pathnames "../Resources/cadre/" (uiop:pathname-directory-pathname exe)))))
+    (and resources (probe-file resources))))
+
+(defun app-arguments (arguments)
+  "ARGUMENTS from the command line as a folder to open and files to open:
+the first folder is the project; macOS's -psn_ argument is ignored."
+  (let ((paths (loop for a in arguments
+                     unless (uiop:string-prefix-p "-psn_" a)
+                       collect (let ((p (probe-file a))) (or p (uiop:parse-native-namestring a))))))
+    (values (find-if #'uiop:directory-pathname-p paths)
+            (remove-if #'uiop:directory-pathname-p paths))))
+
+(defun app-main ()
+  "Start Cadre as an application: its files from the bundle, the login
+shell's environment when started from the Finder or the Dock (which give
+none), and a folder or files from the command line."
+  (setf *random-state* (make-random-state t))
+  (setf *resource-directory* (bundle-resource-directory))
+  (unless (uiop:getenv "TERM")
+    (adopt-login-shell-environment))
+  (multiple-value-bind (project files) (app-arguments (rest sb-ext:*posix-argv*))
+    (main :project project :files (mapcar #'namestring files)
+          :quit-after (let ((q (uiop:getenv "CADRE_QUIT_AFTER"))) (and q (parse-integer q :junk-allowed t))))
+    0))
+

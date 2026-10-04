@@ -57,6 +57,26 @@
       (is eq :terminal (mac "M-b" standard nil))
       (is eq :terminal (mac "C-M-b" standard t)))))
 
+(define-test login-environment :parent cadre-tests
+  (let ((nul (string (code-char 0))))
+    (is equal (list (cons "PATH" "/opt/homebrew/bin:/usr/bin") (cons "NOTE" (format nil "two~%lines")) (cons "EMPTY" ""))
+        (c:parse-environment-block
+         (concatenate 'string "Welcome! (from .zshrc)" (string #\Newline)
+                      c::*environment-start-marker* (string #\Newline)
+                      "PATH=/opt/homebrew/bin:/usr/bin" nul
+                      (format nil "NOTE=two~%lines") nul
+                      "EMPTY=" nul)))
+    (false (c:parse-environment-block "no marker here")))
+  ;; A real login shell, when there is one.
+  (when (probe-file "/bin/sh")
+    (let ((env (c:login-shell-environment :shell "/bin/sh" :timeout 10)))
+      (true (assoc "PATH" env :test #'string=)))))
+
+(define-test resource-paths :parent cadre-tests
+  (true (probe-file (c:resource-pathname "vendor/slime/swank-loader.lisp")))
+  (let ((c:*resource-directory* #p"/Applications/Cadre.app/Contents/Resources/cadre/"))
+    (is equal #p"/Applications/Cadre.app/Contents/Resources/cadre/icons/" (c:resource-pathname "icons/"))))
+
 (define-test file-references :parent cadre-tests
   (flet ((ref (text) (multiple-value-list (c:parse-file-reference text))))
     (is equal '("src/a.lisp" 12 5) (ref "src/a.lisp:12:5"))

@@ -1,0 +1,11 @@
+#!/bin/bash
+# cadre — open folders or files in Cadre.app from a terminal:
+#   cadre            a new Cadre window on the last folder
+#   cadre .          on this folder
+#   cadre a.lisp     with a.lisp open
+# Link it onto your PATH: ln -s "$PWD/scripts/cadre" ~/.local/bin/cadre
+args=()
+for arg in "$@"; do
+  if [ -e "$arg" ]; then args+=("$(cd "$(dirname "$arg")" && pwd)/$(basename "$arg")"); else args+=("$arg"); fi
+done
+exec open -n -a Cadre --args "${args[@]}"

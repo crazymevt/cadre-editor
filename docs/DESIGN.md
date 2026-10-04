@@ -852,8 +852,16 @@ prompt, and `--json-schema` asking for `{replacement, explanation}`.
 | **M6 — 1.0** | Agent mode, themes, settings page, packaging (macOS `.app`, Flatpak, Windows installer) using the gtk4 deployment tools | Shipped executables on three platforms |
 
 **As built (M6):** agent mode, themes, the settings page and reloading
-changed files are done; packaging waits until Cadre is more feature
-complete. Agent mode is the same chat with a different appended prompt,
+changed files are done. Packaging so far is a macOS app for Macs with
+Homebrew (`make app`): `scripts/build-app.lisp` saves the image itself
+(not `gtk4:save-executable`) to keep its runtime options, a 4 GB heap and
+command-line arguments passed through to Cadre. `scripts/make-app.sh` puts
+it in `Cadre.app` with Cadre's own files in `Contents/Resources/cadre/`,
+which `resource-pathname` (core `resources.lisp`) uses instead of ASDF.
+Started outside a terminal (no `TERM`), the app copies a login shell's
+environment, as VS Code does, and reseeds `*random-state*`, which the image
+would otherwise freeze. GTK stays Homebrew's; bundling it (gtk4's
+`macos-app.sh --bundle-gtk`), Flatpak and Windows wait. Agent mode is the same chat with a different appended prompt,
 `TodoWrite` and `Task` allowed, the agent model, and five more editor tools
 (`compile_defun`, `load_system`, `run_tests`, `open_file`, `save_file`);
 switching modes restarts the CLI with `--resume`, so the conversation goes

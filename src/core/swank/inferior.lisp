@@ -24,7 +24,7 @@ compiles Swank, which takes a while."
   :category "Lisp")
 
 (defun swank-directory ()
-  (asdf:system-relative-pathname :cadre "vendor/slime/"))
+  (resource-pathname "vendor/slime/"))
 
 (defun cache-directory ()
   (let ((xdg (uiop:getenv "XDG_CACHE_HOME")))

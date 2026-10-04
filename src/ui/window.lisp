@@ -119,7 +119,7 @@
 (defun install-icons ()
   "Add Cadre's own icons to the icon theme."
   (gtk:icon-theme-add-search-path (gtk:icon-theme-get-for-display (gdk:display-get-default))
-                                  (namestring (asdf:system-relative-pathname :cadre "icons/"))))
+                                  (namestring (resource-pathname "icons/"))))
 
 (defvar *font-provider* nil)
 

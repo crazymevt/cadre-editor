@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b45c9"/>
+      <stop offset="1" stop-color="#2a1d6e"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- The macOS icon grid: an 824-point rounded square on a 1024 canvas. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- ( and ) -->
+    <path d="M 372 268 Q 246 512 372 756" stroke-width="64"/>
+    <path d="M 652 268 Q 778 512 652 756" stroke-width="64"/>
+    <!-- λ -->
+    <path d="M 432 330 Q 480 318 500 372 L 598 694" stroke-width="54" stroke="#ffd166"/>
+    <path d="M 532 486 L 438 694" stroke-width="54" stroke="#ffd166"/>
+  </g>
+</svg>

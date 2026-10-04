@@ -137,6 +137,30 @@ make run                      # open the last folder (or none)
 make run DIR=~/projects/foo   # open a folder
 ```
 
+### The macOS app
+
+```sh
+make app           # build/Cadre.app
+make install-app   # build it and put it in /Applications
+```
+
+Then start Cadre from the Dock, Launchpad or Spotlight like any app. The app
+holds Cadre itself, its icons and the bundled Swank. GTK, libadwaita and the
+optional tools still come from Homebrew, so it's for Macs set up as in
+[Setup](#setup). Started from the Finder or the Dock, it takes `PATH` and
+the rest of the environment from your login shell, as a terminal would, so
+it finds `sbcl`, `git` and `claude` the same way. Rebuild it (`make
+install-app`, a few seconds once Cadre is compiled) to pick up changes.
+
+To open folders and files from a terminal, link the launcher onto your
+`PATH`:
+
+```sh
+ln -s "$PWD/scripts/cadre" ~/.local/bin/cadre
+cadre .            # a Cadre window on this folder
+cadre notes.md     # with a file open
+```
+
 The first run asks which keyboard shortcuts to use.
 
 | Action | Standard (⌘ on macOS) | Emacs |
@@ -745,7 +769,8 @@ SBCL's statistical profile.
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |
 | `tests/` | Parachute tests for `src/core/` |
-| `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `perf.lisp` |
+| `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `perf.lisp`; the app: `build-app.lisp`, `make-app.sh`, the `cadre` launcher |
+| `packaging/macos/` | The app icon (`Cadre.svg`) |
 | `icons/` | Cadre's own symbolic icons |
 
 ## License

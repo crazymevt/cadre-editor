@@ -78,6 +78,7 @@
   :components ((:file "package")
                (:file "hooks")
                (:file "options")
+               (:file "resources")
                (:file "text")
                (:file "keymaps")
                (:file "modes")

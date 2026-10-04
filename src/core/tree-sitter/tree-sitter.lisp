@@ -216,7 +216,7 @@ an editor-error if it fails."
                     (editor-error "libtree-sitter isn't installed (with Homebrew: brew install tree-sitter)"))))
     (unless (probe-file output)
       (let ((prefix (uiop:ensure-directory-pathname prefix)))
-        (compile-shared-library (list (asdf:system-relative-pathname :cadre "src/core/tree-sitter/shim.c"))
+        (compile-shared-library (list (resource-pathname "src/core/tree-sitter/shim.c"))
                                 output
                                 :include-directories (list (merge-pathnames "include/" prefix))
                                 :libraries (list (format nil "-L~a" (uiop:native-namestring (merge-pathnames "lib/" prefix)))
