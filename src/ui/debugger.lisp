@@ -12,7 +12,8 @@
 (defstruct (debug-level (:conc-name dl-))
   connection thread level condition restarts
   (frames '())                          ; frame structures fetched so far
-  (complete nil))                       ; true once every frame is fetched
+  (complete nil)                        ; true once every frame is fetched
+  (gui-backtrace nil))                  ; the GTK thread's backtrace, for an error from in-main-thread
 
 (defvar *debug-levels* '() "Debugger levels waiting, innermost first.")
 (defvar *debugger-box* nil)
@@ -106,7 +107,37 @@ into, x over and o out. Only without modifiers."
                         (gtk:button :label "Ask Claude" :tooltip-text "Send the error and backtrace to Claude"
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
     (render-restarts level)
+    (render-gui-backtrace level)
     (render-backtrace level)))
+
+;;; An error in (glib:in-main-thread (:wait t) …), as Run GTK App wraps
+;;; evaluations in, happens on the GTK thread and is re-signalled in the
+;;; REPL's, so the backtrace ends in the wait. gtk4 records the GTK thread's
+;;; backtrace from where it happened; show that too.
+
+;;; It must never signal: an error here would open another debugger level,
+;;; which would ask again.
+(defparameter *gui-backtrace-source*
+  "(ignore-errors (let ((f (and (find-package \"GTK4.RUNTIME\") (find-symbol \"GUI-THREAD-BACKTRACE\" \"GTK4.RUNTIME\")))) (when (and f (fboundp f)) (princ (or (funcall f swank::*swank-debugger-condition*) \"\")))) nil)")
+
+(defun fetch-gui-backtrace (level)
+  (frame-rex level (swank-call "swank:eval-and-grab-output" *gui-backtrace-source*)
+             :on-ok (lambda (reply)
+                      (let ((text (and (consp reply) (stringp (first reply)) (string-trim '(#\Newline #\Space) (first reply)))))
+                        (when (and text (plusp (length text)))
+                          (setf (dl-gui-backtrace level) text)
+                          (when (eq level (first *debug-levels*)) (debugger-render)))))
+             :on-abort (lambda (reason) (declare (ignore reason)))))
+
+(defun render-gui-backtrace (level)
+  (when (dl-gui-backtrace level)
+    (gtk:box-append *debugger-box*
+                    (gtk:build
+                      (gtk:expander :expanded t :margin-top 6
+                                    :label-widget (label "Backtrace on the GTK thread, where the error happened"
+                                                         :css-classes '("heading"))
+                        (gtk:label :label (dl-gui-backtrace level) :xalign 0.0 :selectable t :wrap t
+                                   :wrap-mode :word-char :css-classes '("monospace")))))))
 
 (defun render-restarts (level)
   (gtk:box-append *debugger-box* (label "Restarts" :margin-top 6 :css-classes '("heading")))
@@ -258,6 +289,7 @@ into, x over and o out. Only without modifiers."
          (show-stepped-form (first *debug-levels*)))
         (t (clear-stepped-form)
            (focus-debugger)
+           (ignore-errors (fetch-gui-backtrace (first *debug-levels*)))
            (message "Error: ~a" (first condition)))))
 
 (defun focus-debugger ()

@@ -6,11 +6,54 @@
 
 (in-package #:cadre-ui)
 
-(defstruct (shown-note (:conc-name sn-))
-  note buffer file line column end-line end-column)
-
 (defvar *notes* '() "Notes on display, as shown-note structures.")
 (defvar *notes-list* nil "The Problems page's list store.")
+
+(defstruct (shown-note (:conc-name sn-))
+  note buffer file %line %column %end-line %end-column
+  marks)                                ; (start . end) text marks in BUFFER, which follow edits
+
+;;; A note in an open buffer keeps its place with marks, so editing above it
+;;; or inside its form moves it with the text; recompiling the form then
+;;; finds and replaces it. Without marks, the line it was reported at is used.
+
+(defun note-mark-iter (shown which)
+  (let ((marks (sn-marks shown)))
+    (when (and marks (not (gtk:text-mark-get-deleted (car marks))))
+      (gtk:text-buffer-get-iter-at-mark (gtk:text-mark-get-buffer (car marks))
+                                        (if (eq which :start) (car marks) (cdr marks))))))
+
+(defun sn-line (s)
+  (let ((iter (note-mark-iter s :start))) (if iter (gtk:text-iter-get-line iter) (sn-%line s))))
+(defun sn-column (s)
+  (let ((iter (note-mark-iter s :start))) (if iter (gtk:text-iter-get-line-offset iter) (sn-%column s))))
+(defun sn-end-line (s)
+  (let ((iter (note-mark-iter s :end))) (if iter (gtk:text-iter-get-line iter) (sn-%end-line s))))
+(defun sn-end-column (s)
+  (let ((iter (note-mark-iter s :end))) (if iter (gtk:text-iter-get-line-offset iter) (sn-%end-column s))))
+
+(defun mark-note (shown)
+  "Give SHOWN marks at its place, if its buffer is open."
+  (let ((buffer (sn-buffer shown)))
+    (when (and buffer (sn-%line shown) (typep (buffer-text buffer) 'gtk:text-buffer))
+      (let ((gtk-buffer (buffer-text buffer)))
+        (setf (sn-marks shown)
+              (cons (gtk:text-buffer-create-mark gtk-buffer nil (line-iter gtk-buffer (sn-%line shown) (sn-%column shown)) t)
+                    (gtk:text-buffer-create-mark gtk-buffer nil (line-iter gtk-buffer (sn-%end-line shown) (sn-%end-column shown)) nil)))))
+    shown))
+
+(defun unmark-note (shown)
+  (let ((marks (sn-marks shown)))
+    (when marks
+      (setf (sn-marks shown) nil)
+      (dolist (mark (list (car marks) (cdr marks)))
+        (unless (gtk:text-mark-get-deleted mark)
+          (gtk:text-buffer-delete-mark (gtk:text-mark-get-buffer mark) mark))))))
+
+(defun forget-notes (predicate)
+  "Remove the notes PREDICATE is true of."
+  (setf *notes* (remove-if (lambda (s) (when (funcall predicate s) (unmark-note s) t)) *notes*)))
+
 
 (defparameter *note-faces* '(:note-error :note-warning :note-style))
 
@@ -62,23 +105,35 @@ expression there, or the rest of its line."
          (file (or (getf location :file) (and target (buffer-file target)))))
     (if (and target (getf location :position))
         (multiple-value-bind (l c el ec) (note-range target (getf location :position))
-          (make-shown-note :note note :buffer target :file file :line l :column c :end-line el :end-column ec))
-        (make-shown-note :note note :buffer target :file file :line (getf location :line) :column 0
-                         :end-line (getf location :line) :end-column 0))))
+          (mark-note (make-shown-note :note note :buffer target :file file
+                                      :%line l :%column c :%end-line el :%end-column ec)))
+        (make-shown-note :note note :buffer target :file file :%line (getf location :line) :%column 0
+                         :%end-line (getf location :line) :%end-column 0))))
 
-(defun show-notes (notes &key buffer replace-lines)
+(defun same-file-p (a b)
+  (and a b (string= (uiop:native-namestring a) (uiop:native-namestring b))))
+
+(defun show-notes (notes &key buffer replace-lines replace-files)
   "Show NOTES (compiler-notes) from compiling BUFFER. REPLACE-LINES (first .
 last) clears earlier notes in those lines of BUFFER first; :all clears all of
-BUFFER's notes."
+BUFFER's notes. REPLACE-FILES, a list of files compiled again, clears their
+notes."
   (when (and buffer replace-lines)
-    (setf *notes* (remove-if (lambda (s)
-                               (and (eq (note-buffer s) buffer)
-                                    (or (eq replace-lines :all)
-                                        (and (sn-line s) (<= (car replace-lines) (sn-line s) (cdr replace-lines))))))
-                             *notes*))
+    (forget-notes (lambda (s)
+                    (and (eq (note-buffer s) buffer)
+                         (or (eq replace-lines :all)
+                             (and (sn-line s) (<= (car replace-lines) (sn-line s) (cdr replace-lines)))))))
     (if (eq replace-lines :all)
         (remove-underlines buffer)
         (remove-underlines buffer (car replace-lines) (cdr replace-lines))))
+  (when replace-files
+    (forget-notes (lambda (s)
+                    (let ((file (or (sn-file s) (and (note-buffer s) (buffer-file (note-buffer s))))))
+                      (and file (member file replace-files :test #'same-file-p)))))
+    (dolist (file replace-files)
+      (let ((buffer (find-file-buffer file)))
+        (when (and buffer (typep (buffer-text buffer) 'gtk:text-buffer))
+          (remove-underlines buffer)))))
   (let ((new (mapcar (lambda (n) (place-note n :buffer buffer)) notes)))
     (dolist (s new) (when (sn-line s) (underline-note s)))
     (setf *notes* (stable-sort (append *notes* new) #'<
@@ -89,7 +144,7 @@ BUFFER's notes."
   "Remove every compiler note."
   (dolist (buffer (buffer-list))
     (when (typep (buffer-text buffer) 'gtk:text-buffer) (remove-underlines buffer)))
-  (setf *notes* '())
+  (forget-notes (constantly t))
   (refresh-problems))
 
 ;;; The Problems page

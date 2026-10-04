@@ -416,6 +416,46 @@ choose an entry of the kill ring to insert."
          (line (gtk:text-iter-get-line (cursor-iter gtk-buffer))))
     (set-point view (text-line-position gtk-buffer line (leading-space-count (text-line-string gtk-buffer line))))))
 
+;;; The start of a line is where its code starts: after the indentation, and
+;;; on a REPL's input line, after the prompt. Pressed again there, it goes to
+;;; the line's real start (in the REPL, the input's).
+
+(defun repl-input-start (view line)
+  "The offset where the input of VIEW's REPL starts, if it is on LINE."
+  (let ((repl (buffer-local (view-buffer view) :repl)))
+    (when repl
+      (let ((iter (gtk:text-buffer-get-iter-at-mark (view-gtk-buffer view) (repl-input-mark repl))))
+        (and (= line (gtk:text-iter-get-line iter)) (gtk:text-iter-get-offset iter))))))
+
+(defun line-starts (view line)
+  "LINE's start (in a REPL's input line, the input's), and where its code starts."
+  (let* ((gtk-buffer (view-gtk-buffer view))
+         (start (or (repl-input-start view line) (text-line-position gtk-buffer line 0)))
+         (end (gtk:text-iter-get-offset (line-end-iter gtk-buffer line))))
+    (values start
+            (loop for offset from start below end
+                  while (member (text-char gtk-buffer offset) '(#\Space #\Tab))
+                  finally (return offset)))))
+
+(defun move-to-line-start (&key extend)
+  (let* ((view (current-view))
+         (gtk-buffer (view-gtk-buffer view))
+         (point (point-offset view)))
+    (multiple-value-bind (start code) (line-starts view (gtk:text-iter-get-line (cursor-iter gtk-buffer)))
+      (let ((target (if (= point code) start code)))
+        (if extend
+            (progn (gtk:text-buffer-move-mark gtk-buffer (gtk:text-buffer-get-insert gtk-buffer) (iter-at gtk-buffer target))
+                   (scroll-to-cursor view))
+            (set-point view target))))))
+
+(define-command beginning-of-line ()
+  "Move to where the line's code starts; there, to the line's start."
+  (move-to-line-start))
+
+(define-command select-to-beginning-of-line ()
+  "Extend the selection to where the line's code starts; there, to the line's start."
+  (move-to-line-start :extend t))
+
 (define-command recenter ()
   "Scroll so the line with the cursor is in the middle of the view."
   (let ((view (current-view)))

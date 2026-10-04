@@ -111,6 +111,32 @@ the first folder is the project; macOS's -psn_ argument is ignored."
     (values (find-if #'uiop:directory-pathname-p paths)
             (remove-if #'uiop:directory-pathname-p paths))))
 
+(defun log-file () (merge-pathnames "cadre.log" (state-directory)))
+
+(defun redirect-output-to-log ()
+  "Started from the Finder or the Dock, standard output and error go nowhere:
+send them to ~/.local/state/cadre/cadre.log, so a crash (the Lisp runtime's
+fatal errors included) leaves its message. The previous run's log is kept as
+cadre.log.1."
+  (handler-case
+      (let* ((log (log-file))
+             (previous (make-pathname :name "cadre.log" :type "1" :defaults log)))
+        (ensure-directories-exist log)
+        (when (probe-file log) (uiop:rename-file-overwriting-target log previous))
+        (let ((fd (sb-posix:open (uiop:native-namestring log)
+                                 (logior sb-posix:o-wronly sb-posix:o-creat sb-posix:o-append) #o644)))
+          (finish-output *standard-output*)
+          (finish-output *error-output*)
+          (sb-posix:dup2 fd 1)
+          (sb-posix:dup2 fd 2)
+          (sb-posix:close fd)
+          (format *error-output* "~&;; Cadre started ~a, pid ~d~%"
+                  (multiple-value-bind (s m h d mo y) (get-decoded-time)
+                    (format nil "~d-~2,'0d-~2,'0d ~2,'0d:~2,'0d:~2,'0d" y mo d h m s))
+                  (sb-posix:getpid))
+          (finish-output *error-output*)))
+    (error () nil)))
+
 (defun app-main ()
   "Start Cadre as an application: its files from the bundle, the login
 shell's environment when started from the Finder or the Dock (which give
@@ -118,9 +144,13 @@ none), and a folder or files from the command line."
   (setf *random-state* (make-random-state t))
   (setf *resource-directory* (bundle-resource-directory))
   (unless (uiop:getenv "TERM")
+    (redirect-output-to-log)
     (adopt-login-shell-environment))
   (multiple-value-bind (project files) (app-arguments (rest sb-ext:*posix-argv*))
     (main :project project :files (mapcar #'namestring files)
           :quit-after (let ((q (uiop:getenv "CADRE_QUIT_AFTER"))) (and q (parse-integer q :junk-allowed t))))
+    ;; So the log tells a quit from a crash.
+    (format *error-output* "~&;; Cadre exited normally~%")
+    (finish-output *error-output*)
     0))
 

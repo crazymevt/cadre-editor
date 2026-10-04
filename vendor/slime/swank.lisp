@@ -1686,6 +1686,17 @@ Fall back to the current if no such package exists."
 
 (defvar *eval-continuation* nil)
 
+(defun abort-reason (condition)
+  "CONDITION's message for an :abort reply (Cadre's change)."
+  (with-condition-printing nil
+    (cond ((null condition) nil)
+          ((typep condition 'condition)
+           (let ((message (ignore-errors (princ-to-string condition))))
+             (if (and message (string/= message ""))
+                 (format nil "~a [~s]" message (type-of condition))
+                 (prin1-to-string condition))))
+          (t (prin1-to-string condition)))))
+
 (defun eval-for-emacs (form buffer-package id)
   "Bind *BUFFER-PACKAGE* to BUFFER-PACKAGE and evaluate FORM.
 Return the result to the continuation ID.
@@ -1708,8 +1719,11 @@ Errors are trapped and invoke our debugger."
       (send-to-emacs `(:return ,(current-thread)
                                ,(if ok
                                     `(:ok ,result)
-                                    `(:abort ,(with-condition-printing nil
-                                                (prin1-to-string condition))))
+                                    ;; Cadre: the condition's message (what
+                                    ;; PRINC prints), not its unreadable
+                                    ;; form, which shows a SIMPLE-ERROR's
+                                    ;; format control with the ~S unfilled.
+                                    `(:abort ,(abort-reason condition)))
                                ,id)))))
 
 (defvar *echo-area-prefix* "=> "

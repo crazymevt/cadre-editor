@@ -245,10 +245,17 @@ namestrings. (swank:asdf-system-files warns about a deprecated ASDF function.)"
     (rex connection (swank-call "swank:reload-system" name)
          :on-ok (lambda (result)
                   (multiple-value-bind (notes successp duration) (parse-compilation-result result)
-                    (show-notes notes)
-                    (compilation-message notes successp duration (format nil "Reloaded ~a" name))
-                    (image-changed)
-                    (update-systems-loaded))))))
+                    (flet ((show (files)
+                             ;; Every file was compiled again: its old notes go.
+                             (show-notes notes :replace-files files)
+                             (compilation-message notes successp duration (format nil "Reloaded ~a" name))
+                             (image-changed)
+                             (update-systems-loaded)))
+                      (rex connection (swank-call "swank:eval-and-grab-output" (system-files-form name))
+                           :on-ok (lambda (reply)
+                                    (let ((files (ignore-errors (read-sexp (second reply)))))
+                                      (show (if (listp files) (remove-if-not #'stringp files) '()))))
+                           :on-abort (lambda (reason) (declare (ignore reason)) (show '())))))))))
 
 (define-command load-system ()
   "Load any system ASDF can find, choosing from a list."

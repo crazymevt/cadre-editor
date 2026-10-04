@@ -72,6 +72,7 @@
 
 (defun eval-for-message (string package &optional view line)
   "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."
+  (when view (repl-follow-package package))
   (with-connection (connection)
     (rex connection (swank-call "swank:interactive-eval" (gtk-thread-source string) 3 120) :package package
          :on-ok (lambda (result)
@@ -111,6 +112,7 @@
       (unless has (editor-error "Nothing is selected"))
       (let ((text (gtk:text-buffer-get-text gtk-buffer start end t))
             (package (view-package view)))
+        (repl-follow-package package)
         (with-connection (connection)
           (rex connection (swank-call "swank:interactive-eval-region" (gtk-thread-source text) 3 120) :package package
                :on-ok (lambda (result) (show-result result) (image-changed))))))))
@@ -148,6 +150,7 @@ with whether it compiled."
         (let* ((text (view-region-text view sl sc el ec))
                (position (1+ (text-line-position (buffer-text buffer) sl sc)))
                (package (view-package view)))
+          (repl-follow-package package)
           (with-connection (connection)
             (rex connection
                  (swank-call "swank:compile-string-for-emacs" text (buffer-name buffer)
@@ -202,7 +205,9 @@ otherwise evaluate it and show its value."
                                (let ((loadp (fifth result)) (fasl (sixth result)))
                                  (when (and successp loadp fasl)
                                    (rex connection (swank-call "swank:load-file" fasl)
-                                        :on-ok (lambda (v) (declare (ignore v)) (image-changed)))))))))))
+                                        :on-ok (lambda (v) (declare (ignore v))
+                                                 (repl-follow-package (file-package buffer))
+                                                 (image-changed)))))))))))
       (if (buffer-modified-p buffer)
           (write-buffer buffer (buffer-file buffer) (lambda (ok) (when ok (compile-it))))
           (compile-it)))))
@@ -214,7 +219,15 @@ otherwise evaluate it and show its value."
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (with-connection (connection)
       (rex connection (swank-call "swank:load-file" (uiop:native-namestring (buffer-file buffer)))
-           :on-ok (lambda (v) (declare (ignore v)) (message "Loaded ~a" (buffer-name buffer)) (image-changed))))))
+           :on-ok (lambda (v) (declare (ignore v))
+                    (message "Loaded ~a" (buffer-name buffer))
+                    (repl-follow-package (file-package buffer))
+                    (image-changed))))))
+
+(defun file-package (buffer)
+  "The package BUFFER's code ends in: from its last top-level IN-PACKAGE."
+  (let ((syntax (buffer-syntax buffer)))
+    (and syntax (buffer-package-name syntax (1- (syntax-line-count syntax))))))
 
 ;;; Definitions
 

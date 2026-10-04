@@ -18,7 +18,7 @@
            #:toggle-sidebar #:toggle-panel #:toggle-layout #:use-automatic-layout #:show-output
            #:use-standard-keys #:use-emacs-keys #:keyboard-quit #:quit
            #:forward-char #:backward-char #:next-line #:previous-line
-           #:forward-word #:backward-word #:beginning-of-line #:end-of-line
+           #:forward-word #:backward-word #:beginning-of-line #:select-to-beginning-of-line #:end-of-line
            #:scroll-down-page #:scroll-up-page #:beginning-of-buffer #:end-of-buffer
            #:set-mark #:delete-char #:kill-line #:cut #:copy #:paste #:undo #:redo
            #:forward-sexp #:backward-sexp #:backward-up-list #:down-list

@@ -12,6 +12,12 @@ work with (see `src/swank/inferior.lisp`); the Emacs Lisp files are left out.
 | `swank/clisp.lisp` | GPL; bundling it would make Cadre GPL. CLISP users can load Swank from Quicklisp (`*swank-source*` :quicklisp). |
 | `contrib/swank-media.lisp` | GPLv2 or later; not needed |
 
+## Changes
+
+- `swank.lisp`, `eval-for-emacs`: an aborted evaluation's reason is the
+  condition's message and type (`ABORT-REASON`), not its unreadable form,
+  which for a `SIMPLE-ERROR` shows the format control with `~s` unfilled.
+
 ## Licenses of what is here
 
 SLIME's README: "All files, unless explicitly stated otherwise, are public
@@ -24,5 +30,5 @@ domain." The files that say otherwise:
 | `swank/match.lisp` | Permissive, keep the copyright notice |
 | `xref.lisp` | Permissive (Mark Kantrowitz, 1990), keep the notice |
 
-To update: copy the same files from a newer SLIME, repeat the license check
-(`grep -il "GPL\|copyright"`), and run `make test`.
+To update: copy the same files from a newer SLIME, repeat the changes above
+and the license check (`grep -il "GPL\|copyright"`), and run `make test`.

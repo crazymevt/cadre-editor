@@ -168,6 +168,9 @@ the code's package, the project folder, and the connected Lisp."
             (format out "~{~a~^ ~}~%~%Restarts:~%" (dl-condition level))
             (loop for (name description) in (dl-restarts level) for i from 0
                   do (format out "  ~d: [~a] ~a~%" i name description))
+            (when (dl-gui-backtrace level)
+              (format out "~%The error happened on the GTK thread, in glib:in-main-thread; its backtrace there:~%~a~%"
+                      (dl-gui-backtrace level)))
             (format out "~%Backtrace:~%")
             (dolist (frame (dl-frames level))
               (format out "  ~d: ~a~%" (frame-number frame) (frame-description frame))))))))

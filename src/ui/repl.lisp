@@ -173,8 +173,53 @@ editor REPL) bind it to that buffer's REPL.")
          :on-abort (lambda (reason)
                      (setf (repl-busy *repl*) nil)
                      (repl-fresh-line)
-                     (repl-insert (format nil "; Evaluation aborted~@[ on ~a~]~%" reason) "cadre-repl-note")
+                     (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
                      (repl-show-prompt)))))
+
+;;; Following the code's package: evaluating or compiling code from a file
+;;; switches the REPL to that code's package, so what was just defined can be
+;;; named in the REPL without a prefix.
+
+(define-option *repl-follows-buffer-package* t boolean
+  "When code from a file is evaluated or compiled, switch the REPL to the
+package of that code (from the file's IN-PACKAGE)."
+  :category "Lisp")
+
+(defun same-package-name-p (a b)
+  (string-equal (string-left-trim ":#" a) (string-left-trim ":#" b)))
+
+(defun repl-follow-package (package)
+  "Switch the connected Lisp's REPL to PACKAGE (a name), if it is idle."
+  (when (and *repl-follows-buffer-package* package *repl* (connected-p)
+             (null (repl-evaluator *repl*))
+             (not (repl-busy *repl*)) (not (repl-reading *repl*))
+             (not (same-package-name-p package (connection-package *connection*))))
+    (let ((repl *repl*))
+      (rex *connection* (swank-call "swank:set-package" package)
+           :thread :repl-thread
+           :on-ok (lambda (reply)
+                    (destructuring-bind (name prompt) reply
+                      (let ((changed (not (same-package-name-p name (connection-package *connection*)))))
+                        (setf (connection-package *connection*) name
+                              (connection-prompt *connection*) prompt)
+                        (update-connection-status)
+                        (let ((*repl* repl))
+                          (when (and changed (not (repl-busy *repl*)) (not (repl-reading *repl*)))
+                            (repl-replace-prompt))))))
+           ;; The package may not exist yet: the file isn't loaded.
+           :on-abort (lambda (reason) (declare (ignore reason)))))))
+
+(defun repl-replace-prompt ()
+  "Note the new package and show a fresh prompt, keeping what was typed."
+  (let ((input (repl-input))
+        (gtk-buffer (repl-gtk-buffer)))
+    (set-repl-input "")
+    (gtk:text-buffer-move-mark gtk-buffer (repl-output-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))
+    (repl-fresh-line)
+    (repl-insert (format nil "; Package ~a, the evaluated code's~%" (connection-package *connection*))
+                 "cadre-repl-note")
+    (repl-show-prompt)
+    (when (plusp (length input)) (set-repl-input input))))
 
 ;;; From the Lisp
 
