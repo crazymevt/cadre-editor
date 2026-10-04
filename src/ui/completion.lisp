@@ -1,15 +1,20 @@
 ;;;; completion.lisp — the completion popup at the cursor
 ;;;;
-;;;; A popover under the cursor lists the completions. Typing keeps going to
-;;;; the editor and narrows the list; Up and Down choose, Return or Tab
-;;;; insert, Escape closes.
+;;;; A popover under the cursor lists the completions, with the call or
+;;;; kind of the chosen one below. Typing keeps going to the editor and
+;;;; narrows the list; Up and Down choose, Return or Tab insert (Return
+;;;; just ends the line if what's typed is already the choice), Escape
+;;;; closes. The completions come from hints.lisp.
 
 (in-package #:cadre-ui)
 
 (defstruct (completion-popup (:conc-name cp-))
-  popover list-view store selection view start items)
+  popover list-view store selection view start items detail)
 
 (defvar *completion* nil "The open completion popup, or nil.")
+(defvar *typed-key* nil
+  "(buffer . text) while a key typed into an editor is going in, so the
+change it makes can start completion.")
 
 (defun completion-open-p () (and *completion* (gtk:widget-get-visible (cp-popover *completion*))))
 
@@ -30,7 +35,24 @@
 (defun fill-completions (popup items)
   (gio:list-store-remove-all (cp-store popup))
   (dolist (item items) (gio:list-store-append (cp-store popup) (gobject:make-lisp-object item)))
-  (when items (gtk:single-selection-set-selected (cp-selection popup) 0)))
+  (when items (gtk:single-selection-set-selected (cp-selection popup) 0))
+  (update-completion-detail))
+
+(defun selected-completion ()
+  (let* ((popup *completion*)
+         (position (and popup (gtk:single-selection-get-selected (cp-selection popup)))))
+    (when (and position (/= position gtk:+invalid-list-position+))
+      (gobject:lisp-object-value (gio:list-model-get-item (cp-store popup) position)))))
+
+(defun update-completion-detail ()
+  "Show the call or kind of the chosen completion below the list."
+  (let ((popup *completion*))
+    (when (and popup (cp-detail popup))
+      (let* ((completion (selected-completion))
+             (signature (and completion (completion-signature (first completion) (view-buffer (cp-view popup))))))
+        (gtk:widget-set-visible (cp-detail popup) (and signature t))
+        (when signature
+          (gtk:label-set-markup (cp-detail popup) (signature-markup signature)))))))
 
 (defun show-completions (view start completions)
   (close-completion)
@@ -49,19 +71,27 @@
                                 (gtk:label-set-text name (first completion))
                                 (gtk:label-set-text (gtk:widget-get-next-sibling name)
                                                     (completion-kind (fourth completion))))))))
+         (detail (make-instance 'gtk:label :xalign 0.0 :wrap t :max-width-chars 48 :visible nil
+                                           :margin-start 6 :margin-end 6 :margin-top 4 :margin-bottom 2
+                                           :css-classes '("caption" "monospace")))
          (popover (make-instance 'gtk:popover :autohide nil :has-arrow nil :position :bottom
                                               :can-focus nil
-                                              :child (make-instance 'gtk:scrolled-window
-                                                                    :child list-view :hscrollbar-policy :never
-                                                                    :min-content-width 320
-                                                                    :max-content-height 260
-                                                                    :propagate-natural-height t))))
+                                              :child (gtk:build
+                                                       (gtk:box :orientation :vertical
+                                                         (make-instance 'gtk:scrolled-window
+                                                                        :child list-view :hscrollbar-policy :never
+                                                                        :min-content-width 320
+                                                                        :max-content-height 260
+                                                                        :propagate-natural-height t)
+                                                         detail)))))
     (gtk:widget-set-can-focus list-view nil)
     (gtk:widget-set-parent popover (view-text-view view))
     (gtk:popover-set-pointing-to popover (cursor-rectangle view))
     (setf *completion* (make-completion-popup :popover popover :list-view list-view :store store
                                               :selection selection :view view :start start
-                                              :items completions))
+                                              :items completions :detail detail))
+    (gobject:connect selection "notify::selected" (lambda (&rest args) (declare (ignore args))
+                                                    (update-completion-detail)))
     (gobject:connect list-view :activate (lambda (lv position) (declare (ignore lv))
                                            (gtk:single-selection-set-selected selection position)
                                            (accept-completion)))
@@ -78,12 +108,16 @@
         (gtk:list-view-scroll-to (cp-list-view *completion*) new '(:none) nil)))))
 
 (defun accept-completion ()
-  (let* ((popup *completion*)
-         (position (gtk:single-selection-get-selected (cp-selection popup))))
-    (when (/= position gtk:+invalid-list-position+)
-      (let ((completion (gobject:lisp-object-value (gio:list-model-get-item (cp-store popup) position))))
-        (close-completion)
-        (replace-prefix (cp-view popup) (cp-start popup) (first completion))))))
+  (let ((popup *completion*)
+        (completion (selected-completion)))
+    (when completion
+      (close-completion)
+      (replace-prefix (cp-view popup) (cp-start popup) (first completion)))))
+
+(defun completion-typed-p ()
+  "Whether what's typed is already the chosen completion."
+  (let ((completion (selected-completion)))
+    (and completion (string= (prefix-before-cursor (cp-view *completion*)) (first completion)))))
 
 (defun completion-key (keyval)
   "Handle KEYVAL if the completion popup wants it. Returns t if used."
@@ -93,6 +127,8 @@
             ((string= name "Up") (move-completion -1) t)
             ((string= name "Page_Down") (move-completion 8) t)
             ((string= name "Page_Up") (move-completion -8) t)
+            ((and (member name '("Return" "KP_Enter") :test #'string=) (completion-typed-p))
+             (close-completion) nil)
             ((member name '("Return" "KP_Enter" "Tab") :test #'string=) (accept-completion) t)
             ((string= name "Escape") (close-completion) t)
             (t nil)))))
@@ -103,12 +139,29 @@
     (multiple-value-bind (prefix start) (prefix-before-cursor view)
       (if (or (/= start (cp-start *completion*)) (string= prefix ""))
           (close-completion)
-          (let ((items (fuzzy-filter prefix (cp-items *completion*) :key #'first)))
+          (let ((items (rank-completions prefix (cp-items *completion*))))
             (if items
                 (progn (fill-completions *completion* items)
                        (gtk:popover-set-pointing-to (cp-popover *completion*) (cursor-rectangle view)))
                 (close-completion)))))))
 
 (defun completion-buffer-changed (buffer)
-  (when (and *completion* (eq (view-buffer (cp-view *completion*)) buffer))
-    (completion-text-changed (cp-view *completion*))))
+  "After BUFFER changes: narrow the open popup, or, if the change was a
+symbol character typed, start completion soon."
+  (let ((typed (and *typed-key* (eq (car *typed-key*) buffer) (cdr *typed-key*))))
+    (setf *typed-key* nil)
+    (cond ((and *completion* (eq (view-buffer (cp-view *completion*)) buffer))
+           (completion-text-changed (cp-view *completion*)))
+          ((and typed (= (length typed) 1) (not (terminating-char-p (char typed 0)))
+                (not (whitespace-char-p (char typed 0))))
+           (let ((view (focused-view *window*)))
+             (when (and view (eq (view-buffer view) buffer))
+               (schedule-auto-complete view))))
+          (t (cancel-auto-complete)))))
+
+(defun completion-cursor-moved (view)
+  "Close the popup if VIEW's cursor has left the symbol being completed."
+  (when (and *completion* (eq view (cp-view *completion*)))
+    (multiple-value-bind (prefix start) (prefix-before-cursor view)
+      (when (or (/= start (cp-start *completion*)) (string= prefix ""))
+        (close-completion)))))

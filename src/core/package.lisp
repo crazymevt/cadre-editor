@@ -68,6 +68,9 @@
    #:read-form-tree #:bound-variables-at #:extract-function-edits #:extract-variable-edits
    #:project-files #:read-text-file #:split-text-lines #:line-matches #:text-matches
    #:symbol-occurrences #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement
+   #:definition #:make-definition #:source-definitions #:definition-name #:definition-kind #:definition-arglist
+   #:definition-documentation #:definition-line #:arglist-hint #:form-argument-position
+   #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec
    #:token-face #:*faces* #:*paren-face-count*

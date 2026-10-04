@@ -109,12 +109,14 @@ one if it has none. Returns the view."
                                  (lambda (view)
                                    (update-cursor-decorations view)
                                    (schedule-autodoc view)
+                                   (completion-cursor-moved view)
                                    (when (eq view (selected-view win)) (update-status win)))))
          (gtk-buffer (buffer-text buffer)))
     (setf (gethash (view-widget view) (window-views win)) view
           (view-group view) group)
     (attach-syntax buffer)
     (setup-note-tooltips view)
+    (setup-symbol-hover view)
     (setup-context-menu view)
     (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
                      (lambda (adjustment) (declare (ignore adjustment))

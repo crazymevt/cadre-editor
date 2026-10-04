@@ -22,12 +22,14 @@
 
 (defvar *paintable* nil)
 
-(defun screenshot (name)
-  "Render the window to build/smoke/NAME.png."
-  (let* ((window (cadre-ui::window-gtk-window *window*))
+(defun screenshot (name &optional widget)
+  "Render the window (or WIDGET, such as a popover) to build/smoke/NAME.png."
+  (let* ((window (or widget (cadre-ui::window-gtk-window *window*)))
          (w (gtk:widget-get-width window))
          (h (gtk:widget-get-height window))
-         (paintable (or *paintable* (setf *paintable* (gtk:widget-paintable-new window))))
+         (paintable (if widget
+                        (gtk:widget-paintable-new window)
+                        (or *paintable* (setf *paintable* (gtk:widget-paintable-new window)))))
          (snapshot (gtk:snapshot-new)))
     (gdk:paintable-snapshot paintable snapshot (float w 1d0) (float h 1d0))
     (let* ((node (gtk:snapshot-to-node snapshot))
@@ -170,6 +172,8 @@
   (format o "(a b) c~%"))
 (with-open-file (o (merge-pathnames "src/m6.lisp" *root*) :direction :output)
   (format o "(defun uses-area () (area 2 3)) ; area in a comment~%(print \"area in a string\")~%"))
+(with-open-file (o (merge-pathnames "src/hints.lisp" *root*) :direction :output)
+  (format o "(defun scale-shape (shape factor &key (round t))~%  \"Scale SHAPE by FACTOR.\"~%  (list shape factor round))~%"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -1170,6 +1174,59 @@ d" 0 0)
               (search "(* width h)" (buffer-string (find-buffer "m1.lisp"))))
          (buffer-string (find-buffer "m1.lisp")))
   (screenshot "26-refactor")
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
+
+;;; Completion as you type, and hints from the source
+(defun arglist-markup () (gtk:label-get-label (cadre-ui::window-status-arglist *window*)))
+
+(then 100
+  (show-buffer-named "m1.lisp")
+  (cadre-ui::focus-view (current-view))
+  (setf cadre-ui::*project-definitions-time* 0)
+  (cadre-ui::refresh-project-definitions))
+
+(then-when ((gethash "scale-shape" cadre-ui::*project-definitions*))
+  (check "the project's definitions are read from files that aren't open"
+         (gethash "scale-shape" cadre-ui::*project-definitions*))
+  (let ((buffer (find-buffer "m1.lisp")))
+    (text-replace-contents (buffer-text buffer) (format nil "(defun area (w h) (* w h))~%"))
+    (set-cursor 1 0)
+    (insert-at-cursor "(scale-s")
+    ;; As if typed: the key goes in, and the change starts completion.
+    (setf cadre-ui::*typed-key* (cons buffer "h"))
+    (insert-at-cursor "h")))
+
+(then-when ((cadre-ui::completion-open-p) :timeout 5)
+  (check "typing a symbol opens completions by itself" (cadre-ui::completion-open-p))
+  (check "offering a function defined in another file"
+         (string= "scale-shape" (first (cadre-ui::selected-completion)))
+         (cadre-ui::selected-completion))
+  (check "showing its parameters below the list"
+         (search "shape factor &amp;key (round t)"
+                 (gtk:label-get-label (cadre-ui::cp-detail cadre-ui::*completion*)))
+         (gtk:label-get-label (cadre-ui::cp-detail cadre-ui::*completion*)))
+  (screenshot "27-auto-complete" (cadre-ui::cp-popover cadre-ui::*completion*))
+  (press "TAB")
+  (check "Tab inserts the completion" (string= "(scale-shape" (line-text 1)) (line-text 1))
+  (check "and closes the popup" (not (cadre-ui::completion-open-p)))
+  (insert-at-cursor " 'square ")
+  (cadre-ui::request-autodoc (current-view)))
+
+(then-when ((search "factor" (arglist-markup)) :timeout 5)
+  (check "without a connection, the status bar shows the source's arglist with the argument marked"
+         (search "<b>factor</b>" (arglist-markup)) (arglist-markup))
+  (let ((description (cadre-ui::symbol-description "scale-shape" (current-buffer))))
+    (check "hovering a function you wrote describes its parameters and documentation"
+           (and (string= "(scale-shape shape factor &key (round t))" (first description))
+                (search "Scale SHAPE by FACTOR." (cadre-ui::description-markup description)))
+           description))
+  (check "and standard functions too"
+         (equal "(mapcar function list &rest more-lists)"
+                (first (cadre-ui::symbol-description "mapcar" (current-buffer)))))
+  (check "the text view asks for symbol tooltips"
+         (gtk:widget-get-has-tooltip (view-text-view (current-view))))
+  (insert-at-cursor "; scale")
+  (check "completions don't appear inside comments" (not (cadre-ui::auto-complete-p (current-view))))
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
 (setf *steps* (reverse *steps*))

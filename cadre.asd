@@ -34,6 +34,7 @@
                (:file "debugger")
                (:file "completion")
                (:file "lisp-eval")
+               (:file "hints")
                (:file "image-faces")
                (:file "inspector")
                (:file "xref")
@@ -54,7 +55,7 @@
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix" "cl-ppcre")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -77,6 +78,7 @@
                              (:file "paredit")
                              (:file "refactor")))
                (:file "search")
+               (:file "definitions" :pathname "lisp/definitions")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")

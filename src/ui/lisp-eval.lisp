@@ -320,20 +320,26 @@ otherwise evaluate it and show its value."
                           (lambda () (setf *autodoc-timer* nil) (request-autodoc view) nil))))
 
 (defun request-autodoc (view)
+  "Show the arglist of the call around VIEW's cursor: from the source if it
+defines the function, else from the connected Lisp, else from standard
+Common Lisp."
   (let ((syntax (buffer-syntax (view-buffer view))))
-    (if (not (and syntax (connected-p) (eq view (focused-view *window*))))
+    (if (not (and syntax (eq view (focused-view *window*))))
         (show-arglist nil)
         (multiple-value-bind (line column) (cursor-line-column view)
           (let* ((form (and (eq (context-at syntax line column) :code) (raw-form-at syntax line column)))
-                 (key (and form (sexp-to-string form))))
+                 (key (and form (sexp-to-string form)))
+                 (source (and form (ignore-errors (local-autodoc view syntax line column :source-only t)))))
             (cond ((null form) (show-arglist nil))
+                  (source (show-arglist source))
+                  ((not (connected-p)) (show-arglist (ignore-errors (local-autodoc view syntax line column))))
                   ((gethash key *autodoc-cache*) (show-arglist (gethash key *autodoc-cache*)))
                   (t (rex *connection* (swank-call "swank:autodoc" form :print-right-margin 200)
                           :package (view-package view)
                           :on-ok (lambda (result)
                                    (let ((doc (and (consp result) (stringp (first result)) (first result))))
                                      (when (and doc (second result)) (setf (gethash key *autodoc-cache*) doc))
-                                     (show-arglist doc)))
+                                     (show-arglist (or doc (ignore-errors (local-autodoc view syntax line column))))))
                           :on-abort (lambda (reason) (declare (ignore reason)) (show-arglist nil))))))))))
 
 ;;; Completion
@@ -350,8 +356,10 @@ otherwise evaluate it and show its value."
     (values (gtk:text-buffer-get-text gtk-buffer (iter-at gtk-buffer start) (iter-at gtk-buffer end) t) start)))
 
 (defun completion-kind (flags)
-  "A word for Swank's completion flags string, such as \"-f------\"."
-  (cond ((not (stringp flags)) "")
+  "A word for Swank's completion flags string, such as \"-f------\", or
+for a kind from hints.lisp, such as :function."
+  (cond ((keywordp flags) (kind-name flags))
+        ((not (stringp flags)) "")
         ((find #\m flags) "macro")
         ((find #\s flags) "special")
         ((find #\g flags) "generic")
@@ -368,17 +376,6 @@ otherwise evaluate it and show its value."
       (gtk:text-buffer-insert-at-cursor gtk-buffer text -1))))
 
 (define-command complete-symbol ()
-  "Complete the symbol before the cursor, using the connected Lisp."
-  (let ((view (current-view)))
-    (multiple-value-bind (prefix start) (prefix-before-cursor view)
-      (when (string= prefix "") (editor-error "Nothing to complete"))
-      (let ((package (view-package view)))
-        (with-connection (connection)
-          (rex connection (swank-call "swank:fuzzy-completions" prefix package
-                                      :limit 200 :time-limit-in-msec 1500)
-               :package package
-               :on-ok (lambda (result)
-                        (let ((completions (first result)))
-                          (cond ((null completions) (message "No completions for ~a" prefix))
-                                ((null (rest completions)) (replace-prefix view start (first (first completions))))
-                                (t (show-completions view start completions)))))))))))
+  "Complete the symbol before the cursor, from the source, standard Common
+Lisp and, if one is connected, the Lisp."
+  (start-completion (current-view)))

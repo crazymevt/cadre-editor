@@ -202,6 +202,23 @@ sidebar, and whether a Lisp was running, and restores them the next time you
 open that folder (without naming files). Turn this off with
 `*restore-session*`, or just the Lisp with `*restore-lisp*`.
 
+### Completion and hints
+
+Completions appear as you type a symbol in Lisp code (after
+`*auto-complete-min-chars*`, 2 by default; turn them off with
+`*auto-complete*`), and `Ctrl+Space` / `C-M-i` asks for them anywhere. They
+come from the definitions in your open buffers and your project's Lisp files,
+from standard Common Lisp, from the words in the buffer and, when a Lisp is
+connected, from that Lisp. The chosen one's parameters show below the list.
+`Tab` or `Return` inserts it; `Return` ends the line instead if what you've
+typed already is the choice.
+
+Rest the mouse on a function, macro, variable or class to see its parameters
+and documentation, and the status bar shows the parameters of the call
+you're typing in, with the current argument in bold. Both read your source,
+so they work for functions you've written but not loaded, and without a
+Lisp (`*symbol-hover*` turns the tooltips off).
+
 ### Finding, replacing and refactoring
 
 The menu's second section has them all, and so does the right-click menu in

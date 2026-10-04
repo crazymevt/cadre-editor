@@ -580,8 +580,8 @@ checklist verifies that for each file we bundle.
 | Compile defun | `swank:compile-string-for-emacs` (with buffer position for notes) |
 | Compile/load file | `swank:compile-file-for-emacs`, `swank:load-file` |
 | Notes | Results of the compile calls → Problems panel + underlines |
-| Arglists | `swank:autodoc` (arglist with the current argument highlighted) |
-| Completion | `swank:fuzzy-completions` / `swank:simple-completions` |
+| Arglists | `swank:autodoc` (arglist with the current argument highlighted); `swank:operator-arglist` for hover. The source's own definitions (open buffers and the project's files, read by `source-definitions`) are used first, and standard CL from Cadre's image without a connection |
+| Completion | `swank:fuzzy-completions`, merged with completions from the source, standard CL and the buffer's words (which also work without a connection) |
 | Docs | `swank:describe-symbol`, `swank:documentation-symbol` |
 | Go to definition | `swank:find-definitions-for-emacs` |
 | Cross-references | `swank:xref` (`:calls`, `:callers`, `:references`, `:binds`, `:sets`, `:macroexpands`, `:specializes`) |

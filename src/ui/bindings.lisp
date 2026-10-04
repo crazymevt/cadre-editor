@@ -472,10 +472,14 @@ argument, a printable key is typed that many times."
            (dotimes (i (max 0 count)) (type-into-focus win key text))
            t)
           (replaying (type-into-focus win key text) t)
-          (t nil))))
+          (t ;; The text view types it; completion may follow.
+           (let ((view (focused-view win)))
+             (setf *typed-key* (and view text (plain-key-p key) (cons (view-buffer view) text))))
+           nil))))
 
 (defun handle-key (win keyval state &optional keycode)
   "Route a key press to a command. Returns t if Cadre used the key."
+  (setf *typed-key* nil)
   (when (and (null (dispatcher-pending (window-dispatcher win))) (null *key-reader*)
              (completion-key keyval))
     (return-from handle-key t))
