@@ -80,6 +80,17 @@
     (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
     (".cadre-conflict-bar" :background-color "alpha(@warning_bg_color, 0.2)")
     (".cadre-search-match label" :font-weight "normal")
+    ;; Editor tabs (tab-strip.lisp)
+    (".cadre-tabs" :background-color "alpha(@view_fg_color, 0.04)"
+                   :border-bottom "1px solid alpha(@view_fg_color, 0.1)" :padding ("0" "2px"))
+    (".cadre-tab-box" :margin-top "3px")
+    (".cadre-tab" :padding ("1px" "2px" "1px" "10px") :border-radius ("6px" "6px" "0" "0")
+                  :min-height "22px" :font-size "smaller")
+    (".cadre-tab:hover" :background-color "alpha(@view_fg_color, 0.06)")
+    (".cadre-tab.selected" :background-color "@view_bg_color" :box-shadow "inset 0 2px @accent_color")
+    (".cadre-tab-close" :min-height "16px" :min-width "16px" :padding "1px" :margin-left "2px")
+    (".cadre-tab:not(.selected):not(:hover) .cadre-tab-close" :opacity "0")
+    (".cadre-tabs > button" :min-height "22px" :min-width "22px" :padding "2px" :margin "2px")
     (".cadre-search-match" :padding ("2px" "4px"))
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))

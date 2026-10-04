@@ -15,6 +15,7 @@
 
 (defclass editor-group ()
   ((tab-view :initform (make-instance 'adw:tab-view) :reader group-tab-view)
+   (strip :accessor group-strip :documentation "The group's tabs (tab-strip.lisp).")
    (widget :reader group-widget)))
 
 (defmethod print-object ((group editor-group) stream)
@@ -22,16 +23,13 @@
 
 (defun make-editor-group (win)
   (let* ((group (make-instance 'editor-group))
-         (tab-view (group-tab-view group)))
-    (setf (slot-value group 'widget)
+         (tab-view (group-tab-view group))
+         (strip (make-tab-strip win group)))
+    (setf (group-strip group) strip
+          (slot-value group 'widget)
           (gtk:build
             (gtk:box :orientation :vertical :hexpand t :vexpand t :width-request 160 :height-request 100
-              ;; The tab bar scrolls when the tabs don't fit; the button at
-              ;; its end lists them all.
-              (adw:tab-bar :view tab-view :autohide nil
-                           :end-action-widget
-                           (command-button "cadre-tabs-symbolic" "Show all open tabs"
-                                           'switch-to-buffer :id :tabs-button))
+              (strip-widget strip)
               tab-view)))
     (setup-group-signals win group)
     group))

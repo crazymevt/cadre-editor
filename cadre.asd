@@ -19,6 +19,7 @@
                (:file "panel")
                (:file "window")
                (:file "tabs")
+               (:file "tab-strip")
                (:file "layout")
                (:file "commands")
                (:file "picker")

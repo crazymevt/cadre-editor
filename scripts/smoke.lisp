@@ -905,6 +905,18 @@ d" 0 0)
          (= 2 (length (cadre-ui::buffer-views *window* (find-buffer "m5.lisp"))))))
 
 (then 300
+  (let* ((group (cadre-ui::window-active-group *window*))
+         (strip (cadre-ui::group-strip group))
+         (tabs (cadre-ui::strip-tabs strip)))
+    (check "each tab in the strip is one of the group's pages"
+           (equal (mapcar #'car tabs) (cadre-ui::group-pages group)))
+    (check "tabs are compact: as wide as their names, one line tall"
+           (every (lambda (tab) (and (< (gtk:widget-get-width (cdr tab)) 160) (< (gtk:widget-get-height (cdr tab)) 32)))
+                  tabs)
+           (mapcar (lambda (tab) (list (gtk:widget-get-width (cdr tab)) (gtk:widget-get-height (cdr tab)))) tabs))
+    (check "the selected tab is marked"
+           (gtk:widget-has-css-class (cdr (assoc (adw:tab-view-get-selected-page (cadre-ui::group-tab-view group)) tabs))
+                                     "selected")))
   (screenshot "19-split")
   (let ((before (cadre-ui::window-active-group *window*)))
     (type-keys "C-x o")
