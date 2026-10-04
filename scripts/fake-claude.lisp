@@ -74,6 +74,17 @@
                                                     "new_text" "(+ y 1)" "explanation" "Use 1 instead of an undefined variable"))))
          (say (format nil "Result: ~a" result))
          (finish result))))
+    ((search "Change this code in " message)
+     ;; Claude edit: put the instruction above the code as a comment.
+     (let* ((start (+ (search "Change this code in " message) 20))
+            (file (subseq message start (search " (lines" message :start2 start)))
+            (instruction (subseq message (+ 3 (search "): " message)) (position #\Newline message :start (search "): " message))))
+            (open (+ 4 (search (format nil "```~%") message)))
+            (code (subseq message open (search (format nil "~%```") message :start2 open)))
+            (result (use-tool "propose_edit" (jobj "file" file "old_text" code
+                                                   "new_text" (format nil ";; ~a~%~a" instruction code)))))
+       (say (format nil "Result: ~a" result))
+       (finish result)))
     ((search "Try another edit" message)
      (let ((result (use-tool "propose_edit" (jobj "file" "src/m2.lisp" "old_text" "(* 2 x)" "new_text" "(+ x x)"))))
        (say (format nil "Result: ~a" result))

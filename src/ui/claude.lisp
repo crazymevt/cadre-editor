@@ -630,11 +630,12 @@ started in the other mode is replaced, resuming the same conversation."
     (when (and (gtk:toggle-button-get-active (chat-context-debugger *chat*)) *debug-levels*)
       (format out "The debugger is active:~%~a~%" (call-mcp-tool "get_backtrace" (jobj))))))
 
-(defun send-to-claude (text)
+(defun send-to-claude (text &key shown)
+  "Send TEXT to Claude, with the editor context; the chat shows SHOWN (default TEXT)."
   (let ((context (message-context)))
     (chat-append (gtk:build
                    (gtk:box :halign :end :css-classes '("cadre-chat-user")
-                     (gtk:label :label text :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char))))
+                     (gtk:label :label (or shown text) :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char))))
     (setf (chat-busy *chat*) t)
     (chat-update-status)
     (claude-send (ensure-claude-process)
@@ -758,6 +759,46 @@ and passes it the code the browser shows."
   (text-replace-contents (gtk:text-view-get-buffer (chat-input *chat*))
                          "Explain this error and how to fix it.")
   (chat-send))
+
+(defun region-to-edit (view)
+  "The selection in VIEW, or else the top-level Lisp form at the cursor, as
+start and end offsets."
+  (let ((gtk-buffer (view-gtk-buffer view)))
+    (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
+      (if has
+          (values (gtk:text-iter-get-offset start) (gtk:text-iter-get-offset end))
+          (let ((syntax (buffer-syntax (view-buffer view))))
+            (multiple-value-bind (line column) (cursor-line-column view)
+              (multiple-value-bind (l1 c1 l2 c2) (and syntax (toplevel-form-bounds syntax line column))
+                (if l1
+                    (values (gtk:text-iter-get-offset (line-iter gtk-buffer l1 c1))
+                            (gtk:text-iter-get-offset (line-iter gtk-buffer l2 c2)))
+                    (editor-error "Select the code for Claude to change")))))))))
+
+(define-command claude-edit ()
+  "Ask Claude to change the selected code (or the top-level form at the
+cursor) as you describe; review its edit as a diff, and accept or reject it."
+  (let* ((view (current-view))
+         (buffer (view-buffer view))
+         (gtk-buffer (view-gtk-buffer view)))
+    (when (and *chat* (chat-busy *chat*)) (editor-error "Claude is still working"))
+    (multiple-value-bind (start end) (region-to-edit view)
+      (let ((code (text-string gtk-buffer start end))
+            (first-line (1+ (text-position-line gtk-buffer start)))
+            (last-line (1+ (text-position-line gtk-buffer end))))
+        (ask-name (format nil "Change lines ~d–~d: describe how" first-line last-line)
+                  (lambda (instruction)
+                    (show-claude-page)
+                    (check-claude-status
+                     :then (lambda ()
+                             (send-to-claude
+                              (format nil "Change this code in ~a (lines ~d–~d): ~a~%~%```~%~a~%```~%~%~
+Make the change with propose_edit on ~:*~:*~:*~:*~:*~a, replacing this code (with enough of it as old_text ~
+to occur once). Change nothing outside it unless the change needs it, and keep your reply short."
+                                      (if (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)) (buffer-name buffer))
+                                      first-line last-line instruction code)
+                              :shown (format nil "Change ~a, lines ~d–~d: ~a" (buffer-name buffer)
+                                             first-line last-line instruction))))))))))
 
 (define-command ask-claude-about-problems ()
   "Ask Claude to fix the compiler's errors and warnings."

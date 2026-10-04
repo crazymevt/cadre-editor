@@ -236,7 +236,11 @@ ON-EXIT with the exit code."
     cp))
 
 (defun claude-alive-p (cp)
-  (and cp (sb-ext:process-alive-p (cp-process cp))))
+  "Whether CP can take messages: running, not stopped, its input open. (A
+stopped process may run a little longer, finishing up.)"
+  (and cp (not (cp-stopped cp))
+       (sb-ext:process-alive-p (cp-process cp))
+       (open-stream-p (sb-ext:process-input (cp-process cp)))))
 
 (defun claude-write-line (cp line)
   (sb-thread:with-mutex ((cp-lock cp))

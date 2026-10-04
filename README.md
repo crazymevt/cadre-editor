@@ -121,6 +121,11 @@ in: `claude auth login` (with a Claude subscription or a Console account).
 Cadre finds `claude` on your PATH, in `~/.local/bin`, or inside the Claude
 desktop app; set `*claude-program*` to use another.
 
+To change some code, select it (or just put the cursor in a top-level form),
+press `Ctrl+I` (Emacs `C-c C-a e`, or "Ask Claude to Change…" in the
+right-click menu) and say what you want; Claude's edit comes back as a diff
+in the editor to accept or reject.
+
 Open the Claude tab (`Ctrl+Alt+I`, Emacs `C-c C-a a`, or "Chat with Claude" in
 the menu) and ask. `Return` sends, `Shift+Return` starts a new line. The
 **File** chip tells Claude where you are and what is selected; **Problems** and

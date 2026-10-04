@@ -37,6 +37,7 @@
   "C-w" 'close-tab
   "C-k S-RET" 'toggle-pin-tab
   "C-S-o" 'go-to-symbol
+  "C-i" 'claude-edit
   "C-TAB" 'next-tab
   "C-S-TAB" 'previous-tab
   "C-Page_Down" 'next-tab
@@ -125,6 +126,7 @@
   "C-h b" 'describe-bindings
   "C-c R" 'editor-repl
   "C-c C-a g" 'claude-agent
+  "C-c C-a e" 'claude-edit
   "C-c s" 'find-in-project
   "C-c S" 'replace-in-project
   "C-c r" 'rename-symbol

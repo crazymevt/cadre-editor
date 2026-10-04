@@ -1497,6 +1497,25 @@ d" 0 0)
 (then 500
   (check "for Markdown, the headings" (member "Usage" (outline-labels) :test #'string=) (outline-labels)))
 
+;;; Claude edit
+(then 100
+  (show-buffer-named "m1.lisp")
+  (set-cursor 1 3)                      ; in (defun area …)
+  (call-command 'cadre-ui::claude-edit)
+  (check "Claude edit asks what to change"
+         (search "describe how" (gtk:search-entry-get-placeholder-text (cadre-ui::picker-entry (picker)))))
+  (choose-name "explain the formula"))
+
+(then-when ((cadre-ui::review-buffer-p (find-buffer "m1.lisp")) :timeout 20)
+  (check "and Claude's change comes back as a diff to review" (cadre-ui::review-buffer-p (find-buffer "m1.lisp")))
+  (call-command 'cadre-ui::accept-edit))
+
+(then 500
+  (check "accepting it changes the code"
+         (search (format nil ";; explain the formula~%(defun area") (buffer-string (find-buffer "m1.lisp")))
+         (buffer-string (find-buffer "m1.lisp")))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
