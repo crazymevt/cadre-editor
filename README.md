@@ -54,7 +54,7 @@ hasn't been tested on Linux yet.
 | [Quicklisp](https://www.quicklisp.org) | — | Fetches Cadre's Lisp libraries (cl-ppcre, cffi, alexandria; parachute for the tests) on the first run |
 | GTK | 4.14 or newer | The interface |
 | libadwaita | 1.5 or newer | Window styling, light and dark themes |
-| The [gtk4 bindings](https://github.com/crazymevt/gtk4) | — | Checked out next to Cadre, as `../gtk4` |
+| The [gtk4 bindings](https://github.com/crazymevt/gtk4) | — | Checked out next to Cadre (`../gtk4`), or in `~/quicklisp/local-projects/` |
 
 On macOS:
 
@@ -72,11 +72,23 @@ On macOS:
    sbcl --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql:add-to-init-file)' --quit
    ```
 
-3. Check out the bindings next to Cadre, so the two folders are side by side:
+3. Check out the bindings, either next to Cadre, so the two folders are side
+   by side:
 
    ```sh
    git clone https://github.com/crazymevt/gtk4.git ../gtk4
    ```
+
+   or where Quicklisp finds local projects, so your own programs can load
+   them too:
+
+   ```sh
+   git clone https://github.com/crazymevt/gtk4.git ~/quicklisp/local-projects/gtk4
+   ```
+
+   If both exist, Cadre uses `../gtk4`. To have one checkout serve both, put
+   it in one place and link the other to it, for example
+   `ln -s ~/projects/lisp/gtk4 ~/quicklisp/local-projects/gtk4`.
 
 4. Start Cadre with `make run`. The first run takes a minute or two, while
    Quicklisp downloads the libraries and SBCL compiles Cadre and the bindings.

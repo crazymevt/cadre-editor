@@ -4,7 +4,10 @@
 ;;;; screenshots to build/smoke/, prints a report, and exits 0 if all passed.
 
 (push (truename ".") asdf:*central-registry*)
-(push (truename "../gtk4/") asdf:*central-registry*)
+;; The gtk4 bindings: a checkout next to Cadre if there is one, otherwise
+;; wherever Quicklisp finds them (~/quicklisp/local-projects/).
+(let ((gtk4 (probe-file "../gtk4/gtk4.asd")))
+  (when gtk4 (push (uiop:pathname-directory-pathname gtk4) asdf:*central-registry*)))
 (ql:quickload :cadre :silent t)
 
 (defpackage #:cadre-smoke (:use #:cl #:cadre #:cadre-ui))
@@ -156,7 +159,7 @@
   (format o "Some notes.~%"))
 (with-open-file (o (merge-pathnames "src/m1.lisp" *root*) :direction :output)
   (format o "(defun area (w h)~%  (* w h))~%~%(defvar *x* 1)~%; done~%"))
-(uiop:copy-file (merge-pathnames "../gtk4/src/generated/gtk-functions-1.lisp" (truename "."))
+(uiop:copy-file (asdf:system-relative-pathname "gtk4" "src/generated/gtk-functions-1.lisp")
                 (merge-pathnames "src/big.lisp" *root*))
 (with-open-file (o (merge-pathnames "src/m2.lisp" *root*) :direction :output)
   (format o "(defun twice (x) (* 2 x))~%(defun bad (y) (+ y undefined-thing))~%(twice 21)~%~%"))
