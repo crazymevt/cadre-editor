@@ -40,10 +40,82 @@ for the design and the milestones.
 - **M6:** a settings page for every option, color themes (with a light and a
   dark choice), Claude's agent mode, and reloading files changed on disk.
 
-## Running
+## Setup
 
-Requirements: SBCL with Quicklisp, GTK 4.14+, libadwaita 1.5+, and the gtk4
-bindings checked out next to this directory (`../gtk4`).
+Cadre is developed and tested on macOS (Apple silicon, with Homebrew). The
+gtk4 bindings also support Linux, so Cadre should run there too, but it
+hasn't been tested on Linux yet.
+
+### Required
+
+| What | Version | Why |
+| --- | --- | --- |
+| [SBCL](https://www.sbcl.org) | 2.2.9 or newer (tested with 2.6.9) | Cadre runs in it, and it's the default Lisp for the REPL |
+| [Quicklisp](https://www.quicklisp.org) | — | Fetches Cadre's Lisp libraries (cl-ppcre, cffi, alexandria; parachute for the tests) on the first run |
+| GTK | 4.14 or newer | The interface |
+| libadwaita | 1.5 or newer | Window styling, light and dark themes |
+| The [gtk4 bindings](https://github.com/crazymevt/gtk4) | — | Checked out next to Cadre, as `../gtk4` |
+
+On macOS:
+
+1. Install the system libraries:
+
+   ```sh
+   brew install sbcl gtk4 libadwaita
+   ```
+
+2. Install Quicklisp, if you don't have it (from
+   [its instructions](https://www.quicklisp.org/beta/#installation)):
+
+   ```sh
+   curl -O https://beta.quicklisp.org/quicklisp.lisp
+   sbcl --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql:add-to-init-file)' --quit
+   ```
+
+3. Check out the bindings next to Cadre, so the two folders are side by side:
+
+   ```sh
+   git clone https://github.com/crazymevt/gtk4.git ../gtk4
+   ```
+
+4. Start Cadre with `make run`. The first run takes a minute or two, while
+   Quicklisp downloads the libraries and SBCL compiles Cadre and the bindings.
+   Later runs start quickly.
+
+On Linux (untested), install SBCL, GTK 4 and libadwaita from your
+distribution. On Debian or Ubuntu, that's
+`sudo apt install sbcl libgtk-4-1 libadwaita-1-0`. Then follow steps 2–4.
+
+### Optional
+
+Cadre works without any of these. Each one turns on a feature, and Cadre tells
+you what's missing when you use a feature that needs it.
+
+| Feature | Needs | Install (macOS) |
+| --- | --- | --- |
+| Git: the gutter, the Source Control page, history, merges | `git` | Comes with the Xcode Command Line Tools: `xcode-select --install` |
+| JavaScript, TypeScript, JSON, HTML and CSS modes ([below](#javascript-typescript-json-html-and-css-tree-sitter)) | The tree-sitter library, a C compiler, and `git` | `brew install tree-sitter`, and `xcode-select --install` for `cc`. Then run **Install Language Grammar…** in Cadre once for each language. |
+| Format Document for JavaScript, TypeScript and HTML ([below](#format-document)) | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS and Lisp need nothing. |
+| Claude ([below](#claude)) | The [Claude Code](https://claude.com/claude-code) CLI, signed in | Install it from its site, then `claude auth login` |
+| Run GTK App, and GTK projects from New Lisp Project | The gtk4 bindings, which you already have from setup | — |
+
+Some things need nothing extra:
+- **Swank** is bundled (SLIME 2.32 in `vendor/slime/`).
+- **Running a project's tests** uses whatever test library the project
+  names. Quicklisp fetches it the first time.
+- **A different Lisp for the REPL:** set `*lisp-command*` to start it
+  (default `("sbcl" "--noinform")`). You can also use `M-x connect` to reach a
+  Swank server you started yourself, local or remote.
+
+Where Cadre keeps things:
+
+| Path | Contents |
+| --- | --- |
+| `~/.config/cadre/init.lisp` | Your own Lisp configuration (see [Configuration](#configuration)) |
+| `~/.config/cadre/settings.sexp` | Settings Cadre saves for you |
+| `~/.local/share/cadre/tree-sitter/` | Installed grammars (`$XDG_DATA_HOME/cadre/tree-sitter/` if that's set) |
+
+## Running
 
 ```sh
 make run                      # open the last folder (or none)
