@@ -40,6 +40,8 @@
                (:file "presentations")
                (:file "xref")
                (:file "macroexpand")
+               (:file "trace")
+               (:file "stepper")
                (:file "systems")
                (:file "review")
                (:file "file-watch")

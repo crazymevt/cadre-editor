@@ -135,9 +135,10 @@
                                 (and (plusp others) others)))
              (or duration 0))))
 
-(define-command compile-defun ()
-  "Compile the top-level form around the cursor; show the compiler's notes."
-  (:modes lisp-mode)
+(defun compile-toplevel-form (&key policy (what "Compiled") then)
+  "Compile the top-level form around the cursor, with POLICY (an alist such
+as ((cl:debug . 3))) if given; show the compiler's notes, then call THEN
+with whether it compiled."
   (let* ((view (current-view))
          (buffer (view-buffer view)))
     (multiple-value-bind (line column) (cursor-line-column view)
@@ -152,13 +153,19 @@
                  (swank-call "swank:compile-string-for-emacs" text (buffer-name buffer)
                              (list (list :position position) (list :line (1+ sl) (1+ sc)))
                              (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
-                             nil)
+                             policy)
                  :package package
                  :on-ok (lambda (result)
                           (multiple-value-bind (notes successp duration) (parse-compilation-result result)
                             (show-notes notes :buffer buffer :replace-lines (cons sl el))
-                            (compilation-message notes successp duration "Compiled")
-                            (image-changed))))))))))
+                            (compilation-message notes successp duration what)
+                            (image-changed)
+                            (when then (funcall then successp)))))))))))
+
+(define-command compile-defun ()
+  "Compile the top-level form around the cursor; show the compiler's notes."
+  (:modes lisp-mode)
+  (compile-toplevel-form))
 
 (defun definition-form-p (syntax line column)
   "True if the top-level form at (LINE, COLUMN) is a definition: its head is DEF… or DEFINE-…."
@@ -216,8 +223,8 @@ otherwise evaluate it and show its value."
 (defun push-position (view)
   (push (cons (view-buffer view) (text-point (view-gtk-buffer view))) *definition-stack*))
 
-(defun goto-location (location)
-  "Show LOCATION (from parse-location) in a tab."
+(defun goto-location (location &key then)
+  "Show LOCATION (from parse-location) in a tab; then call THEN with its view."
   (flet ((visit (view)
            (let ((gtk-buffer (view-gtk-buffer view)))
              (cond ((getf location :position)
@@ -226,7 +233,8 @@ otherwise evaluate it and show its value."
                    ((getf location :line)
                     (goto-line-column view (getf location :line) (or (getf location :column) 0) :extend nil)))
              (scroll-to-cursor view)
-             (focus-view view))))
+             (focus-view view)
+             (when then (funcall then view)))))
     (cond ((getf location :error) (editor-error "~a" (getf location :error)))
           ((and (getf location :buffer) (find-buffer (getf location :buffer)))
            (visit (show-buffer *window* (find-buffer (getf location :buffer)))))

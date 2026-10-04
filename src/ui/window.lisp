@@ -98,6 +98,7 @@
     (".cadre-git-deleted, .cadre-git-conflict" :color "@error_color")
     (".cadre-git-folder" :color "alpha(@warning_color, 0.8)")
     (".cadre-sc-button" :min-height "20px" :min-width "20px" :padding ("0" "4px"))
+    (".cadre-trace-part" :min-height "18px" :min-width "0" :padding ("0" "2px") :margin ("0" "0" "0" "4px"))
     (".cadre-conflict-actions" :background-color "alpha(@view_bg_color, 0.9)" :border-radius "6px")
     (".cadre-conflict-actions button" :min-height "0" :padding ("0" "6px") :margin "0")
     (".cadre-operation-banner" :background-color "alpha(@warning_bg_color, 0.25)" :border-radius "8px"
@@ -176,6 +177,8 @@
       (item lisp "Inspect…" 'inspect-value)
       (item lisp "Find References" 'find-references)
       (item lisp "Macroexpand" 'expand-macro-once)
+      (item lisp "Trace Function…" 'trace-function)
+      (item lisp "Show Traces" 'show-traces)
       (item lisp "Restart Lisp" 'restart-lisp)
       (item lisp "Chat with Claude" 'claude)
       (item app "Settings…" 'settings)

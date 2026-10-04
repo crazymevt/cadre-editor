@@ -52,14 +52,16 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "inspector" (make-inspector-widget))
       (panel-set-page-child panel "references" (make-references-widget))
       (panel-set-page-child panel "history" (make-history-widget))
+      (panel-set-page-child panel "trace" (make-trace-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
       ;; However the Claude tab is opened (its tab, a key, the menu), find out
       ;; whether Claude Code is ready.
       (gobject:connect (panel-stack panel) "notify::visible-child"
                        (lambda (stack pspec)
                          (declare (ignore pspec))
-                         (when (equal (gtk:stack-get-visible-child-name stack) "claude")
-                           (check-claude-status)))))
+                         (let ((name (gtk:stack-get-visible-child-name stack)))
+                           (cond ((equal name "claude") (check-claude-status))
+                                 ((equal name "trace") (trace-page-shown)))))))
     (update-connection-status)
     (let ((directory (initial-project project)))
       (when directory (open-project directory)))

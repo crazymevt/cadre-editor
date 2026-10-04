@@ -1,7 +1,8 @@
 ;;;; panel.lisp — the panel, below or beside the editor
 ;;;;
 ;;;; Pages: the REPL, Problems (compiler notes), the Debugger, the Inspector,
-;;;; References (cross-references), Claude (a chat) and Output (a log of messages).
+;;;; References (cross-references), History (commits), Trace (traced calls),
+;;;; Claude (a chat) and Output (a log of messages).
 
 (in-package #:cadre-ui)
 
@@ -15,7 +16,7 @@
   (make-instance 'adw:status-page :icon-name icon :title title :description description
                                   :css-classes '("compact")))
 
-(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history")
+(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace")
   "Pages whose tab appears only once they have something to show, so a
 narrow panel (the vertical layout) has room for the others.")
 
@@ -33,7 +34,7 @@ narrow panel (the vertical layout) has room for the others.")
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("repl" "REPL") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
-                    ("claude" "Claude")))
+                    ("trace" "Trace") ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))

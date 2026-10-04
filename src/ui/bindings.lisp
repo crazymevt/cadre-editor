@@ -241,7 +241,11 @@
   "M-?" 'find-references
   "C-c C-x f" 'extract-function
   "C-c C-x v" 'extract-variable
-  "C-c C-x s" 'find-symbol-in-project)
+  "C-c C-x s" 'find-symbol-in-project
+  "C-c C-t" 'toggle-trace
+  "C-c T" 'show-traces
+  "C-c M-s" 'step-expression
+  "C-c M-c" 'compile-defun-for-debugging)
 
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
   "C-RET" 'compile-or-eval-defun
@@ -259,7 +263,11 @@
   "C-k C-a" 'expand-macro-all
   "C-k C-f" 'find-symbol-in-project
   "C-k e f" 'extract-function
-  "C-k e v" 'extract-variable)
+  "C-k e v" 'extract-variable
+  "C-k t" 'toggle-trace
+  "C-k T" 'show-traces
+  "F11" 'step-expression
+  "C-k d" 'compile-defun-for-debugging)
 
 (defparameter *emacs-structural-keys*
   '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward
@@ -337,7 +345,10 @@
   "C-M-i" 'claude
   "C-`" 'show-repl
   "F6" 'load-project
-  "C-S-e" 'show-explorer)
+  "C-S-e" 'show-explorer
+  ;; While stepping, as in VS Code's debugger.
+  "F10" 'step-over
+  "S-F11" 'step-out)
 
 (bind-keys *emacs-global-keymap*
   "C-c L" 'load-project

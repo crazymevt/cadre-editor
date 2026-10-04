@@ -75,7 +75,7 @@ Priority: **P0** = must have for the first usable release, **P1** = 1.0,
 | Lisp | Debugger (SLDB): backtrace, restarts, frame locals, eval in frame | P0 |
 | Lisp | Inspector | P1 |
 | Lisp | Macroexpander (step by step, in place) | P1 |
-| Lisp | Tracing and stepping | P2 |
+| Lisp | Tracing and stepping (done: Trace page, stepper) | P2 |
 | Lisp | Highlighting from the image (macros, special variables, undefined functions) | P1 |
 | Claude | Chat panel with editor context (buffer, selection, notes, backtrace) | P0 |
 | Claude | Inline edit: select code, describe a change, review the diff, accept or reject | P1 |
@@ -597,6 +597,8 @@ checklist verifies that for each file we bundle.
 | Macroexpand | `swank:swank-macroexpand-1`, `swank:swank-macroexpand-all`, macrostep contrib |
 | Debugger | `:debug` events; `swank:invoke-nth-restart-for-emacs`, `swank:frame-locals-and-catch-tags`, `swank:eval-string-in-frame`, `swank:sldb-abort` |
 | Inspector | `swank:init-inspector`, `swank:inspect-nth-part`, `swank:inspector-pop`, … |
+| Tracing | `swank-trace-dialog:dialog-toggle-trace`, `report-specs`, `report-partial-tree` (polled each second while the Trace page shows), `inspect-trace-part`, `clear-trace-tree`, `dialog-untrace-all` |
+| Stepping | `swank:interactive-eval` of `(cl:step …)`; at each `STEP-FORM-CONDITION` stop, `swank:sldb-step`, `swank:sldb-next`, `swank:sldb-out`, and `swank::frame-source-location` 0 for the highlight; Compile for Debugging passes the policy `((cl:debug . 3))` to `swank:compile-string-for-emacs` |
 | Interrupt | `:emacs-interrupt` |
 | ASDF | `swank:list-systems`, `swank:operate-on-system-for-emacs` (via `swank-asdf`) |
 
@@ -618,6 +620,24 @@ configured) and shows the condition, restarts (numbered, clickable, `0`–`9`
 to choose), and the backtrace. Expanding a frame shows its locals; you can
 evaluate in a frame, jump to the frame's source, restart a frame, or return
 from it. Nested errors stack up as levels, as in SLDB.
+
+When the stopping condition is the stepper's (`STEP-FORM-CONDITION`), the page
+is the Stepper instead: the call about to be made, Step Into / Over / Out,
+Resume, Abort, and the backtrace. The call is highlighted in its source
+(`frame-source-location` of frame 0), and the keyboard goes back to the page.
+Each step makes Swank leave the debugger and enter it again (`:debug-return`
+with its stepping flag, then `:debug`). While stepping, the page waits 400 ms
+before hiding, so it doesn't flicker.
+
+### 8.6 Tracing
+
+The Trace page is a client of `swank-trace-dialog`. That contrib wraps traced
+functions so that each call is recorded as an entry (id, parent, spec,
+printed arguments and values) instead of being printed. Cadre fetches entries
+with `report-partial-tree` in batches of 150. Entries not finished yet come
+back again when they return, and `trace-tree-add` in the core merges them by
+id. The page draws the tree (callers above their calls, folding per call, at
+most 1,000 lines). Arguments and values are links to `inspect-trace-part`.
 
 ## 9. Claude integration
 
@@ -854,8 +874,10 @@ with a live preview (7.5), and Git through the `git` command (core
 between HEAD's text and the buffer (so unsaved edits count), revert per
 change, explorer status colors, the branch in the status bar, and a Source
 Control page for staging, discarding and committing. Git runs on threads.
+Then the Lisp tools: a Trace page (swank-trace-dialog, see 8.6) and a stepper
+on the Debugger page (8.5), with Compile for Debugging.
 
-| **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
+| **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop
 itself.

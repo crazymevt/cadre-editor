@@ -162,6 +162,8 @@
   (format o "(defun twice (x) (* 2 x))~%(defun bad (y) (+ y undefined-thing))~%(twice 21)~%~%"))
 (with-open-file (o (merge-pathnames "src/m3.lisp" *root*) :direction :output)
   (format o "(defmacro my-mac (x) `(list ,x ,x))~%(defvar special-thing 5)~%(defun caller () (my-mac (twice 3)))~%(defun get-thing () special-thing)~%(defun uses-undefined () (no-such-function 1))~%(defun deep (n) (if (zerop n) (error \"deep ~~a\" n) (deep (1- n))))~%(defun binder () (let ((not-a-call 1)) not-a-call))~%"))
+(with-open-file (o (merge-pathnames "src/m7.lisp" *root*) :direction :output)
+  (format o "(defun double-it (x) (* x 2))~%(defun step-me (x)~%  (let ((y (double-it x)))~%    (+ (double-it y) 1)))~%"))
 (with-open-file (o (merge-pathnames "src/lib.lisp" *root*) :direction :output)
   (format o "(defun smoke-lib-fn () :loaded)~%"))
 (with-open-file (o (merge-pathnames "smoke.asd" *root*) :direction :output)
@@ -629,6 +631,118 @@
 
 (then-when ((null cadre-ui::*debug-levels*))
   (check "pressing a in the debugger aborts" (null cadre-ui::*debug-levels*))
+  (cadre-ui::toggle-trace-of "deep" "COMMON-LISP-USER"))
+
+;;; Lisp tools: tracing and stepping
+
+(defun trace-page () cadre-ui::*trace-page*)
+(defun trace-calls () (cadre-ui::tp-tree (trace-page)))
+(defun traced-call (name)
+  (loop for call being the hash-values of (trace-tree-calls (trace-calls))
+        when (string= name (trace-call-name call)) collect call))
+
+(then-when ((member "deep" (cadre-ui::tp-specs (trace-page)) :test #'string=))
+  (check "tracing a function lists it on the Trace page" t)
+  (check "and shows the page" (equal "trace" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (cadre-ui::toggle-trace-of "get-thing" "COMMON-LISP-USER"))
+
+(then-when ((member "get-thing" (cadre-ui::tp-specs (trace-page)) :test #'string=))
+  (cadre-ui::repl-eval "(progn (get-thing) (ignore-errors (deep 1)) :traced)"))
+
+(then-when ((and (= 3 (trace-tree-count (trace-calls)))
+                 (notany (lambda (c) (eq :running (trace-call-state c))) (traced-call "deep")))
+            :timeout 15)
+  (check "calls of traced functions appear as they happen" t)
+  (let ((get-thing (first (traced-call "get-thing")))
+        (outer (find-if #'trace-call-children (traced-call "deep"))))
+    (check "with their values" (equal '("5") (trace-call-results get-thing)) (trace-call-results get-thing))
+    (check "calls made inside a call sit under it"
+           (and outer (equal '("1") (trace-call-args outer))
+                (equal '("0") (trace-call-args (first (trace-call-children outer))))))
+    (check "a call left by an error says so" (and outer (eq :unwound (trace-call-state outer))))
+    (check "each call is a row" (= 3 (hash-table-count cadre-ui::*trace-rows*)))
+    (check "the tab counts the calls" (equal "Trace (3)" (panel-page-title "trace")) (panel-page-title "trace")))
+  (check "values are links"
+         (find-if (lambda (b) (member "5" (label-texts b) :test #'equal))
+                  (find-widgets (cadre-ui::tp-list (trace-page)) (lambda (w) (typep w 'gtk:button))))))
+
+(then 500
+  (screenshot "35-trace")
+  (let ((five (find-if (lambda (b) (member "5" (label-texts b) :test #'equal))
+                       (find-widgets (cadre-ui::tp-list (trace-page)) (lambda (w) (typep w 'gtk:button))))))
+    (when five (gtk:widget-activate five))))
+
+(then-when ((equal "inspector" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "clicking a value inspects it"
+         (search "INTEGER" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+         (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+  (call-command 'cadre-ui::show-traces))
+
+(then 600
+  (let ((row (loop for row being the hash-keys of cadre-ui::*trace-rows* using (hash-value call)
+                   when (trace-call-children call) return row)))
+    (check "a call with calls inside can fold" row)
+    (when row (gtk:widget-activate row))))
+
+(then 400
+  (check "folding hides the calls inside" (= 2 (hash-table-count cadre-ui::*trace-rows*)))
+  (call-command 'cadre-ui::untrace-all-functions))
+
+(then-when ((null (cadre-ui::tp-specs (trace-page))))
+  (check "Untrace All stops tracing" t)
+  (call-command 'cadre-ui::clear-traces))
+
+(then-when ((zerop (trace-tree-count (trace-calls))))
+  (check "Clear forgets the calls" (zerop (hash-table-count cadre-ui::*trace-rows*)))
+  (open-file-path (merge-pathnames "src/m7.lisp" *root*)))
+
+(then-when ((find-buffer "m7.lisp"))
+  (show-buffer-named "m7.lisp")
+  (call-command 'cadre-ui::load-file))
+
+(then-when ((search "Loaded m7.lisp" (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+  (set-cursor 2 3)
+  (call-command 'cadre-ui::step-expression))
+
+(then-when ((and (picker) (gtk:widget-get-visible (cadre-ui::picker-popover (picker)))) :timeout 15)
+  (check "stepping a definition compiles it and asks for a call"
+         (equal "(step-me " (gtk:editable-get-text (cadre-ui::picker-entry (picker))))
+         (gtk:editable-get-text (cadre-ui::picker-entry (picker))))
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "(step-me 3)")
+  (cadre-ui::choose (picker)))
+
+(defun stepping-text ()
+  (let ((level (first cadre-ui::*debug-levels*)))
+    (and (cadre-ui::stepping-level-p level) (first (cadre-ui::dl-condition level)))))
+
+(then-when ((stepping-text) :timeout 15)
+  (check "the stepper stops at the first form" (search "STEP-ME" (stepping-text)) (stepping-text))
+  (check "and the panel shows the Stepper" (equal "Stepper ●" (panel-page-title "debugger")))
+  (call-command 'cadre-ui::step-into))
+
+(then-when ((search "(DOUBLE-IT X)" (or (stepping-text) "")) :timeout 10)
+  (check "Step Into goes into the function" (search "(DOUBLE-IT X)" (or (stepping-text) "")) (stepping-text)))
+
+(then-when (cadre-ui::*stepped-form* :timeout 5)
+  (check "the form being stepped is highlighted in its source"
+         (and (eq (first cadre-ui::*stepped-form*) (find-buffer "m7.lisp"))
+              (= 2 (first (cursor))))
+         (list (buffer-name (first cadre-ui::*stepped-form*)) (cursor)))
+  (screenshot "36-stepper")
+  (cadre-ui::focus-debugger)
+  (cadre-ui::debugger-key (gdk:keyval-from-name "x") nil))
+
+(then-when ((search "(DOUBLE-IT Y)" (or (stepping-text) "")) :timeout 10)
+  (check "x steps over to the next call" (search "(DOUBLE-IT Y)" (or (stepping-text) ""))
+         (stepping-text))
+  (call-command 'cadre-ui::stop-stepping))
+
+(then-when ((and (null cadre-ui::*debug-levels*)
+                 (not (gtk:stack-page-get-visible (cadre-ui::panel-page (cadre-ui::window-panel *window*) "debugger"))))
+            :timeout 10)
+  (check "Resume finishes the evaluation" (search "13" (gtk:label-get-text (cadre-ui::window-status-message *window*)))
+         (gtk:label-get-text (cadre-ui::window-status-message *window*)))
+  (check "and the highlight goes" (null cadre-ui::*stepped-form*))
   (call-command 'show-systems))
 
 (then-when ((let ((row (cdr (assoc "smoke" cadre-ui::*system-rows* :test #'string=))))

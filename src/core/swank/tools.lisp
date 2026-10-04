@@ -96,3 +96,96 @@ and the catch tags."
     (values (loop for local in locals
                   collect (list (getf local :name) (getf local :value)))
             tags)))
+
+(defun stepper-condition-p (condition)
+  "True if CONDITION, the (text type …) of a :debug event, is the stepper
+stopping at a form rather than an error."
+  (and (consp condition) (stringp (second condition))
+       (search "STEP-FORM-CONDITION" (string-upcase (second condition)))
+       t))
+
+;;; The trace dialog (swank-trace-dialog)
+
+(defstruct (trace-call (:conc-name trace-call-))
+  "One call of a traced function: its ID, its PARENT's id (or nil), the
+function's NAME, its ARGS and RESULTS (as printed), and its STATE:
+:returned, :running (not returned yet) or :unwound (left by a non-local exit)."
+  id parent name (args '()) (results '()) (state :returned) (children '()))
+
+(defun trace-spec-name (spec)
+  "A traced function's spec, as read from the Lisp, as text: symbols without
+their package, so (SETF CL-USER::FOO) is \"(setf foo)\"."
+  (labels ((walk (x)
+             (cond ((remote-symbol-p x) (string-downcase (remote-symbol-base-name x)))
+                   ((consp x) (format nil "(~{~a~^ ~})" (mapcar #'walk x)))
+                   ((stringp x) x)
+                   (t (string-downcase (princ-to-string x))))))
+    (walk spec)))
+
+(defun parse-trace-call (entry)
+  "A TRACE-CALL from the trace dialog's (id parent spec ((i text)…) ((i text)…))."
+  (destructuring-bind (id parent spec args results &rest more) entry
+    (declare (ignore more))
+    (let* ((results (mapcar #'second results))
+           (state (cond ((and (= 1 (length results)) (search "STILL-INSIDE" (string-upcase (first results)))) :running)
+                        ((and (= 1 (length results)) (search "EXITED-NON-LOCALLY" (string-upcase (first results)))) :unwound)
+                        (t :returned))))
+      (make-trace-call :id id :parent parent :name (trace-spec-name spec)
+                       :args (mapcar #'second args)
+                       :results (if (eq state :returned) results '())
+                       :state state))))
+
+(defstruct (trace-tree (:conc-name trace-tree-))
+  "The calls fetched from the trace dialog so far, by id, and the top-level ones."
+  (calls (make-hash-table))
+  (roots '())                           ; newest first
+  (key 0))                              ; for report-partial-tree: a new key starts over
+
+(defun trace-tree-add (tree entries)
+  "Add the trace dialog's ENTRIES to TREE: new calls, and calls fetched
+earlier that have since returned. Returns the number of new calls and
+the number of calls updated."
+  (let ((new 0) (updated 0))
+    (dolist (entry entries (values new updated))
+      (let* ((call (parse-trace-call entry))
+             (old (gethash (trace-call-id call) (trace-tree-calls tree))))
+        (cond (old
+               (unless (and (eq (trace-call-state old) (trace-call-state call))
+                            (equal (trace-call-results old) (trace-call-results call)))
+                 (incf updated))
+               (setf (trace-call-results old) (trace-call-results call)
+                     (trace-call-state old) (trace-call-state call)))
+              (t
+               (incf new)
+               (setf (gethash (trace-call-id call) (trace-tree-calls tree)) call)
+               (let ((parent (and (trace-call-parent call)
+                                  (gethash (trace-call-parent call) (trace-tree-calls tree)))))
+                 (if parent
+                     (push call (trace-call-children parent))
+                     (push call (trace-tree-roots tree))))))))))
+
+(defun trace-tree-count (tree)
+  (hash-table-count (trace-tree-calls tree)))
+
+(defun trace-tree-lines (tree &key collapsed (limit most-positive-fixnum))
+  "TREE's calls in order, each as (call depth): oldest first, children under
+their parent, skipping the children of calls in COLLAPSED (a hash table of
+ids). At most LIMIT lines."
+  (let ((lines '()) (count 0))
+    (labels ((walk (calls depth)
+               (dolist (call (reverse calls))
+                 (when (>= count limit) (return-from trace-tree-lines (nreverse lines)))
+                 (push (list call depth) lines)
+                 (incf count)
+                 (unless (and collapsed (gethash (trace-call-id call) collapsed))
+                   (walk (trace-call-children call) (1+ depth))))))
+      (walk (trace-tree-roots tree) 0))
+    (nreverse lines)))
+
+(defun trace-call-text (call)
+  "How a call shows: (name arg…) ⇒ results."
+  (format nil "(~a~{ ~a~})~a" (trace-call-name call) (trace-call-args call)
+          (ecase (trace-call-state call)
+            (:running " …")
+            (:unwound " ⇏ exited non-locally")
+            (:returned (format nil " ⇒ ~:[nothing~;~:*~{~a~^, ~}~]" (trace-call-results call))))))

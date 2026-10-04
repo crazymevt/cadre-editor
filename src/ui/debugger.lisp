@@ -33,7 +33,8 @@
     scroller))
 
 (defun debugger-key (keyval state)
-  "Digits choose a restart, a aborts, c continues; only without modifiers."
+  "Digits choose a restart, a aborts, c continues; while stepping, s steps
+into, x over and o out. Only without modifiers."
   (let ((char (gdk:keyval-to-unicode keyval)))
     (when (and *debug-levels* (null (intersection (modifier-list state) '(:control-mask :alt-mask :super-mask :meta-mask)))
                (plusp char))
@@ -41,7 +42,13 @@
         (handler-case
             (cond ((digit-char-p c) (invoke-restart-number (digit-char-p c)) t)
                   ((char= c #\a) (debugger-abort) t)
-                  ((char= c #\c) (debugger-continue) t))
+                  ((char= c #\c) (if (stepping-level-p (first *debug-levels*))
+                                     (stop-stepping)
+                                     (debugger-continue))
+                   t)
+                  ((char= c #\s) (step-into) t)
+                  ((char= c #\x) (step-over) t)
+                  ((char= c #\o) (step-out) t))
           (editor-error (e) (message "~a" (editor-error-message e)) t))))))
 
 (defun clear-box (box)
@@ -67,6 +74,11 @@
           (render-level level)))))
 
 (defun render-level (level)
+  (if (stepping-level-p level)
+      (render-stepping level)
+      (render-error-level level)))
+
+(defun render-error-level (level)
   (destructuring-bind (text type &rest more) (dl-condition level)
     (declare (ignore more))
     (gtk:box-append *debugger-box* (label text :wrap t :selectable t :css-classes '("title-4")))
@@ -85,29 +97,39 @@
                         (gtk:button :label "_Abort" :use-underline t :css-classes '("destructive-action")
                                     :tooltip-text "Return to the top level (a)"
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'debugger-abort)))
+                        (gtk:button :label "_Step" :use-underline t
+                                    :visible (and (restart-position level "CONTINUE") t)
+                                    :tooltip-text "Continue, stopping at the next form compiled for stepping (s)"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'step-into)))
                         (gtk:button :label "Inspect Condition"
                                     :on-clicked (lambda (b) (declare (ignore b)) (inspect-condition level)))
                         (gtk:button :label "Ask Claude" :tooltip-text "Send the error and backtrace to Claude"
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
-    (gtk:box-append *debugger-box* (label "Restarts" :margin-top 6 :css-classes '("heading")))
-    (loop for (name description) in (dl-restarts level)
-          for n from 0
-          do (let ((n n))
-               (gtk:box-append *debugger-box*
-                               (gtk:build
-                                 (gtk:button :css-classes '("flat")
-                                             :on-clicked (lambda (b) (declare (ignore b)) (invoke-restart-number n))
-                                   (gtk:label :label (format nil "~d: [~a] ~a" n name description)
-                                              :xalign 0.0 :wrap t))))))
-    (gtk:box-append *debugger-box* (label "Backtrace" :margin-top 6 :css-classes '("heading")))
-    (let ((frames (make-instance 'gtk:box :orientation :vertical :spacing 2)))
-      (dolist (frame (dl-frames level))
-        (gtk:box-append frames (frame-widget level frame)))
-      (gtk:box-append *debugger-box* frames)
-      (unless (dl-complete level)
-        (let ((more (make-instance 'gtk:button :label "More Frames" :halign :start :css-classes '("flat"))))
-          (gobject:connect more :clicked (lambda (b) (declare (ignore b)) (fetch-more-frames level frames more)))
-          (gtk:box-append *debugger-box* more))))))
+    (render-restarts level)
+    (render-backtrace level)))
+
+(defun render-restarts (level)
+  (gtk:box-append *debugger-box* (label "Restarts" :margin-top 6 :css-classes '("heading")))
+  (loop for (name description) in (dl-restarts level)
+        for n from 0
+        do (let ((n n))
+             (gtk:box-append *debugger-box*
+                             (gtk:build
+                               (gtk:button :css-classes '("flat")
+                                           :on-clicked (lambda (b) (declare (ignore b)) (invoke-restart-number n))
+                                 (gtk:label :label (format nil "~d: [~a] ~a" n name description)
+                                            :xalign 0.0 :wrap t)))))))
+
+(defun render-backtrace (level)
+  (gtk:box-append *debugger-box* (label "Backtrace" :margin-top 6 :css-classes '("heading")))
+  (let ((frames (make-instance 'gtk:box :orientation :vertical :spacing 2)))
+    (dolist (frame (dl-frames level))
+      (gtk:box-append frames (frame-widget level frame)))
+    (gtk:box-append *debugger-box* frames)
+    (unless (dl-complete level)
+      (let ((more (make-instance 'gtk:button :label "More Frames" :halign :start :css-classes '("flat"))))
+        (gobject:connect more :clicked (lambda (b) (declare (ignore b)) (fetch-more-frames level frames more)))
+        (gtk:box-append *debugger-box* more)))))
 
 (defun frame-widget (level frame)
   "An expander for FRAME; opening it fetches the frame's locals."
@@ -122,10 +144,10 @@
                          (gtk:expander-set-child e (frame-details level frame)))))
     expander))
 
-(defun frame-rex (level form &key on-ok)
+(defun frame-rex (level form &key on-ok on-abort)
   "Send FORM in LEVEL's thread, if LEVEL is still waiting."
   (unless (member level *debug-levels*) (editor-error "That debugger level has returned"))
-  (rex (dl-connection level) form :thread (dl-thread level) :on-ok on-ok))
+  (rex (dl-connection level) form :thread (dl-thread level) :on-ok on-ok :on-abort on-abort))
 
 (defun frame-details (level frame)
   (let* ((n (frame-number frame))
@@ -227,12 +249,16 @@
     (setf (dl-complete new) (< (length frames) 20))
     (setf *debug-levels* (cons new (remove-if (lambda (d) (and (equal (dl-thread d) thread) (>= (dl-level d) level)))
                                               *debug-levels*))))
+  (cancel-debugger-hide)
   (debugger-render)
   (set-panel-visible *window* t)
   (panel-show (window-panel *window*) "debugger")
-  (panel-set-title (window-panel *window*) "debugger" "Debugger ●")
-  (focus-debugger)
-  (message "Error: ~a" (first condition)))
+  (panel-set-title (window-panel *window*) "debugger" (if (stepper-condition-p condition) "Stepper ●" "Debugger ●"))
+  (cond ((stepper-condition-p condition)
+         (show-stepped-form (first *debug-levels*)))
+        (t (clear-stepped-form)
+           (focus-debugger)
+           (message "Error: ~a" (first condition)))))
 
 (defun focus-debugger ()
   "Give the first restart the focus, so digits choose restarts."
@@ -242,16 +268,34 @@
           when (and (typep child 'gtk:button) (member "flat" (gtk:widget-get-css-classes child) :test #'string=))
             do (gtk:widget-grab-focus child) (return))))
 
-(defun debugger-return (thread level)
+(defvar *debugger-hide-timer* nil
+  "While stepping, the page waits a moment before hiding: the next step comes straight back.")
+
+(defun cancel-debugger-hide ()
+  (when *debugger-hide-timer*
+    (glib:source-remove *debugger-hide-timer*)
+    (setf *debugger-hide-timer* nil)))
+
+(defun debugger-return (thread level &optional stepping)
   (setf *debug-levels* (remove-if (lambda (d) (and (equal (dl-thread d) thread) (>= (dl-level d) level)))
                                   *debug-levels*))
-  (debugger-render)
-  (image-changed)
-  (unless *debug-levels*
-    (panel-set-title (window-panel *window*) "debugger" "Debugger")
-    (panel-hide-page (window-panel *window*) "debugger")))
+  (flet ((settle ()
+           (debugger-render)
+           (image-changed)
+           (unless *debug-levels*
+             (clear-stepped-form)
+             (panel-set-title (window-panel *window*) "debugger" "Debugger")
+             (panel-hide-page (window-panel *window*) "debugger"))))
+    (cancel-debugger-hide)
+    (if (and stepping (null *debug-levels*))
+        (setf *debugger-hide-timer*
+              (glib:timeout-add glib:+priority-default+ 400
+                                (lambda () (setf *debugger-hide-timer* nil) (settle) nil)))
+        (settle))))
 
 (defun debugger-clear ()
+  (cancel-debugger-hide)
+  (clear-stepped-form)
   (setf *debug-levels* '())
   (debugger-render)
   (when *window*

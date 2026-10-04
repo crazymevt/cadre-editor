@@ -24,7 +24,8 @@ for the design and the milestones.
   inspector, cross-references (who calls, references, binds, sets, expands,
   specializes), a macroexpander, an ASDF Systems view in the sidebar, and
   highlighting from the running image (user macros, special variables,
-  constants, calls to undefined functions).
+  constants, calls to undefined functions). Later: a Trace page (calls of
+  traced functions as a tree) and a stepper.
 - **M4:** Claude, through the Claude Code CLI: a Claude panel with streaming
   replies, context from the editor, tool calls shown as they happen, and
   approval prompts; an MCP server through which Claude reads your buffers and
@@ -103,6 +104,11 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Who expands a macro / specializes a class | (palette) | `C-c C-w m` / `a` |
 | Callers / callees | (palette) | `C-c <` / `C-c >` |
 | Macroexpand once / completely | `Ctrl+K Ctrl+M` / `Ctrl+K Ctrl+A` | `C-c C-m` / `C-c M-m` |
+| Trace / untrace the function at the cursor | `Ctrl+K T` | `C-c C-t` |
+| Show the Trace page | `Ctrl+K Shift+T` | `C-c T` |
+| Step through the form (or a call of the definition) | `F11` | `C-c M-s` |
+| Compile the form with full debug information | `Ctrl+K D` | `C-c M-c` |
+| While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
 | Show the explorer | `Ctrl+Shift+E` | — |
 
 Values from evaluating appear inline after the form (`⇒ 42`) until you edit,
@@ -110,6 +116,28 @@ and in the status bar.
 
 In the debugger, digits choose a restart, `a` aborts and `c` continues. Open a
 frame to see its locals (click one to inspect it) and to evaluate in the frame.
+
+**Tracing** records each call of a traced function on the Trace page, as a
+tree: calls made inside a call sit under it, with their arguments and values
+(or "exited non-locally" when an error left them). Click an argument or a
+value to inspect it, and click a call to fold the calls inside. New calls
+appear while the page is open. Trace a function from its right-click menu
+(Debug › Trace / Untrace Function), with the `+` on the page (which also takes
+names such as `(setf foo)`), or with the keys above. Clear forgets the calls
+recorded so far, and Untrace All stops tracing.
+
+**Stepping:** Step Through Form (`F11`) evaluates the form at the cursor, or
+the selection, under `cl:step`. On a definition it first compiles it for
+stepping and then asks which call to step, such as `(step-me 3)`. The Lisp
+stops before each function call. The Debugger page becomes the Stepper, shows
+the call and its arguments, and highlights it in the source. **Step Into**
+(`s`) goes into the call, **Step Over** (`x`) makes it whole, **Step Out** (`o`)
+finishes the current function, and **Resume** (`c`) runs on. Only code
+compiled for stepping stops, so to step into a function, compile it first with
+Compile for Debugging (`Ctrl+K D`, or `C-c M-c`). That compiles it with
+`(debug 3)`, which also shows all of its locals in the debugger. After a
+`(break)`, the debugger's Step button continues to the next call compiled for
+stepping.
 Expanding a macro inside the *Macroexpansion* tab expands it there, in place.
 The sidebar's second page (the box icon) lists the folder's ASDF systems: load,
 reload with compiler notes, test, and open their files.

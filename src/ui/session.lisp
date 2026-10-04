@@ -95,6 +95,7 @@
     (setf *connection* nil)
     (repl-disconnected reason)
     (debugger-clear)
+    (traces-disconnected)
     (image-changed)
     (refresh-systems)
     (update-connection-status)
@@ -124,9 +125,9 @@
                       (update-connection-status)))
       (:debug (apply #'debugger-enter connection args))
       (:debug-activate nil)
-      (:debug-return (destructuring-bind (thread level &rest more) args
+      (:debug-return (destructuring-bind (thread level &optional stepping &rest more) args
                        (declare (ignore more))
-                       (debugger-return thread level)))
+                       (debugger-return thread level stepping)))
       (:read-string (destructuring-bind (thread tag) args
                       (repl-read-string connection thread tag)))
       (:read-aborted (repl-read-aborted))

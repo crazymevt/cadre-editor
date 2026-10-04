@@ -214,6 +214,34 @@
     (is equal '(("X" "1") ("Y" "NIL")) locals)
     (is equal '("tag") tags)))
 
+(define-test stepper-condition :parent cadre-tests
+  (true (c:stepper-condition-p '("Evaluating call:" "   [Condition of type SB-EXT:STEP-FORM-CONDITION]" nil)))
+  (false (c:stepper-condition-p '("division by zero" "   [Condition of type DIVISION-BY-ZERO]" nil))))
+
+(define-test trace-dialog-replies :parent cadre-tests
+  (is string= "foo" (c:trace-spec-name (c:read-sexp "common-lisp-user::foo")))
+  (is string= "(setf foo)" (c:trace-spec-name (c:read-sexp "(cl:setf cl-user::foo)")))
+  (let ((tree (c:make-trace-tree)))
+    ;; A call to F that has not returned, with a finished call to G inside it.
+    (is = 2 (c:trace-tree-add tree (c:read-sexp "((0 nil cl-user::f ((0 \"3\")) ((0 \"SWANK-TRACE-DIALOG::STILL-INSIDE\")))
+                                                  (1 0 cl-user::g ((0 \"3\") (1 \"4\")) ((0 \"7\"))))")))
+    (let ((f (gethash 0 (c:trace-tree-calls tree))))
+      (is eq :running (c:trace-call-state f))
+      (is string= "(f 3) …" (c:trace-call-text f))
+      (is equal '(("f" 0) ("g" 1))
+          (mapcar (lambda (l) (list (c:trace-call-name (first l)) (second l))) (c:trace-tree-lines tree)))
+      ;; F returns two values; reported again, it is updated, not added.
+      (is = 0 (c:trace-tree-add tree (c:read-sexp "((0 nil cl-user::f ((0 \"3\")) ((0 \"8\") (1 \"NIL\"))))")))
+      (is string= "(f 3) ⇒ 8, NIL" (c:trace-call-text f))
+      (let ((collapsed (make-hash-table)))
+        (setf (gethash 0 collapsed) t)
+        (is = 1 (length (c:trace-tree-lines tree :collapsed collapsed)))))
+    (c:trace-tree-add tree (c:read-sexp "((2 nil cl-user::h () ((0 \":EXITED-NON-LOCALLY\"))) (3 nil cl-user::k () ()))"))
+    (is eq :unwound (c:trace-call-state (gethash 2 (c:trace-tree-calls tree))))
+    (is string= "(k) ⇒ nothing" (c:trace-call-text (gethash 3 (c:trace-tree-calls tree))))
+    (is = 4 (c:trace-tree-count tree))
+    (is = 2 (length (c:trace-tree-lines tree :limit 2)))))
+
 (defpackage #:cadre-tests-image (:use #:cl) (:export #:a-function))
 (defmacro cadre-tests-image::a-macro () nil)
 (defun cadre-tests-image:a-function () nil)
