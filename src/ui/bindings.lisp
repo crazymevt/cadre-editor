@@ -126,6 +126,12 @@
   "C-x v [" 'git-previous-change
   "C-x v n" 'git-revert-change
   "C-x v s" 'git-stage-file
+  "C-x v b s" 'switch-branch
+  "C-x v b c" 'create-branch
+  "C-x v b d" 'delete-branch
+  "C-x v f" 'fetch-changes
+  "C-x v +" 'pull-changes
+  "C-x v P" 'push-changes
   "C-S-Up" 'move-lines-up
   "C-S-Down" 'move-lines-down
   "C-S-d" 'duplicate-lines-down

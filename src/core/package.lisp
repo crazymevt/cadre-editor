@@ -75,6 +75,8 @@
    #:*git-program* #:git #:git-ok #:git-available-p #:git-toplevel #:git-relative-path #:git-branch
    #:git-head-id #:git-head-text #:parse-git-status #:git-status #:git-status-kind #:parse-unified-hunks
    #:line-changes #:hunk-kind #:git-stage #:git-unstage #:git-discard #:git-commit #:git-diff-text
+   #:git-branches #:git-switch #:git-delete-branch #:git-remotes #:git-upstream #:git-ahead-behind
+   #:*git-network-environment* #:git-network #:git-fetch #:git-pull #:git-push
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec

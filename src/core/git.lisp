@@ -160,3 +160,84 @@ STAGED the index against HEAD; with HEAD the working file against HEAD."
   (values (apply #'git root "diff" "--no-color" "--no-ext-diff"
                  (append (cond (staged (list "--cached")) (head (list "HEAD")))
                          (list "--" relative)))))
+
+;;; Branches
+
+(defun git-branches (root)
+  "The branches, as plists (:name :current :remote :upstream), local ones first."
+  (let ((output (git-ok root "for-each-ref" "--format=%(refname)%09%(refname:short)%09%(HEAD)%09%(upstream:short)"
+                        "refs/heads" "refs/remotes")))
+    (loop for line in (split-text-lines output)
+          for fields = (uiop:split-string line :separator (string #\Tab))
+          when (and (= (length fields) 4)
+                    ;; origin/HEAD is an alias, not a branch.
+                    (not (search "/HEAD" (first fields) :from-end t :start2 (max 0 (- (length (first fields)) 5)))))
+            collect (destructuring-bind (ref name head upstream) fields
+                      (list :name name :current (string= head "*")
+                            :remote (and (>= (length ref) 13) (string= "refs/remotes/" ref :end2 13))
+                            :upstream (and (plusp (length upstream)) upstream))))))
+
+(defun git-switch (root name &key create track)
+  "Switch to branch NAME; with CREATE, make it first (from HEAD); with TRACK,
+make a local branch following the remote branch NAME (\"origin/x\")."
+  (cond (create (git-ok root "switch" "-c" name))
+        (track (git-ok root "switch" "--track" name))
+        (t (git-ok root "switch" name))))
+
+(defun git-delete-branch (root name &key force)
+  (git-ok root "branch" (if force "-D" "-d") name))
+
+(defun git-remotes (root)
+  (split-text-lines (string-trim '(#\Newline) (git-ok root "remote"))))
+
+(defun git-upstream (root)
+  "The current branch's upstream (\"origin/main\"), or nil."
+  (multiple-value-bind (output code) (git root "rev-parse" "--abbrev-ref" "--symbolic-full-name" "@{upstream}")
+    (and (zerop code) (string-trim '(#\Newline) output))))
+
+(defun git-ahead-behind (root)
+  "How many commits the current branch is ahead of and behind its upstream,
+or nil if it has none."
+  (multiple-value-bind (output code) (git root "rev-list" "--left-right" "--count" "@{upstream}...HEAD")
+    (when (zerop code)
+      (destructuring-bind (behind ahead) (mapcar #'parse-integer (uiop:split-string (string-trim '(#\Newline) output)
+                                                                                      :separator '(#\Tab #\Space)))
+        (values ahead behind)))))
+
+;;; Talking to remotes, without ever waiting for a password
+
+(defparameter *git-network-environment*
+  '("GIT_TERMINAL_PROMPT=0"
+    "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20")
+  "Added to git's environment for fetch, pull and push: it fails instead of
+asking for a password (a credential helper or ssh-agent must supply it).")
+
+(defun git-network (root &rest arguments)
+  "Run a git command that talks to a remote. Returns git's output, or signals
+an editor-error with its message."
+  (let* ((output (make-string-output-stream))
+         (error-output (make-string-output-stream))
+         (process (sb-ext:run-program *git-program* (list* "-C" (uiop:native-namestring root) arguments)
+                                      :search t :input nil :output output :error error-output :wait t
+                                      :environment (append *git-network-environment* (sb-ext:posix-environ))))
+         (code (sb-ext:process-exit-code process))
+         (out (get-output-stream-string output))
+         (err (get-output-stream-string error-output)))
+    (unless (zerop code)
+      (error 'editor-error :message (string-trim '(#\Space #\Newline)
+                                                 (if (plusp (length err)) err out))))
+    (concatenate 'string out err)))
+
+(defun git-fetch (root) (git-network root "fetch" "--prune"))
+
+(defun git-pull (root &key (mode :ff-only))
+  "Pull the current branch's upstream: MODE :ff-only (only if it fast-forwards),
+:merge or :rebase."
+  (git-network root "pull" (ecase mode (:ff-only "--ff-only") (:merge "--no-rebase") (:rebase "--rebase"))))
+
+(defun git-push (root &key set-upstream)
+  "Push the current branch. With SET-UPSTREAM (a remote name), push it there
+and make that its upstream."
+  (if set-upstream
+      (git-network root "push" "-u" set-upstream "HEAD")
+      (git-network root "push")))

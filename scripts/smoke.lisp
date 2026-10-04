@@ -1704,6 +1704,79 @@ d" 0 0)
 (then-when ((null (cadre-ui::gf-hunks (m1-git))) :timeout 10)
   (check "after the commit, the gutter has nothing to mark" (null (cadre-ui::gf-hunks (m1-git)))))
 
+;;; Branches, push and pull, with a remote on disk
+(defvar *remote* (merge-pathnames "cadre-smoke-remote.git/" (uiop:temporary-directory)))
+(defvar *other* (merge-pathnames "cadre-smoke-other/" (uiop:temporary-directory)))
+
+(then 100
+  (uiop:delete-directory-tree *remote* :validate t :if-does-not-exist :ignore)
+  (uiop:delete-directory-tree *other* :validate t :if-does-not-exist :ignore)
+  (ensure-directories-exist *remote*)
+  (git-ok *remote* "init" "-q" "--bare")
+  (git-ok *root* "remote" "add" "origin" (uiop:native-namestring *remote*))
+  (cadre-ui::git-changed)
+  (call-command 'cadre-ui::push-changes))
+
+(then-when ((and (null cadre-ui::*git-busy*) (eql 0 cadre-ui::*git-ahead*)) :timeout 20)
+  (check "the first push sets up the upstream" (git-upstream *root*) (git-upstream *root*))
+  (check "and then the branch is up to date" (string= "up to date" (gtk:label-get-text (cadre-ui::sc-sync cadre-ui::*source-control*)))
+         (gtk:label-get-text (cadre-ui::sc-sync cadre-ui::*source-control*)))
+  (git-ok *root* "commit" "-q" "--allow-empty" "-m" "Local work")
+  (cadre-ui::git-changed))
+
+(then-when ((eql 1 cadre-ui::*git-ahead*) :timeout 10)
+  (check "a new commit shows as one to push"
+         (search "↑1" (gtk:label-get-text (gethash :status-branch-label cadre-ui::*named-widgets*)))
+         (gtk:label-get-text (gethash :status-branch-label cadre-ui::*named-widgets*)))
+  (call-command 'cadre-ui::push-changes))
+
+(then-when ((and (null cadre-ui::*git-busy*) (eql 0 cadre-ui::*git-ahead*)) :timeout 20)
+  (check "Push sends it" (eql 0 cadre-ui::*git-ahead*))
+  ;; Someone else pushes a commit.
+  (git-ok (uiop:temporary-directory) "clone" "-q" (uiop:native-namestring *remote*) (uiop:native-namestring *other*))
+  (git-ok *other* "config" "user.email" "other@example.com")
+  (git-ok *other* "config" "user.name" "Other")
+  (with-open-file (o (merge-pathnames "from-other.txt" *other*) :direction :output) (write-line "hi" o))
+  (git-ok *other* "add" "-A")
+  (git-ok *other* "commit" "-q" "-m" "Theirs")
+  (git-ok *other* "push" "-q")
+  (call-command 'cadre-ui::fetch-changes))
+
+(then-when ((and (null cadre-ui::*git-busy*) (eql 1 cadre-ui::*git-behind*)) :timeout 20)
+  (check "Fetch shows the commit to pull"
+         (search "↓1" (gtk:label-get-text (cadre-ui::sc-sync cadre-ui::*source-control*)))
+         (gtk:label-get-text (cadre-ui::sc-sync cadre-ui::*source-control*)))
+  (call-command 'cadre-ui::pull-changes))
+
+(then-when ((and (null cadre-ui::*git-busy*) (eql 0 cadre-ui::*git-behind*)) :timeout 20)
+  (check "Pull brings it in" (probe-file (merge-pathnames "from-other.txt" *root*)))
+  (call-command 'cadre-ui::create-branch)
+  (choose-name "feature"))
+
+(then-when ((equal "feature" cadre-ui::*git-branch*) :timeout 10)
+  (check "New branch makes it and switches to it" (equal "feature" cadre-ui::*git-branch*))
+  (check "the status bar shows it"
+         (search "feature" (gtk:label-get-text (gethash :status-branch-label cadre-ui::*named-widgets*))))
+  (call-command 'cadre-ui::switch-branch))
+
+(then 1000
+  (check "switching offers the branches and a new one"
+         (let ((labels (mapcar (cadre-ui::picker-label (picker)) (cadre-ui::picker-items (picker)))))
+           (and (member "+ New branch…" labels :test #'string=)
+                (member "feature  (current)" labels :test #'string=)
+                (find-if (lambda (l) (search "main" l)) labels)))
+         (mapcar (cadre-ui::picker-label (picker)) (cadre-ui::picker-items (picker))))
+  (cadre-ui::close-picker (picker))
+  (cadre-ui::switch-to-branch *root* (git-branch-named-main)))
+
+(defun git-branch-named-main ()
+  (getf (find-if (lambda (b) (and (not (getf b :remote)) (not (getf b :current)))) (git-branches *root*)) :name))
+
+(then-when ((and cadre-ui::*git-branch* (not (equal "feature" cadre-ui::*git-branch*))) :timeout 10)
+  (check "and switching goes back" (not (equal "feature" cadre-ui::*git-branch*)))
+  (uiop:delete-directory-tree *remote* :validate t :if-does-not-exist :ignore)
+  (uiop:delete-directory-tree *other* :validate t :if-does-not-exist :ignore))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

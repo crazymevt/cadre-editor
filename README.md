@@ -263,8 +263,18 @@ In a Git repository:
   message and Commit (`Ctrl+Enter`); with nothing staged it offers to stage
   everything. A folder that isn't a repository gets an Initialize button.
 
+The page's top row shows the branch (click it to switch or make one) and
+how many commits there are to push (↑) and pull (↓), with Fetch, Pull and
+Push. The first push of a branch sets up its upstream (on `origin`). Pull
+only fast-forwards by default; set `*git-pull-mode*` to `:merge` or
+`:rebase` to combine diverged work. Cadre never asks for passwords: fetch,
+pull and push use your credential helper or ssh-agent, and fail with
+git's message if those can't supply one.
+
 | Action | Standard (⌘ on macOS) | Emacs |
 | --- | --- | --- |
+| Switch / new / delete branch | `M-x switch-branch` / `create-branch` / `delete-branch` | `C-x v b s` / `C-x v b c` / `C-x v b d` |
+| Fetch / pull / push | `M-x fetch-changes` / `pull-changes` / `push-changes` | `C-x v f` / `C-x v +` / `C-x v P` |
 | Next / previous change | `Alt+F5` / `Alt+Shift+F5` | `C-x v ]` / `C-x v [` |
 | Revert the change at the cursor | `M-x git-revert-change` | `C-x v n` |
 | Diff this file | `M-x git-diff-file` | `C-x v =` |

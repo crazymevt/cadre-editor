@@ -3,7 +3,9 @@
 ;;;; Source Control page for staging, discarding and committing
 ;;;;
 ;;;; Git runs on threads (core's git.lisp); results come back to the GTK
-;;;; thread. A file's buffer keeps its text at HEAD, and its changed lines
+;;;; thread. Branches can be switched, made and deleted, and the current
+;;;; one fetched, pulled and pushed (never asking for a password: see
+;;;; core's git-network). A file's buffer keeps its text at HEAD, and its changed lines
 ;;;; are worked out again a moment after each edit, so the gutter shows
 ;;;; unsaved changes too. Clicking a mark in the gutter shows what was
 ;;;; there before, and can put it back.
@@ -340,6 +342,14 @@ ON-ERROR with the message of an error it signals."
 (defvar *git-branch* nil)
 (defvar *git-entries* '() "The project's status entries, from git-status.")
 (defvar *git-head* nil)
+(defvar *git-ahead* nil "Commits the branch is ahead of its upstream, or nil without one.")
+(defvar *git-behind* nil)
+(defvar *git-busy* nil "What git is doing with a remote, while it does (\"Pushing\" …), or nil.")
+
+(define-option *git-pull-mode* :ff-only (member :ff-only :merge :rebase)
+  "How Pull brings in the upstream's commits: :ff-only (only when there's
+nothing of yours to combine), :merge, or :rebase."
+  :category "Editing")
 
 (defun git-status-of (path)
   "PATH's Git status in the project, as (kind letter), or nil. (Looked up by
@@ -356,9 +366,12 @@ real path: /var and /private/var are one place on macOS.)"
   "After git or the files changed: read the status again, and the HEAD texts if HEAD moved."
   (when root
     (git-async (lambda ()
-                 (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)))
+                 (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)
+                       (multiple-value-list (ignore-errors (git-ahead-behind root)))))
+               ;; (Without an upstream there's no ahead or behind: (nil).)
                (lambda (result)
-                 (destructuring-bind (entries branch head) result
+                 (destructuring-bind (entries branch head (&optional ahead behind)) result
+                   (setf *git-ahead* ahead *git-behind* behind)
                    (let ((moved (and *git-head* head (string/= head *git-head*))))
                      (setf *git-entries* entries *git-branch* branch *git-head* head)
                      (clrhash *git-status*)
@@ -378,7 +391,8 @@ real path: /var and /private/var are one place on macOS.)"
                      (update-branch-label)
                      (redecorate-explorer)
                      (refresh-source-control))))
-               nil)))
+               (lambda (error)
+                 (when *window* (panel-log (window-panel *window*) (format nil "Git status failed: ~a" error)))))))
 
 (defun update-branch-label ()
   (let ((button (and *window* (gethash :status-branch *named-widgets*))))
@@ -386,7 +400,15 @@ real path: /var and /private/var are one place on macOS.)"
       (gtk:widget-set-visible button (and *git-branch* t))
       (when *git-branch*
         (gtk:label-set-text (gethash :status-branch-label *named-widgets*)
-                            (format nil "~a~:[~; ●~]" *git-branch* *git-entries*))))))
+                            (format nil "~a~@[ ~a~]~:[~; ●~]" *git-branch* (sync-string) *git-entries*))))))
+
+(defun sync-string ()
+  "\"↑2 ↓1\" for the commits to push and pull, nil if none (or no upstream)."
+  (cond (*git-busy* (format nil "~a…" *git-busy*))
+        ((and *git-ahead* (or (plusp *git-ahead*) (plusp *git-behind*)))
+         (format nil "~:[~;↑~:*~d~]~:[~; ~]~:[~;↓~:*~d~]"
+                 (and (plusp *git-ahead*) *git-ahead*) (and (plusp *git-ahead*) (plusp *git-behind*))
+                 (and (plusp *git-behind*) *git-behind*)))))
 
 (defvar *explorer-rows* (make-hash-table :test 'eq) "Explorer row widget → its path, for redrawing status.")
 
@@ -415,7 +437,7 @@ real path: /var and /private/var are one place on macOS.)"
 ;;; The Source Control page
 
 (defstruct (source-control (:conc-name sc-))
-  widget branch message staged changes not-repo body)
+  widget branch message staged changes not-repo body sync)
 
 (defvar *source-control* nil)
 (defvar *sc-openers* (make-hash-table :test 'eq) "Source Control row → what clicking it opens.")
@@ -484,8 +506,8 @@ real path: /var and /private/var are one place on macOS.)"
                          (git-run root (lambda () (git-discard root (list path)))))))))))
 
 (defun make-source-control-widget ()
-  (let* ((branch (make-instance 'gtk:label :xalign 0.0 :hexpand t :ellipsize :end :margin-start 12
-                                           :css-classes '("dim-label" "caption")))
+  (let* ((branch (make-instance 'gtk:label :xalign 0.0 :ellipsize :end))
+         (sync (make-instance 'gtk:label :xalign 0.0 :hexpand t :css-classes '("dim-label" "caption")))
          (message-view (make-instance 'gtk:text-view :wrap-mode :word-char :top-margin 6 :bottom-margin 6
                                                      :left-margin 6 :right-margin 6 :accepts-tab nil
                                                      :css-classes '("cadre-commit-message")))
@@ -521,10 +543,20 @@ real path: /var and /private/var are one place on macOS.)"
                                   :css-classes '("caption-heading" "dim-label"))
                        (gtk:button :label "↻" :tooltip-text "Refresh" :css-classes '("flat")
                                    :on-clicked (lambda (b) (declare (ignore b)) (git-changed))))
-                     branch
+                     (gtk:box :spacing 4 :margin-start 8 :margin-end 6 :margin-top 2
+                       (gtk:button :css-classes '("flat") :tooltip-text "Switch branch"
+                                   :on-clicked (lambda (b) (declare (ignore b)) (call-command 'switch-branch))
+                         (gtk:box :spacing 4 (gtk:image :icon-name "cadre-git-symbolic") branch))
+                       sync
+                       (gtk:button :label "Fetch" :css-classes '("flat" "caption") :tooltip-text "Fetch from the remote"
+                                   :on-clicked (lambda (b) (declare (ignore b)) (call-command 'fetch-changes)))
+                       (gtk:button :label "Pull" :css-classes '("flat" "caption") :tooltip-text "Pull the upstream's commits"
+                                   :on-clicked (lambda (b) (declare (ignore b)) (call-command 'pull-changes)))
+                       (gtk:button :label "Push" :css-classes '("flat" "caption") :tooltip-text "Push your commits"
+                                   :on-clicked (lambda (b) (declare (ignore b)) (call-command 'push-changes))))
                      not-repo
                      body))))
-    (setf *source-control* (make-source-control :widget widget :branch branch :message message-view
+    (setf *source-control* (make-source-control :widget widget :branch branch :sync sync :message message-view
                                                 :staged staged :changes changes :not-repo not-repo :body body))
     (gobject:connect commit :clicked (lambda (b) (declare (ignore b)) (commit-from-page)))
     (dolist (list (list staged changes))
@@ -572,7 +604,11 @@ real path: /var and /private/var are one place on macOS.)"
     (when sc
       (gtk:widget-set-visible (sc-not-repo sc) (and (window-project *window*) (null root)))
       (gtk:widget-set-visible (sc-body sc) (and root t))
-      (gtk:label-set-text (sc-branch sc) (if (and root *git-branch*) (format nil "On ~a" *git-branch*) ""))
+      (gtk:label-set-text (sc-branch sc) (or (and root *git-branch*) ""))
+      (gtk:label-set-text (sc-sync sc) (cond ((null root) "")
+                                             ((sync-string))
+                                             ((null *git-ahead*) "no upstream")
+                                             (t "up to date")))
       (when root
         (let ((staged (remove-if (lambda (e) (member (first e) '(#\Space #\?))) *git-entries*))
               (changes (remove-if (lambda (e) (char= (second e) #\Space)) *git-entries*)))
@@ -625,3 +661,149 @@ real path: /var and /private/var are one place on macOS.)"
 (add-hook '*after-save-hook* (lambda (buffer)
                                (declare (ignore buffer))
                                (git-changed)))
+
+;;; Branches
+
+(defun git-root-or-error ()
+  (or (project-git-root) (editor-error "This folder isn't a Git repository")))
+
+(defun after-head-moved (root)
+  "After switching or pulling: HEAD and the files may have changed."
+  (git-changed root))
+
+(define-command switch-branch ()
+  "Switch to another branch (or make a new one)."
+  (let ((root (git-root-or-error)))
+    (git-async (lambda () (git-branches root))
+               (lambda (branches)
+                 (let* ((locals (remove-if (lambda (b) (getf b :remote)) branches))
+                        (local-names (mapcar (lambda (b) (getf b :name)) locals))
+                        ;; Remote branches with no local one of the same name.
+                        (remotes (remove-if (lambda (b)
+                                              (or (not (getf b :remote))
+                                                  (member (subseq (getf b :name) (1+ (or (position #\/ (getf b :name)) -1)))
+                                                          local-names :test #'string=)))
+                                            branches))
+                        (items (append (list (list :new t)) locals remotes)))
+                   (open-picker (window-picker *window*)
+                                :items items
+                                :label (lambda (b) (cond ((getf b :new) "+ New branch…")
+                                                         ((getf b :current) (format nil "~a  (current)" (getf b :name)))
+                                                         (t (getf b :name))))
+                                :detail (lambda (b) (cond ((getf b :new) "from here")
+                                                          ((getf b :remote) "remote")
+                                                          ((getf b :upstream) (format nil "tracks ~a" (getf b :upstream)))
+                                                          (t "")))
+                                :placeholder "Switch to a branch"
+                                :on-choose (lambda (b)
+                                             (cond ((getf b :new) (call-command 'create-branch))
+                                                   ((getf b :current))
+                                                   (t (switch-to-branch root (getf b :name) :track (getf b :remote)))))))))))
+
+(defun switch-to-branch (root name &key create track)
+  (git-run root (lambda () (git-switch root name :create create :track track))
+           (lambda (output)
+             (declare (ignore output))
+             (after-head-moved root)
+             (message "On branch ~a" (if track (subseq name (1+ (or (position #\/ name) -1))) name)))))
+
+(define-command create-branch ()
+  "Make a new branch from here and switch to it."
+  (let ((root (git-root-or-error)))
+    (ask-name "New branch name:"
+              (lambda (name)
+                (when (find-if (lambda (c) (member c '(#\Space #\~ #\^ #\: #\? #\* #\[ #\\))) name)
+                  (editor-error "A branch name can't contain spaces or ~~^:?*[\\"))
+                (switch-to-branch root name :create t)))))
+
+(define-command delete-branch ()
+  "Delete a local branch (asking first; again if it isn't merged)."
+  (let ((root (git-root-or-error)))
+    (git-async (lambda () (git-branches root))
+               (lambda (branches)
+                 (let ((deletable (remove-if (lambda (b) (or (getf b :remote) (getf b :current))) branches)))
+                   (unless deletable (editor-error "No other local branches"))
+                   (open-picker (window-picker *window*)
+                                :items deletable
+                                :label (lambda (b) (getf b :name))
+                                :placeholder "Delete a branch"
+                                :on-choose (lambda (b) (confirm-delete-branch root (getf b :name)))))))))
+
+(defun ask-yes (heading body yes-label then)
+  "Ask HEADING; call THEN if the answer is YES-LABEL (a destructive choice)."
+  (let ((dialog (adw:alert-dialog-new heading body)))
+    (adw:alert-dialog-add-response dialog "cancel" "_Cancel")
+    (adw:alert-dialog-add-response dialog "yes" yes-label)
+    (adw:alert-dialog-set-response-appearance dialog "yes" :destructive)
+    (adw:alert-dialog-set-default-response dialog "cancel")
+    (adw:alert-dialog-set-close-response dialog "cancel")
+    (gio:async (adw:alert-dialog-choose dialog (window-gtk-window *window*))
+               (lambda (response) (when (string= response "yes") (funcall then))))))
+
+(defun confirm-delete-branch (root name)
+  (ask-yes (format nil "Delete branch ~a?" name) "Its commits stay if another branch has them."
+           "_Delete"
+           (lambda ()
+             (git-async (lambda () (git-delete-branch root name))
+                        (lambda (r) (declare (ignore r)) (message "Deleted branch ~a" name) (git-changed root))
+                        (lambda (error)
+                          (if (search "not fully merged" error)
+                              (ask-yes (format nil "~a isn't merged" name)
+                                       "Its commits aren't on any other branch, so deleting it loses them."
+                                       "_Delete Anyway"
+                                       (lambda ()
+                                         (git-run root (lambda () (git-delete-branch root name :force t))
+                                                  (lambda (r) (declare (ignore r)) (message "Deleted branch ~a" name)))))
+                              (message "Git: ~a" error)))))))
+
+;;; Fetch, pull, push
+
+(defun remote-operation (root label thunk done)
+  "Run THUNK, which talks to a remote, showing LABEL (\"Pushing\") meanwhile."
+  (when *git-busy* (editor-error "Git is still ~(~a~)" *git-busy*))
+  (setf *git-busy* label)
+  (update-branch-label)
+  (refresh-source-control)
+  (message "~a…" label)
+  (flet ((finish () (setf *git-busy* nil) (git-changed root)))
+    (git-async thunk
+               (lambda (output) (finish) (funcall done output))
+               (lambda (error)
+                 (finish)
+                 (message "~a failed: ~a" label
+                          (if (or (search "could not read Username" error) (search "Permission denied" error)
+                                  (search "terminal prompts disabled" error))
+                              (format nil "~a (Cadre doesn't ask for passwords: set up a credential helper or ssh-agent)"
+                                      (first (split-text-lines error)))
+                              error))))))
+
+(define-command fetch-changes ()
+  "Fetch the remotes' branches (without changing yours)."
+  (let ((root (git-root-or-error)))
+    (remote-operation root "Fetching" (lambda () (git-fetch root))
+                      (lambda (output) (declare (ignore output)) (message "Fetched")))))
+
+(define-command pull-changes ()
+  "Bring the upstream's commits into this branch (see *git-pull-mode*)."
+  (let ((root (git-root-or-error)))
+    (remote-operation root "Pulling" (lambda () (git-pull root :mode *git-pull-mode*))
+                      (lambda (output)
+                        (message "~a" (if (search "Already up to date" output) "Already up to date" "Pulled"))))))
+
+(define-command push-changes ()
+  "Push this branch's commits to its upstream (setting one up the first time)."
+  (let ((root (git-root-or-error)))
+    (git-async (lambda () (list (git-upstream root) (git-remotes root)))
+               (lambda (found)
+                 (destructuring-bind (upstream remotes) found
+                   (flet ((push-to (remote)
+                            (remote-operation root "Pushing" (lambda () (git-push root :set-upstream remote))
+                                              (lambda (output) (declare (ignore output))
+                                                (message "Pushed~@[ to ~a~]" remote)))))
+                     (cond (upstream (push-to nil))
+                           ((null remotes) (message "No remote to push to: add one with git remote add"))
+                           ((or (null (rest remotes)) (member "origin" remotes :test #'string=))
+                            (push-to (if (member "origin" remotes :test #'string=) "origin" (first remotes))))
+                           (t (open-picker (window-picker *window*)
+                                           :items remotes :placeholder "Push to which remote?"
+                                           :on-choose #'push-to)))))))))
