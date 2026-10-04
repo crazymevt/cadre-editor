@@ -149,6 +149,7 @@ editor, wrap the selection in the pair and keep it selected. Returns t if so."
     (unless (eq (buffer-major-mode buffer) 'markdown-mode)
       (let ((edit (gio:menu-new)))
         (command-item edit "Toggle Comment" 'toggle-comment)
+        (command-item edit "Format Document" 'format-document)
         (gio:menu-append-section menu nil edit)))
     menu))
 

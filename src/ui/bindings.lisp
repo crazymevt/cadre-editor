@@ -348,6 +348,7 @@
   "C-SPC" 'complete-symbol)
 
 (bind-keys *standard-editing-keymap*
+  "S-M-f" 'format-document
   "C-{" 'fold-block
   "C-}" 'unfold-block
   "C-k C-0" 'fold-all
@@ -355,6 +356,7 @@
   "C-k C-." 'toggle-fold)
 
 (bind-keys *emacs-editing-keymap*
+  "C-c f" 'format-document
   "C-c @ C-c" 'toggle-fold
   "C-c @ C-h" 'fold-block
   "C-c @ C-s" 'unfold-block

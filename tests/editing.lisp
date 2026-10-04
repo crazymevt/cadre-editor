@@ -651,3 +651,26 @@ Over lines.\"
       (true (search "Run GTK App" (cdr (assoc "README.md" files :test #'string=))))))
   ;; Plain projects have no dependencies.
   (true (search ":depends-on ()" (cdr (assoc "lib.asd" (c:project-files-for "lib") :test #'string=)))))
+
+(define-test format-json :parent cadre-tests
+  (is string= (format nil "{~%  \"a\": 1,~%  \"b\": [~%    true,~%    null~%  ],~%  \"c\": {},~%  \"d\": []~%}~%")
+      (c:format-json "{\"a\":1,\"b\":[true,null],\"c\":{ },\"d\":[]}"))
+  ;; Strings keep their contents (braces, escapes), numbers their spelling.
+  (is string= (format nil "{~%  \"s\": \"{a, b: \\\"c\\\"}\",~%  \"n\": 1.50e3~%}~%")
+      (c:format-json "{ \"s\" : \"{a, b: \\\"c\\\"}\" , \"n\" : 1.50e3 }"))
+  ;; Already formatted stays the same; four-space indentation on request.
+  (let ((once (c:format-json "[1,[2,3]]")))
+    (is string= once (c:format-json once)))
+  (is string= (format nil "[~%    1~%]~%") (c:format-json "[1]" :indent 4))
+  ;; JSONC comments are kept.
+  (is string= (format nil "{~%  // the name~%  \"a\": 1, // one~%  \"b\": 2~%}~%")
+      (c:format-json (format nil "{ // the name~%\"a\": 1, // one~%\"b\": 2}"))))
+
+(define-test format-css :parent cadre-tests
+  (is string= (format nil "a, b > c {~%  color: red;~%  margin: 0 auto;~%}~%~%p {~%  font: 12px \"A  B\";~%}~%")
+      (c:format-css "a,b > c{color:red;margin:0   auto}p{font:12px \"A  B\"}"))
+  ;; Nested rules, at-rules, comments, and URLs with semicolons stay whole.
+  (is string= (format nil "@import url(\"x;y.css\");~%~%@media (max-width: 600px) {~%  p:hover {~%    color: blue;~%  }~%}~%~%/* end */~%")
+      (c:format-css "@import url(\"x;y.css\");@media (max-width: 600px){p:hover{color:blue;}}/* end */"))
+  (let ((once (c:format-css "a{b:c}")))
+    (is string= once (c:format-css once))))

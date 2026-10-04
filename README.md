@@ -114,6 +114,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
 | Fold / unfold the form or section | `Ctrl+Shift+[` / `Ctrl+Shift+]` | `C-c @ C-h` / `C-c @ C-s` |
 | Toggle the fold at the cursor | `Ctrl+K Ctrl+.` | `C-c @ C-c` |
+| Format Document | `Shift+Alt+F` | `C-c f` |
 | Fold all / unfold all | `Ctrl+K Ctrl+0` / `Ctrl+K Ctrl+J` | `C-c @ C-M-h` / `C-c @ C-M-s` |
 | Show the explorer | `Ctrl+Shift+E` | — |
 
@@ -388,18 +389,21 @@ connected Lisp's REPL, after saving the project's files:
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
 
-### JavaScript, TypeScript and JSON (tree-sitter)
+### JavaScript, TypeScript, JSON, HTML and CSS (tree-sitter)
 
 Files ending in `.js` `.mjs` `.cjs` `.jsx`, `.ts` `.mts` `.cts`, `.tsx`,
-`.json` and `.jsonc` open in their own modes. These modes get several things
-from the language's tree-sitter grammar:
+`.json` `.jsonc`, `.html` `.htm` and `.css` open in their own modes. These
+modes get several things from the language's tree-sitter grammar:
 - syntax colors
 - folding by the syntax tree
 - an Outline: functions, classes and methods; interfaces, types and enums in
-  TypeScript; top-level keys in JSON
-- Toggle Comment with `//`
-- Return keeps the indentation and indents after an opening bracket.
-  Between brackets, it puts the closing one on its own line.
+  TypeScript; top-level keys in JSON; headings in HTML; rules and keyframes
+  in CSS
+- in HTML, `<script>` and `<style>` contents colored as JavaScript and CSS
+- Toggle Comment with `//`, or by wrapping lines in `<!-- -->` (HTML) or
+  `/* */` (CSS)
+- Return keeps the indentation and indents after an opening bracket or HTML
+  tag. Between brackets or tags, it puts the closing one on its own line.
 
 **Setting it up:**
 1. Install the library: `brew install tree-sitter`.
@@ -412,6 +416,21 @@ A file in one of these languages tells you if its grammar isn't installed.
 Parsing happens on a background thread shortly after you stop typing, so
 even very large files don't make typing stall. Only the lines on screen are
 colored.
+
+### Format Document
+
+**Format Document** (`Shift+Alt+F`, Emacs `C-c f`, or the right-click menu)
+lays out the whole file again. It's one undo step, and the cursor stays on
+its line.
+- **JSON and CSS** use Cadre's own formatters. They work on tokens, so
+  strings, numbers, comments and key order stay exactly as written, and a
+  file on one line comes out readable. JSON puts each value on its own line;
+  CSS puts each declaration on its own line, as `property: value;`.
+- **Lisp** indents every line.
+- **JavaScript, TypeScript and HTML** use an external formatter, Prettier by
+  default (`npm install -g prettier`). The `*formatter-commands*` setting
+  names the program for any mode. A mode listed there uses it even where
+  Cadre has its own formatter.
 
 ### GTK applications
 

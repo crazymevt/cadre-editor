@@ -167,6 +167,17 @@ then show the new tree. Edits meanwhile mean another parse after."
 
 (defun bracket-pairs () '((#\{ . #\}) (#\[ . #\]) (#\( . #\))))
 
+(defparameter *void-elements*
+  '("area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "source" "track" "wbr"))
+
+(defun html-opening-tag-before (before)
+  "True if BEFORE (a line up to the cursor) ends with an opening tag that
+takes content, such as <div class=\"x\">."
+  (multiple-value-bind (match groups) (cl-ppcre:scan-to-strings "<([A-Za-z][\\w-]*)[^<>]*>$" before)
+    (and match
+         (not (cl-ppcre:scan "/>$" before))
+         (not (member (string-downcase (aref groups 0)) *void-elements* :test #'string=)))))
+
 (define-command code-newline ()
   "Start a new line with this one's indentation, one level more after an
 opening bracket; between brackets, put the closing one on its own line."
@@ -179,8 +190,11 @@ opening bracket; between brackets, put the closing one on its own line."
                (indent (leading-space-count string))
                (before (string-right-trim " " (subseq string 0 column)))
                (after (string-left-trim " " (subseq string column)))
-               (opens (and (plusp (length before)) (assoc (char before (1- (length before))) (bracket-pairs))))
-               (closes (and opens (plusp (length after)) (char= (char after 0) (cdr opens))))
+               (tag (and (eq (buffer-major-mode (view-buffer view)) 'html-mode) (html-opening-tag-before before)))
+               (opens (or tag (and (plusp (length before)) (assoc (char before (1- (length before))) (bracket-pairs)))))
+               (closes (if tag
+                           (and (>= (length after) 2) (string= "</" after :end2 2))
+                           (and opens (plusp (length after)) (char= (char after 0) (cdr opens)))))
                (inner (if opens (+ indent *code-indent-width*) indent)))
           (gtk:text-buffer-insert-at-cursor gtk-buffer (format nil "~%~a" (make-string inner :initial-element #\Space)) -1)
           (when closes

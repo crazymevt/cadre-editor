@@ -927,6 +927,18 @@ Other languages through tree-sitter (core `tree-sitter/`, UI
   70 ms for 730 KB of JavaScript, 15 ms for 10,000 lines. A generation
   counter drops stale results. Only the lines on screen are colored, a run
   at a time.
+- **Injections:** HTML's injections query marks `<script>` and `<style>`
+  contents. Each such region is parsed as its own document in the language
+  `#set! injection.language` names, cached per parse, and its spans replace
+  the outer ones there.
+- **Comments:** CSS and HTML have only block comments, so Toggle Comment
+  wraps each line.
+
+Format Document: JSON and CSS have formatters in the core (`format.lisp`)
+that work on tokens, never values. Lisp re-indents. Other modes use
+`*formatter-commands*` (Prettier for JavaScript, TypeScript and HTML), run
+on a thread with the text on standard input; the result is applied only if
+the text hasn't changed meanwhile.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 

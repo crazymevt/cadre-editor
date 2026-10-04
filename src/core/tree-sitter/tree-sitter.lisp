@@ -71,9 +71,14 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
   "TypeScript with JSX, highlighted by its tree-sitter grammar.")
 (define-major-mode json-mode (:title "JSON" :extensions ("json" "jsonc"))
   "JSON, highlighted by its tree-sitter grammar.")
+(define-major-mode html-mode (:title "HTML" :extensions ("html" "htm" "xhtml"))
+  "HTML, highlighted by its tree-sitter grammar (and its scripts and styles by theirs).")
+(define-major-mode css-mode (:title "CSS" :extensions ("css"))
+  "CSS, highlighted by its tree-sitter grammar.")
 
 (defparameter *tree-sitter-modes*
-  '((javascript-mode . "javascript") (typescript-mode . "typescript") (tsx-mode . "tsx") (json-mode . "json"))
+  '((javascript-mode . "javascript") (typescript-mode . "typescript") (tsx-mode . "tsx") (json-mode . "json")
+    (html-mode . "html") (css-mode . "css"))
   "Major mode → its tree-sitter language.")
 
 (defun tree-sitter-language-for-mode (mode)
@@ -82,7 +87,9 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
 (defparameter *tree-sitter-repos*
   '(("javascript" :url "https://github.com/tree-sitter/tree-sitter-javascript" :tag "v0.23.1")
     ("typescript" :url "https://github.com/tree-sitter/tree-sitter-typescript" :tag "v0.23.2")
-    ("json" :url "https://github.com/tree-sitter/tree-sitter-json" :tag "v0.24.8"))
+    ("json" :url "https://github.com/tree-sitter/tree-sitter-json" :tag "v0.24.8")
+    ("html" :url "https://github.com/tree-sitter/tree-sitter-html" :tag "v0.23.2")
+    ("css" :url "https://github.com/tree-sitter/tree-sitter-css" :tag "v0.23.2"))
   "Grammar repositories, by name, at the versions Cadre builds.")
 
 (defparameter *ecma-outline*
@@ -121,11 +128,22 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
     (:name "json" :title "JSON" :repos ("json") :source "json/src/"
      :symbol "tree_sitter_json" :extensions ("json" "jsonc") :comment "//"
      :highlights (("json" "queries/highlights.scm")) :precedence :first
-     :outline "(document (object (pair key: (string (string_content) @name)) @definition.key))"))
+     :outline "(document (object (pair key: (string (string_content) @name)) @definition.key))")
+    (:name "html" :title "HTML" :repos ("html") :source "html/src/"
+     :symbol "tree_sitter_html" :extensions ("html" "htm" "xhtml") :block-comment ("<!--" "-->")
+     :highlights (("html" "queries/highlights.scm")) :injections ("html" "queries/injections.scm")
+     :outline "(element (start_tag (tag_name) @tag) (text) @name (#match? @tag \"^[hH][1-6]$\")) @definition.heading")
+    (:name "css" :title "CSS" :repos ("css") :source "css/src/"
+     :symbol "tree_sitter_css" :extensions ("css") :block-comment ("/*" "*/")
+     ;; Custom properties (--x) come before plain ones: the first pattern wins.
+     :highlights (("css" "queries/highlights.scm")) :precedence :first
+     :outline "(rule_set (selectors) @name) @definition.rule
+(keyframes_statement (keyframes_name) @name) @definition.keyframes"))
   "The languages Cadre knows: their grammar (repositories, source folder in
-the first, the function returning it), file types, line comment, highlight
-query files (and :precedence, :last unless :first wins on the same node)
-and outline query.")
+the first, the function returning it), file types, :comment (a line comment)
+or :block-comment (start and end), highlight query files (and :precedence,
+:last unless :first wins on the same node), an :injections query file (code
+in other languages inside, as HTML's scripts and styles) and outline query.")
 
 (defun tree-sitter-language-spec (name)
   (find name *tree-sitter-languages* :key (lambda (l) (getf l :name)) :test #'string-equal))
@@ -142,6 +160,9 @@ and outline query.")
 
 (defun language-highlights-file (name)
   (merge-pathnames (format nil "queries/~a/highlights.scm" name) (tree-sitter-directory)))
+
+(defun language-injections-file (name)
+  (merge-pathnames (format nil "queries/~a/injections.scm" name) (tree-sitter-directory)))
 
 (defun shim-library ()
   (merge-pathnames (format nil "lib/libcadre-tree-sitter.~a" (shared-library-type)) (tree-sitter-directory)))
@@ -228,6 +249,11 @@ called with each line of progress."
       (with-open-file (out (language-highlights-file name) :direction :output :if-exists :supersede
                                                            :external-format :utf-8)
         (write-string query out)))
+    (let ((injections (getf spec :injections)))
+      (when injections
+        (with-open-file (out (language-injections-file name) :direction :output :if-exists :supersede
+                                                             :external-format :utf-8)
+          (write-string (read-text-file (merge-pathnames (second injections) (repo-directory (first injections)))) out))))
     (when log (funcall log (format nil "Installed ~a" (getf spec :title))))
     name))
 
@@ -349,7 +375,7 @@ argument is its index, a string argument a string."
 ;;; Languages, loaded
 
 (defstruct (ts-language (:constructor %make-ts-language))
-  name pointer highlights outline comment problems (precedence :last))
+  name pointer highlights outline injections comment block-comment problems (precedence :last))
 
 (defvar *loaded-languages* (make-hash-table :test 'equal))
 
@@ -381,7 +407,10 @@ parts that do. Returns the query and a list of problems."
             (setf (gethash name *loaded-languages*)
                   (%make-ts-language :name name :pointer pointer :highlights highlights
                                      :outline (ignore-errors (compile-query pointer (getf spec :outline)))
-                                     :comment (getf spec :comment) :problems problems
+                                     :comment (getf spec :comment) :block-comment (getf spec :block-comment)
+                                     :injections (and (probe-file (language-injections-file name))
+                                                      (ignore-errors (compile-query pointer (read-text-file (language-injections-file name)))))
+                                     :problems problems
                                      :precedence (getf spec :precedence :last))))))))
 
 ;;; Documents: a text and its tree
@@ -390,6 +419,7 @@ parts that do. Returns the query and a list of problems."
   language
   (cell (list nil nil))                 ; (parser tree), freed when the document is collected
   (lock (sb-thread:make-mutex :name "tree-sitter parser"))
+  (injected (make-hash-table :test 'equal)) ; (language start-byte text) → document, for this parse
   string octets
   byte-chars                            ; byte offset → char offset, or nil if ASCII
   char-bytes)                           ; char offset → byte offset, or nil if ASCII
@@ -443,6 +473,7 @@ parse at a time per document)."
           (ts-document-octets document) (getf state :octets)
           (ts-document-byte-chars document) (getf state :byte-chars)
           (ts-document-char-bytes document) (getf state :char-bytes))
+    (clrhash (ts-document-injected document))
     document))
 
 (defun ts-parse (document string)
@@ -518,9 +549,9 @@ parse at a time per document)."
              (when entry (return (cdr entry))))
         while (find #\. current)))
 
-(defun ts-highlight-spans (document start-char end-char)
-  "The faces of DOCUMENT's text between the two char offsets, as sorted,
-non-overlapping (start end face) in chars."
+(defun own-highlight-spans (document start-char end-char)
+  "The faces DOCUMENT's own highlight query gives its text between the two
+char offsets, as sorted, non-overlapping (start end face) in chars."
   (let* ((query (ts-language-highlights (ts-document-language document)))
          (start-byte (char-byte document start-char))
          (end-byte (char-byte document end-char))
@@ -560,6 +591,72 @@ non-overlapping (start end face) in chars."
                     do (close-run i) (setf run-start i run-face (aref paint i)))
             (close-run width))
           (nreverse spans))))))
+
+;;; Code in other languages inside (injections)
+
+(defun injection-regions (document start-byte end-byte)
+  "The regions between the two byte offsets that hold code in another
+language, as (start-byte end-byte language-name), from the language's
+injections query (@injection.content, with the language from
+#set! injection.language or an @injection.language capture)."
+  (let ((query (ts-language-injections (ts-document-language document)))
+        (octets (ts-document-octets document))
+        (regions '()))
+    (when query
+      (dolist (match (query-matches document query start-byte end-byte))
+        (let ((content nil)
+              (language (loop for p in (aref (ts-query-predicates query) (first match))
+                              when (and (equal (first p) "set!") (equal (second p) "injection.language"))
+                                return (third p))))
+          (dolist (capture (rest match))
+            (let ((name (aref (ts-query-captures query) (first capture))))
+              (cond ((string= name "injection.content") (setf content capture))
+                    ((string= name "injection.language")
+                     (setf language (sb-ext:octets-to-string octets :start (second capture) :end (third capture)
+                                                                    :external-format :utf-8))))))
+          (when (and content language (< (second content) (third content)))
+            (push (list (second content) (third content) (string-downcase language)) regions)))))
+    (nreverse regions)))
+
+(defun injected-document (document start end language)
+  "A document for the LANGUAGE code between the bytes START and END of DOCUMENT,
+parsed once per parse of DOCUMENT; nil if LANGUAGE isn't installed."
+  (let* ((text (sb-ext:octets-to-string (ts-document-octets document) :start start :end end :external-format :utf-8))
+         (key (list language start text)))
+    (multiple-value-bind (cached found) (gethash key (ts-document-injected document))
+      (if found
+          cached
+          (setf (gethash key (ts-document-injected document))
+                (and (tree-sitter-language-spec language)
+                     (tree-sitter-language-installed-p language)
+                     (ignore-errors
+                      (let ((inner (make-ts-document (load-ts-language language))))
+                        (ts-parse inner text)
+                        inner))))))))
+
+(defun ts-highlight-spans (document start-char end-char)
+  "The faces of DOCUMENT's text between the two char offsets, as sorted,
+non-overlapping (start end face) in chars, code in other languages inside
+colored by theirs."
+  (let* ((start-byte (char-byte document start-char))
+         (end-byte (char-byte document end-char))
+         (regions (injection-regions document start-byte end-byte))
+         (spans (own-highlight-spans document start-char end-char)))
+    (if (null regions)
+        spans
+        (let ((inside '()))
+          (dolist (region regions)
+            (destructuring-bind (rs re language) region
+              (let ((inner (injected-document document rs re language))
+                    (rs-char (byte-char document rs))
+                    (re-char (byte-char document re)))
+                ;; The region is the inner language's: drop the outer faces there.
+                (setf spans (remove-if (lambda (span) (and (< (first span) re-char) (> (second span) rs-char))) spans))
+                (when inner
+                  (dolist (span (ts-highlight-spans inner (max 0 (- start-char rs-char))
+                                                    (- (min end-char re-char) rs-char)))
+                    (push (list (+ rs-char (first span)) (+ rs-char (second span)) (third span)) inside))))))
+          (sort (append spans inside) #'< :key #'first)))))
 
 ;;; Folding and the outline
 

@@ -2382,6 +2382,92 @@ d" 0 0)
            (equal '(("Shape" :interface 0 0)) (cadre-ui::outline-items (current-buffer)))
            (cadre-ui::outline-items (current-buffer)))))
 
+;;; HTML, CSS and Format Document
+
+(defvar *web-grammars* (every #'tree-sitter-language-installed-p '("html" "css" "javascript")))
+
+(then 300
+  (write-lang-file "page.html" (format nil "<html>~%<head>~%  <style>body { color: red; }</style>~%</head>~%<body class=\"main\">~%  <h1>Title</h1>~%  <script>const x = 1;</script>~%  <div></div>~%</body>~%</html>~%"))
+  (write-lang-file "min.css" "a,b{color:red;margin:0}p{font-size:12px}")
+  (write-lang-file "min.json" "{\"name\":\"cadre\",\"tags\":[\"lisp\",\"editor\"],\"ok\":true}")
+  (write-lang-file "messy.lisp" (format nil "(defun f ()~%(+ 1~%2))~%"))
+  (open-file-path (merge-pathnames "page.html" *langs*)))
+
+(then-when ((and (find-buffer "page.html") (eq (current-buffer) (find-buffer "page.html"))))
+  (check "a .html file opens in HTML mode" (eq 'html-mode (buffer-major-mode (current-buffer)))))
+
+(then 700
+  (when *web-grammars*
+    (check "HTML tags are colored" (has-face-p 5 4 :code-type))
+    (check "attributes" (has-face-p 4 7 :code-property))
+    (check "the style element's CSS is colored as CSS" (has-face-p 2 17 :code-property))
+    (check "and the script's JavaScript as JavaScript" (has-face-p 6 11 :keyword))
+    (check "the outline lists the heading" (equal '(("Title" :heading 5 0)) (cadre-ui::outline-items (current-buffer)))
+           (cadre-ui::outline-items (current-buffer)))
+    (screenshot "44-html"))
+  (set-cursor 5 4)
+  (call-command 'cadre-ui::toggle-comment))
+
+(then 300
+  (check "Toggle Comment wraps HTML lines in <!-- -->" (string= "  <!-- <h1>Title</h1> -->" (line-text 5)) (line-text 5))
+  (call-command 'cadre-ui::toggle-comment))
+
+(then 300
+  (check "and unwraps them" (string= "  <h1>Title</h1>" (line-text 5)) (line-text 5))
+  (set-cursor 7 7)
+  (call-command 'cadre-ui::code-newline))
+
+(then 300
+  (check "Return between tags puts the closing tag on its own line"
+         (and (string= "  <div>" (line-text 7)) (string= "    " (line-text 8)) (string= "  </div>" (line-text 9)))
+         (list (line-text 7) (line-text 8) (line-text 9)))
+  (open-file-path (merge-pathnames "min.css" *langs*)))
+
+(then-when ((and (find-buffer "min.css") (eq (current-buffer) (find-buffer "min.css"))))
+  (check "a .css file opens in CSS mode" (eq 'css-mode (buffer-major-mode (current-buffer))))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "Format Document lays out CSS"
+         (string= (format nil "a, b {~%  color: red;~%  margin: 0;~%}~%~%p {~%  font-size: 12px;~%}~%") (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (when *web-grammars* (check "and the result is colored" (has-face-p 1 3 :code-property)))
+  (call-command 'cadre-ui::undo))
+
+(then 300
+  (check "one Undo takes the formatting back" (string= "a,b{color:red;margin:0}p{font-size:12px}" (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (open-file-path (merge-pathnames "min.json" *langs*)))
+
+(then-when ((and (find-buffer "min.json") (eq (current-buffer) (find-buffer "min.json"))))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "Format Document lays out single-line JSON"
+         (string= (format nil "{~%  \"name\": \"cadre\",~%  \"tags\": [~%    \"lisp\",~%    \"editor\"~%  ],~%  \"ok\": true~%}~%")
+                  (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "formatting it again changes nothing" (search "Already formatted" (status-text)) (status-text))
+  (open-file-path (merge-pathnames "app.js" *langs*)))
+
+(then-when ((and (find-buffer "app.js") (eq (current-buffer) (find-buffer "app.js"))))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "JavaScript needs Prettier, and says so" (search "prettier" (status-text)) (status-text))
+  (open-file-path (merge-pathnames "messy.lisp" *langs*)))
+
+(then-when ((and (find-buffer "messy.lisp") (eq (current-buffer) (find-buffer "messy.lisp"))))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "Format Document indents Lisp"
+         (string= (format nil "(defun f ()~%  (+ 1~%     2))~%") (buffer-string (current-buffer)))
+         (buffer-string (current-buffer))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

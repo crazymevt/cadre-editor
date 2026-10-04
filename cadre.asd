@@ -61,6 +61,7 @@
                (:file "git-merge")
                (:file "folding")
                (:file "tree-sitter")
+               (:file "format")
                (:file "new-project")
                (:file "build")
                (:file "gtk-app")
@@ -96,6 +97,7 @@
                (:file "definitions" :pathname "lisp/definitions")
                (:file "markdown")
                (:file "folding")
+               (:file "format")
                (:file "git")
                (:file "new-project")
                (:module "swank"
