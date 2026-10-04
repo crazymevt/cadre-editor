@@ -105,6 +105,8 @@
    #:parse-xrefs #:parse-xrefs-groups
    #:frame #:make-frame #:frame-number #:frame-description #:frame-restartable
    #:parse-frames #:parse-frame-locals #:stepper-condition-p
+   ;; folding
+   #:lisp-fold-ranges #:markdown-fold-ranges #:fold-range-at
    #:trace-call #:make-trace-call #:trace-call-id #:trace-call-parent #:trace-call-name #:trace-call-args
    #:trace-call-results #:trace-call-state #:trace-call-children #:trace-spec-name #:parse-trace-call
    #:trace-tree #:make-trace-tree #:trace-tree-calls #:trace-tree-roots #:trace-tree-key

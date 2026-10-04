@@ -121,7 +121,8 @@ one if it has none. Returns the view."
         (progn (setup-note-tooltips view)
                (setup-symbol-hover view)
                (setup-context-menu view)
-               (setup-git-gutter-clicks view)))
+               (setup-git-gutter-clicks view)
+               (setup-fold-gutter view)))
     (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
                      (lambda (adjustment) (declare (ignore adjustment))
                        (schedule-highlight buffer)

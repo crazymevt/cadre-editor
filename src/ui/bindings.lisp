@@ -341,6 +341,20 @@
   "C-l" 'clear-repl
   "C-SPC" 'complete-symbol)
 
+(bind-keys *standard-editing-keymap*
+  "C-{" 'fold-block
+  "C-}" 'unfold-block
+  "C-k C-0" 'fold-all
+  "C-k C-j" 'unfold-all
+  "C-k C-." 'toggle-fold)
+
+(bind-keys *emacs-editing-keymap*
+  "C-c @ C-c" 'toggle-fold
+  "C-c @ C-h" 'fold-block
+  "C-c @ C-s" 'unfold-block
+  "C-c @ C-M-h" 'fold-all
+  "C-c @ C-M-s" 'unfold-all)
+
 (bind-keys *standard-global-keymap*
   "C-M-i" 'claude
   "C-`" 'show-repl

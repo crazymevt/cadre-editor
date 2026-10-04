@@ -174,3 +174,16 @@ Second line of the docstring.\"
       (c:fuzzy-filter "sb" '("scroll-down-page" "set-mark-buffer" "save-buffer")))
   (is equal '("src/ui/window.lisp")
       (c:fuzzy-filter "win" '("src/core/text.lisp" "src/ui/window.lisp") :limit 1)))
+
+(define-test fold-ranges :parent cadre-tests
+  (let ((syntax (c:make-lisp-syntax (c:make-string-text (format nil "(defun f (x)~%  (let ((y 1))~%    (+ x~%       y)))~%(g 1)~%(h~% 2)~%")))))
+    ;; One range per line, the longest: the DEFUN's, not (x)'s; (g 1) is on one line.
+    (is equal '((0 3) (1 3) (2 3) (5 6)) (c:lisp-fold-ranges syntax))
+    (is equal '(2 3) (c:fold-range-at (c:lisp-fold-ranges syntax) 3))
+    (is equal '(0 3) (c:fold-range-at (c:lisp-fold-ranges syntax) 0))
+    (is eq nil (c:fold-range-at (c:lisp-fold-ranges syntax) 4)))
+  ;; An unclosed list folds nothing; a paren in a string or comment doesn't count.
+  (is equal '() (c:lisp-fold-ranges (c:make-lisp-syntax (c:make-string-text (format nil "(a~%b")))))
+  (is equal '((0 1)) (c:lisp-fold-ranges (c:make-lisp-syntax (c:make-string-text (format nil "(a \"(\" ; (~%b)~%")))))
+  (is equal '((0 5) (2 5) (3 5) (7 10) (9 10))
+      (c:markdown-fold-ranges (format nil "# Title~%intro~%## A~%```~%# not a heading~%```~%~%# Next~%~%## B~%text~%~%"))))

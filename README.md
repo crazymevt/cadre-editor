@@ -109,6 +109,9 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Step through the form (or a call of the definition) | `F11` | `C-c M-s` |
 | Compile the form with full debug information | `Ctrl+K D` | `C-c M-c` |
 | While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
+| Fold / unfold the form or section | `Ctrl+Shift+[` / `Ctrl+Shift+]` | `C-c @ C-h` / `C-c @ C-s` |
+| Toggle the fold at the cursor | `Ctrl+K Ctrl+.` | `C-c @ C-c` |
+| Fold all / unfold all | `Ctrl+K Ctrl+0` / `Ctrl+K Ctrl+J` | `C-c @ C-M-h` / `C-c @ C-M-s` |
 | Show the explorer | `Ctrl+Shift+E` | — |
 
 Values from evaluating appear inline after the form (`⇒ 42`) until you edit,
@@ -334,6 +337,17 @@ git's message if those can't supply one.
 | Revert the change at the cursor | `M-x git-revert-change` | `C-x v n` |
 | Diff this file | `M-x git-diff-file` | `C-x v =` |
 | Stage this file | `M-x git-stage-file` | `C-x v s` |
+
+### Folding
+
+Lisp forms that span lines, Markdown sections (a heading down to the next
+heading at its level or above) and fenced code blocks fold away behind their
+first line. Hover over the gutter to see ▾ on the lines that can fold, and
+click it to fold. A folded line shows ▸ (click to unfold) and a faint band.
+Folding again at the same place folds the form around it, and Fold All folds
+every top-level form or section. Folds are also in the right-click menu and
+the View menu. Folded text is never changed unseen: moving the cursor into it
+(by searching, going to a line or a definition) or editing it unfolds it.
 
 ### Outline
 

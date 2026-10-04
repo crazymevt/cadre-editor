@@ -2069,6 +2069,75 @@ d" 0 0)
   (check "after staging, Commit finishes the merge" (search "Merge branch" (git-ok *root* "log" "-1" "--format=%s")))
   (check "and the banner goes" (null (adw:bin-get-child (cadre-ui::sc-banner cadre-ui::*source-control*)))))
 
+;;; Folding
+
+(defun folds () (cadre-ui::buffer-folds (current-buffer)))
+(defun fold-lines-now () (sort (mapcar (lambda (f) (cadre-ui::fold-first-line (buffer-text (current-buffer)) f)) (folds)) #'<))
+(defun line-hidden-p (line)
+  (gtk:text-iter-has-tag (cadre-ui::line-iter (buffer-text (current-buffer)) line 1)
+                         (cadre-ui::folded-tag (buffer-text (current-buffer)))))
+(defun line-height (line)
+  (nth-value 1 (gtk:text-view-get-line-yrange (cadre-ui::view-text-view (current-view))
+                                              (cadre-ui::line-iter (buffer-text (current-buffer)) line))))
+
+(then 300
+  (open-file-path (merge-pathnames "src/m7.lisp" *root*)))
+
+(then-when ((find-buffer "m7.lisp"))
+  (show-buffer-named "m7.lisp")
+  (set-cursor 2 5)
+  (call-command 'cadre-ui::toggle-fold))
+
+(then 400
+  (check "Toggle Fold folds the innermost form" (equal '(2) (fold-lines-now)) (fold-lines-now))
+  (check "its lines are hidden" (and (line-hidden-p 3) (not (line-hidden-p 2))))
+  (check "and take no room" (zerop (line-height 3)) (line-height 3))
+  (call-command 'cadre-ui::fold-block))
+
+(then 400
+  (check "Fold again folds the form around it" (equal '(1 2) (fold-lines-now)) (fold-lines-now))
+  (check "the cursor leaves the hidden text" (= 1 (first (cursor))) (cursor))
+  (check "a folded line is marked"
+         (gtk:text-iter-has-tag (cadre-ui::line-iter (buffer-text (current-buffer)) 1 1)
+                                (gtk:text-tag-table-lookup (gtk:text-buffer-get-tag-table (buffer-text (current-buffer)))
+                                                           "cadre-fold-header")))
+  (check "the text itself is untouched" (search "(+ (double-it y) 1)" (buffer-string (current-buffer)))))
+
+(then 300
+  (screenshot "37-folded")
+  (set-cursor 3 4))
+
+(then 300
+  (check "moving the cursor into folded text unfolds it" (null (folds)) (fold-lines-now))
+  (call-command 'cadre-ui::fold-all))
+
+(then 300
+  (check "Fold All folds the top-level forms" (equal '(1) (fold-lines-now)) (fold-lines-now))
+  (gtk:text-buffer-insert (buffer-text (current-buffer)) (cadre-ui::line-iter (buffer-text (current-buffer)) 3 0) "x" -1))
+
+(then 300
+  (check "editing folded text unfolds it" (null (folds)))
+  (let ((gtk-buffer (buffer-text (current-buffer))))
+    (gtk:text-buffer-delete gtk-buffer (cadre-ui::line-iter gtk-buffer 3 0) (cadre-ui::line-iter gtk-buffer 3 1)))
+  (open-file-path (merge-pathnames "guide.md" *root*)))
+
+(then-when ((find-buffer "guide.md"))
+  (show-buffer-named "guide.md")
+  (set-cursor 8 2)
+  (call-command 'cadre-ui::toggle-fold))
+
+(then 400
+  (check "in Markdown, a fenced block folds" (equal '(7) (fold-lines-now)) (fold-lines-now))
+  (set-cursor 12 0)
+  (call-command 'cadre-ui::toggle-fold))
+
+(then 400
+  (check "and a section under its heading" (equal '(7 11) (fold-lines-now)) (fold-lines-now))
+  (call-command 'cadre-ui::unfold-all))
+
+(then 300
+  (check "Unfold All shows everything" (and (null (folds)) (not (line-hidden-p 13)))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

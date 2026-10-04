@@ -59,6 +59,7 @@
                (:file "git")
                (:file "git-history")
                (:file "git-merge")
+               (:file "folding")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -90,6 +91,7 @@
                (:file "search")
                (:file "definitions" :pathname "lisp/definitions")
                (:file "markdown")
+               (:file "folding")
                (:file "git")
                (:module "swank"
                 :serial t

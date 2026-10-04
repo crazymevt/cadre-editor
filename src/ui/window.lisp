@@ -170,6 +170,8 @@
       (item view "Zoom In" 'zoom-in)
       (item view "Zoom Out" 'zoom-out)
       (item view "Word Wrap" 'toggle-word-wrap)
+      (item view "Fold All" 'fold-all)
+      (item view "Unfold All" 'unfold-all)
       (item view "Automatic Layout" 'use-automatic-layout)
       (item view "ASDF Systems" 'show-systems)
       (item lisp "Load Project" 'load-project)

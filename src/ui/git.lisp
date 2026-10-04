@@ -254,7 +254,7 @@ ON-ERROR with the message of an error it signals."
                          (lambda (gesture n x y)
                            (declare (ignore gesture n))
                            (let ((gf (buffer-git (view-buffer view))))
-                             (when gf
+                             (when (and gf (not (fold-zone-p view x)))
                                (let* ((text-view (view-text-view view))
                                       (by (nth-value 1 (gtk:text-view-window-to-buffer-coords text-view :left 0 (round y))))
                                       (line (gtk:text-iter-get-line (gtk:text-view-get-line-at-y text-view by)))

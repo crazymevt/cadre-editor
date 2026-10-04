@@ -81,6 +81,8 @@ nil, there are no line numbers."
 
 ;;; The gutter
 
+(defparameter *fold-gutter-width* 14 "Pixels the fold arrows take at the gutter's right (see folding.lisp).")
+
 (defun digit-count (n)
   (length (princ-to-string n)))
 
@@ -92,7 +94,8 @@ nil, there are no line numbers."
       (let ((layout (gtk:widget-create-pango-layout (view-text-view view)
                                                     (make-string digits :initial-element #\8))))
         (gtk:widget-set-size-request (view-gutter view)
-                                     (+ (pango:layout-get-pixel-size layout) 20 (blame-width view)) -1)))))
+                                     (+ (pango:layout-get-pixel-size layout) 20 *fold-gutter-width* (blame-width view))
+                                     -1)))))
 
 (defun draw-line-numbers (view area cr width)
   (let* ((text-view (view-text-view view))
@@ -104,18 +107,21 @@ nil, there are no line numbers."
          (layout (gtk:widget-create-pango-layout text-view nil))
          (color (gtk:widget-get-color area)))
     (flet ((draw-line (iter)
-             (let ((line (gtk:text-iter-get-line iter))
-                   (y (gtk:text-view-get-line-yrange text-view iter)))
-               (multiple-value-bind (wx wy)
-                   (gtk:text-view-buffer-to-window-coords text-view :left 0 y)
-                 (declare (ignore wx))
-                 (pango:layout-set-text layout (princ-to-string (1+ line)) -1)
-                 (cairo:set-source-rgba cr (gdk:rgba-red color) (gdk:rgba-green color)
-                                        (gdk:rgba-blue color) (if (= line cursor-line) 0.9d0 0.4d0))
-                 (cairo:move-to cr (- width (pango:layout-get-pixel-size layout) 10) wy)
-                 (pango-cairo:show-layout cr layout)
-                 (draw-blame-line view cr layout line wy))
-               y)))
+             (let ((line (gtk:text-iter-get-line iter)))
+               (multiple-value-bind (y height) (gtk:text-view-get-line-yrange text-view iter)
+                 ;; A folded-away line has no height: nothing to draw.
+                 (when (plusp height)
+                   (multiple-value-bind (wx wy)
+                       (gtk:text-view-buffer-to-window-coords text-view :left 0 y)
+                     (declare (ignore wx))
+                     (pango:layout-set-text layout (princ-to-string (1+ line)) -1)
+                     (cairo:set-source-rgba cr (gdk:rgba-red color) (gdk:rgba-green color)
+                                            (gdk:rgba-blue color) (if (= line cursor-line) 0.9d0 0.4d0))
+                     (cairo:move-to cr (- width (pango:layout-get-pixel-size layout) 6 *fold-gutter-width*) wy)
+                     (pango-cairo:show-layout cr layout)
+                     (draw-blame-line view cr layout line wy)
+                     (draw-fold-arrow view cr layout line wy width)))
+                 y))))
       (let ((iter (gtk:text-view-get-line-at-y text-view top)))
         (loop
           (let ((line (gtk:text-iter-get-line iter)))

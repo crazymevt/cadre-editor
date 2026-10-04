@@ -408,7 +408,7 @@ given us these):
 | Matching-paren and current-line highlight | Text tags updated when the cursor moves | M1 |
 | Search-match highlighting | Text tags, visible range only | M1 |
 | Completion popup | `gtk:popover` + `gtk:list-view` at the cursor | M2 |
-| Code folding | Invisible-text tags over a form, with fold arrows in the gutter | Later |
+| Code folding | Invisible-text tags over a form or Markdown section, with fold arrows in the gutter | Done |
 | Minimap | Not planned | — |
 
 ### 7.2 Lexer and parse state
@@ -875,7 +875,13 @@ between HEAD's text and the buffer (so unsaved edits count), revert per
 change, explorer status colors, the branch in the status bar, and a Source
 Control page for staging, discarding and committing. Git runs on threads.
 Then the Lisp tools: a Trace page (swank-trace-dialog, see 8.6) and a stepper
-on the Debugger page (8.5), with Compile for Debugging.
+on the Debugger page (8.5), with Compile for Debugging. Then code folding:
+the core works out fold ranges (`lisp-fold-ranges` from the lexer's tokens,
+one range per line, the longest; `markdown-fold-ranges` for sections and
+fenced blocks), again 400 ms after an edit. The UI hides a fold's lines after
+the first, newlines included, with an invisible tag between two marks; the
+gutter skips lines with no height and draws ▸/▾. Moving the cursor into a
+fold, or an insertion or deletion touching it, unfolds it.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
