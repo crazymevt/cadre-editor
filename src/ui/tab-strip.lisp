@@ -39,7 +39,10 @@
                          (declare (ignore controller))
                          (gtk:adjustment-set-value adjustment (+ (gtk:adjustment-get-value adjustment) (* 30 (+ dx dy))))
                          t))
-      (gtk:widget-add-controller scroller wheel))
+      (gtk:widget-add-controller scroller wheel)
+      ;; When the strip's size changes (a split, a resize), keep the selected tab in view.
+      (gobject:connect adjustment :changed (lambda (&rest args) (declare (ignore args))
+                                             (scroll-to-selected-tab strip))))
     (let ((tabs (group-tab-view group))
           (refresh (lambda (&rest args) (declare (ignore args)) (refresh-tab-strip win strip))))
       (gobject:connect tabs :page-attached
@@ -61,7 +64,11 @@
 
 (defun make-tab (win strip page selected)
   (let* ((group (strip-group strip))
-         (label (make-instance 'gtk:label :label (adw:tab-page-get-title page) :ellipsize :middle
+         (title (adw:tab-page-get-title page))
+         ;; Short names are never shortened (the strip scrolls instead);
+         ;; long ones may be, down to 20 characters.
+         (label (make-instance 'gtk:label :label title :ellipsize :middle
+                                          :width-chars (min (length title) 20)
                                           :max-width-chars 32 :single-line-mode t))
          (close (make-instance 'gtk:button :icon-name "window-close-symbolic" :valign :center
                                            :css-classes '("flat" "cadre-tab-close") :tooltip-text "Close"))
@@ -101,7 +108,8 @@
           (loop for page in (group-pages group)
                 collect (let ((tab (make-tab win strip page (eq page selected))))
                           (gtk:box-append box tab)
-                          (cons page tab))))))
+                          (cons page tab))))
+    (scroll-to-selected-tab strip)))
 
 (defun update-tab-selection (strip)
   (let ((selected (adw:tab-view-get-selected-page (group-tab-view (strip-group strip)))))
@@ -111,7 +119,8 @@
                  (gtk:widget-remove-css-class tab "selected")))))
 
 (defun scroll-to-selected-tab (strip)
-  (glib:idle-add glib:+priority-default-idle+
+  ;; After a short wait, so new tabs have their sizes.
+  (glib:timeout-add glib:+priority-default+ 50
                  (lambda ()
                    (let* ((selected (adw:tab-view-get-selected-page (group-tab-view (strip-group strip))))
                           (tab (cdr (assoc selected (strip-tabs strip))))

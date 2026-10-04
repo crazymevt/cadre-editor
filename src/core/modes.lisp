@@ -38,6 +38,9 @@ keymap, MAJOR-MODE-KEYMAP, is kept when the mode is redefined."
 (define-major-mode fundamental-mode (:title "Text")
   "Plain text, with no special behaviour.")
 
+(define-major-mode markdown-mode (:title "Markdown" :extensions ("md" "markdown" "mdown" "mkd"))
+  "Markdown text.")
+
 (define-major-mode lisp-mode (:title "Lisp" :extensions ("lisp" "asd" "lsp" "cl" "l" "ros"))
   "Common Lisp source.")
 

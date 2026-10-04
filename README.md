@@ -219,6 +219,19 @@ you're typing in, with the current argument in bold. Both read your source,
 so they work for functions you've written but not loaded, and without a
 Lisp (`*symbol-hover*` turns the tooltips off).
 
+### Markdown
+
+`.md` files are highlighted (headings, emphasis, code, links, lists, quotes,
+tables; fenced `lisp` code as Lisp). `Ctrl+K V` (`C-c C-c p` in Emacs) opens
+a live preview beside the file: it redraws as you type, scrolls along with
+the source, and its links open (web links in your browser, `#anchors` and
+other files in Cadre). In the editor, `Return` continues a list or quote and
+ends it on an empty item, `Tab` / `Shift+Tab` indent and outdent list items,
+and typing `*`, `_` or `~` with text selected wraps it. Bold, italic, code,
+strikethrough and link are in the right-click menu's Format submenu (Emacs:
+`C-c C-s b/i/c/s`, `C-c C-l`), and `Ctrl+Shift+O` (`M-g i`) goes to a
+heading.
+
 ### Finding, replacing and refactoring
 
 The menu's second section has them all, and so does the right-click menu in

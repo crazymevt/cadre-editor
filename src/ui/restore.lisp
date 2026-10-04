@@ -51,11 +51,16 @@
 ;;; Describing the session
 
 (defun view-state (view)
-  "What to remember about VIEW: its file and cursor, or nil if it has no file."
-  (let ((file (buffer-file (view-buffer view))))
-    (and file
-         (multiple-value-bind (line column) (view-cursor-line-column view)
-           (list (uiop:native-namestring file) (1- line) (1- column))))))
+  "What to remember about VIEW: its file and cursor, (:preview file) for a
+Markdown preview, or nil if it has no file."
+  (let* ((buffer (view-buffer view))
+         (file (buffer-file buffer))
+         (source (buffer-local buffer :preview-of)))
+    (cond (file
+           (multiple-value-bind (line column) (view-cursor-line-column view)
+             (list (uiop:native-namestring file) (1- line) (1- column))))
+          ((and source (buffer-file source))
+           (list :preview (uiop:native-namestring (buffer-file source)))))))
 
 (defun group-state (win group)
   (let* ((views (loop for page in (group-pages group)
@@ -121,16 +126,23 @@
 (defun restore-group (win group state)
   (destructuring-bind (&key files selected &allow-other-keys) (rest state)
     (let ((views (loop for (path line column) in files
-                       for buffer = (and (probe-file path) (load-file-buffer path))
-                       collect (and buffer
-                                    (let ((view (add-view win buffer group)))
-                                      (gtk:text-buffer-place-cursor (view-gtk-buffer view)
-                                                                    (line-iter (view-gtk-buffer view) line column))
-                                      view)))))
+                       for preview = (eq path :preview)
+                       for file = (if preview line path)
+                       for buffer = (and (stringp file) (probe-file file) (load-file-buffer file))
+                       collect (cond ((null buffer) nil)
+                                     (preview
+                                      (add-view win (or (let ((p (buffer-local buffer :preview)))
+                                                          (and p (member p (buffer-list)) p))
+                                                        (make-preview-buffer buffer))
+                                                group))
+                                     (t (let ((view (add-view win buffer group)))
+                                          (gtk:text-buffer-place-cursor (view-gtk-buffer view)
+                                                                        (line-iter (view-gtk-buffer view) line column))
+                                          view))))))
       (let ((view (or (and selected (nth selected views)) (find-if #'identity views))))
         (when view
           (adw:tab-view-set-selected-page (group-tab-view group) (view-page win view))))
-      (dolist (view (remove nil views))
+      (dolist (view (remove-if (lambda (v) (or (null v) (buffer-local (view-buffer v) :preview-of))) views))
         (let ((view view))
           (glib:idle-add glib:+priority-default-idle+ (lambda () (scroll-to-cursor view) nil)))))))
 

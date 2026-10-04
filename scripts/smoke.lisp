@@ -174,6 +174,8 @@
   (format o "(defun uses-area () (area 2 3)) ; area in a comment~%(print \"area in a string\")~%"))
 (with-open-file (o (merge-pathnames "src/hints.lisp" *root*) :direction :output)
   (format o "(defun scale-shape (shape factor &key (round t))~%  \"Scale SHAPE by FACTOR.\"~%  (list shape factor round))~%"))
+(with-open-file (o (merge-pathnames "guide.md" *root*) :direction :output)
+  (format o "# Guide~%~%Some **bold** text and a [link](https://example.com).~%~%- one~%- two~%~%```lisp~%(defun hi () 1)~%```~%~%## Usage~%~%| a | b |~%|---|---|~%| 1 | 2 |~%"))
 (with-open-file (o (merge-pathnames "cache.fasl" *root*) :direction :output)
   (format o "hidden"))
 
@@ -988,6 +990,11 @@ d" 0 0)
   (check "no command shadows a core function"
          (null (loop for s being the external-symbols of :cadre
                      when (and (find-command s) (not (eq s 'cadre:lisp-mode))) collect s)))
+  (let ((replaced (loop for command in (list-commands)
+                        for name = (command-name command)
+                        unless (equal (documentation name 'function) (command-documentation command))
+                          collect name)))
+    (check "no function replaces a command of the same name" (null replaced) replaced))
   (call-command 'close-tab)
   (setf *keybinding-profile* :standard))
 
@@ -1246,6 +1253,82 @@ d" 0 0)
                               (buffer-list))))
     (check "so closing the window asks only about files and untitled buffers" (null asked)
            (mapcar #'buffer-name asked))))
+
+;;; Markdown
+(defun preview-buffer () (find-buffer "Preview guide.md"))
+(defun preview-text () (buffer-string (preview-buffer)))
+
+(then 100
+  (open-file-path (merge-pathnames "guide.md" *root*)))
+
+(then 800
+  (check "a .md file opens in Markdown mode" (eq 'markdown-mode (buffer-major-mode (current-buffer)))
+         (buffer-major-mode (current-buffer)))
+  (check "headings are highlighted" (has-face-p 0 3 :md-heading))
+  (check "bold text is highlighted" (has-face-p 2 7 :md-strong))
+  (check "link text is highlighted" (has-face-p 2 26 :md-link))
+  (check "list markers are highlighted" (has-face-p 4 0 :md-list))
+  (check "fenced Lisp is highlighted as Lisp" (and (has-face-p 8 2 :definer) (has-face-p 8 2 :md-code-block)))
+  (cadre-ui::focus-view (current-view))
+  (call-command 'cadre-ui::markdown-preview))
+
+(then 600
+  (let ((preview (preview-buffer)))
+    (check "the preview opens" (and preview (cadre-ui::buffer-views *window* preview)))
+    (check "beside the source, in another group"
+           (and preview (not (eq (cadre-ui::view-group (first (cadre-ui::buffer-views *window* preview)))
+                                 (cadre-ui::view-group (current-view))))))
+    (check "the source keeps the focus" (string= "guide.md" (buffer-name (current-buffer))))
+    (check "the preview shows the text without markup"
+           (and (search "Some bold text and a link." (preview-text)) (not (search "**" (preview-text))))
+           (preview-text))
+    (check "with list bullets and the code" (and (search "•" (preview-text)) (search "(defun hi () 1)" (preview-text))))
+    (check "headings are drawn large"
+           (gtk:text-iter-has-tag (cadre-ui::iter-at (buffer-text preview) 0)
+                                  (gtk:text-tag-table-lookup (gtk:text-buffer-get-tag-table (buffer-text preview)) "md-p-h1")))
+    (check "links are remembered for clicking"
+           (find "https://example.com" (cadre-ui::buffer-local preview :links) :key #'third :test #'string=))
+    (check "the preview needs no saving" (not (cadre-ui::buffer-needs-saving-p preview)))
+    (let ((state (cadre-ui::view-state (first (cadre-ui::buffer-views *window* preview)))))
+      (check "the session remembers the preview by its source"
+             (equal (list :preview (uiop:native-namestring (merge-pathnames "guide.md" *root*))) state) state)
+      ;; Restoring it: close the preview, then restore its group's state.
+      (let ((group (cadre-ui::view-group (first (cadre-ui::buffer-views *window* preview)))))
+        (cadre-ui::close-view *window* (first (cadre-ui::buffer-views *window* preview)))
+        (cadre-ui::restore-group *window* group (list :group :files (list state) :selected 0))
+        (check "and restores it" (and (preview-buffer) (cadre-ui::buffer-views *window* (preview-buffer)))))))
+  (let* ((strip (cadre-ui::group-strip (cadre-ui::view-group (current-view))))
+         (tab (cdr (assoc (cadre-ui::view-page *window* (current-view)) (cadre-ui::strip-tabs strip))))
+         (adjustment (gtk:scrolled-window-get-hadjustment (cadre-ui::strip-scroller strip))))
+    (multiple-value-bind (ok x) (gtk:widget-translate-coordinates tab (cadre-ui::strip-box strip) 0d0 0d0)
+      (check "the selected tab is scrolled into view"
+             (and ok (>= x (gtk:adjustment-get-value adjustment))
+                  (<= (+ x (gtk:widget-get-width tab))
+                      (+ (gtk:adjustment-get-value adjustment) (gtk:adjustment-get-page-size adjustment) 1)))
+             (list x (gtk:adjustment-get-value adjustment) (gtk:adjustment-get-page-size adjustment) (gtk:adjustment-get-upper adjustment)))))
+  (screenshot "28-markdown-preview")
+  (set-cursor 0 7)
+  (insert-at-cursor " Book"))
+
+(then 600
+  (check "the preview follows edits" (search "Guide Book" (preview-text)) (subseq (preview-text) 0 20))
+  (set-cursor 5 5)
+  (call-command 'cadre-ui::markdown-newline)
+  (check "Return continues a list" (string= "- " (line-text 6)) (line-text 6))
+  (call-command 'cadre-ui::markdown-newline)
+  (check "and ends it on an empty item" (string= "" (line-text 6)) (list (line-text 5) (line-text 6) (line-text 7)))
+  (set-cursor 2 1)
+  (call-command 'cadre-ui::markdown-bold)
+  (check "bold wraps the word at the cursor" (search "**Some**" (line-text 2)) (line-text 2))
+  (call-command 'cadre-ui::markdown-bold)
+  (check "and again unwraps it" (string= "Some **bold**" (subseq (line-text 2) 0 13)) (line-text 2))
+  (let ((items (mapcar #'second (markdown-headings (buffer-string (current-buffer))))))
+    (check "headings for Go to Heading" (equal '("Guide Book" "Usage") items) items))
+  (setf (buffer-modified-p (current-buffer)) nil)
+  (call-command 'close-tab))
+
+(then 300
+  (check "closing the source closes its preview" (null (preview-buffer))))
 
 (setf *steps* (reverse *steps*))
 

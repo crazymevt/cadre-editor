@@ -58,7 +58,7 @@ containing it, and use the variable in its place."
 ;;; Wrapping the selection
 
 (define-option *wrap-selection* t boolean
-  "Typing ( [ { \" ' or ` with text selected wraps the selection in that pair."
+  "Typing ( [ { \" ' or ` (and in Markdown * _ ~) with text selected wraps the selection in that pair."
   :category "Editing")
 
 (defparameter *wrap-pairs*
@@ -67,8 +67,11 @@ containing it, and use the variable in its place."
 (defun wrap-selection-key (win key text)
   "If KEY types an opening bracket or quote while text is selected in an
 editor, wrap the selection in the pair and keep it selected. Returns t if so."
-  (let ((pair (and *wrap-selection* text (plain-key-p key) (assoc text *wrap-pairs* :test #'string=)))
-        (view (focused-view win)))
+  (let* ((view (focused-view win))
+         (pairs (if (and view (markdown-buffer-p (view-buffer view)))
+                    (append *wrap-pairs* *markdown-wrap-pairs*)
+                    *wrap-pairs*))
+         (pair (and *wrap-selection* text (plain-key-p key) (assoc text pairs :test #'string=))))
     (when (and pair view)
       (let ((gtk-buffer (view-gtk-buffer view)))
         (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
@@ -111,9 +114,12 @@ editor, wrap the selection in the pair and keep it selected. Returns t if so."
         (when (eq (buffer-major-mode buffer) 'lisp-mode)
           (command-item lisp-section "Evaluate or Compile Form" 'compile-or-eval-defun))
         (gio:menu-append-section menu nil lisp-section)))
-    (let ((edit (gio:menu-new)))
-      (command-item edit "Toggle Comment" 'toggle-comment)
-      (gio:menu-append-section menu nil edit))
+    (when (eq (buffer-major-mode buffer) 'markdown-mode)
+      (markdown-context-menu menu))
+    (unless (eq (buffer-major-mode buffer) 'markdown-mode)
+      (let ((edit (gio:menu-new)))
+        (command-item edit "Toggle Comment" 'toggle-comment)
+        (gio:menu-append-section menu nil edit)))
     menu))
 
 (defun setup-context-menu (view)

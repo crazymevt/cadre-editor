@@ -15,13 +15,13 @@
 
 (defparameter *tag-faces*
   (append '(:current-line)
-          (remove :quote *faces*) *image-faces* '(:quote)
+          (remove :quote *faces*) *markdown-faces* *image-faces* '(:quote)
           (loop for i below *paren-face-count* collect (list :paren i))
           '(:search :search-current :paren-match :paren-mismatch))
   "Every face with a tag, in priority order.")
 
 (defun syntax-face-p (face)
-  (or (consp face) (member face *faces*) (member face *image-faces*)))
+  (or (consp face) (member face *faces*) (member face *image-faces*) (member face *markdown-faces*)))
 
 (defun tag-name (face)
   (if (consp face)
@@ -52,7 +52,8 @@
                               (loop for review in *reviews*
                                     when (rv-gtk-buffer review) collect (rv-gtk-buffer review))))
     (style-buffer-tags gtk-buffer)
-    (restyle-named-tags gtk-buffer)))
+    (restyle-named-tags gtk-buffer)
+    (restyle-preview-tags gtk-buffer)))
 
 ;;; Keeping the syntax in step with the text
 
@@ -72,6 +73,7 @@ for instance after the buffer's major mode changes."
              (gobject:connect gtk-buffer :insert-text
                               (lambda (b location text length)
                                 (declare (ignore b length))
+                                (markdown-lines-changed buffer (gtk:text-iter-get-line location))
                                 (let ((syntax (buffer-syntax buffer)))
                                   (when syntax
                                     (syntax-lines-changed syntax (gtk:text-iter-get-line location) 1
@@ -79,6 +81,7 @@ for instance after the buffer's major mode changes."
              (gobject:connect gtk-buffer :delete-range
                               (lambda (b start end)
                                 (declare (ignore b))
+                                (markdown-lines-changed buffer (gtk:text-iter-get-line start))
                                 (let ((syntax (buffer-syntax buffer)))
                                   (when syntax
                                     (let ((first (gtk:text-iter-get-line start)))
@@ -97,6 +100,7 @@ for instance after the buffer's major mode changes."
              (setf (buffer-local buffer :syntax) nil)
              (remove-syntax-tags gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
                                  (gtk:text-buffer-get-end-iter gtk-buffer)))))
+    (attach-markdown buffer)
     (schedule-highlight buffer)))
 
 ;;; Tagging lines
@@ -157,12 +161,17 @@ faces that come from what the connected Lisp knows."
                                              (and (repl-view) (eq (view-buffer (repl-view)) buffer)
                                                   (list (repl-view)))))
                          (highlight-view view)
+                         (highlight-markdown-view view)
                          (update-cursor-decorations view)))
                      nil))))
 
 ;;; The current line and matching parens
 
 (defun update-cursor-decorations (view)
+  (unless (buffer-local (view-buffer view) :preview-of)  ; a page, not text being edited
+    (update-cursor-decorations-1 view)))
+
+(defun update-cursor-decorations-1 (view)
   (let* ((buffer (view-buffer view))
          (gtk-buffer (view-gtk-buffer view))
          (cursor (cursor-iter gtk-buffer)))

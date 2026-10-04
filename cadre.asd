@@ -49,6 +49,7 @@
                (:file "settings-page")
                (:file "project-search")
                (:file "refactor")
+               (:file "markdown")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -79,6 +80,7 @@
                              (:file "refactor")))
                (:file "search")
                (:file "definitions" :pathname "lisp/definitions")
+               (:file "markdown")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")

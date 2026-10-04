@@ -225,6 +225,25 @@
   "C-d" 'paredit-forward-delete
   "Delete" 'paredit-forward-delete)
 
+(bind-keys (major-mode-keymap (find-major-mode 'markdown-mode))
+  "RET" 'markdown-newline
+  "TAB" 'markdown-indent
+  "S-TAB" 'markdown-outdent)
+
+;;; Markdown. Emacs keys follow markdown-mode's; Standard ones VS Code's.
+(bind-keys (mode-profile-keymap 'markdown-mode :standard)
+  "C-k v" 'markdown-preview
+  "C-S-o" 'markdown-goto-heading)
+
+(bind-keys (mode-profile-keymap 'markdown-mode :emacs)
+  "C-c C-c p" 'markdown-preview
+  "C-c C-s b" 'markdown-bold
+  "C-c C-s i" 'markdown-italic
+  "C-c C-s c" 'markdown-code
+  "C-c C-s s" 'markdown-strikethrough
+  "C-c C-l" 'markdown-link
+  "M-g i" 'markdown-goto-heading)
+
 (bind-keys (major-mode-keymap (find-major-mode 'repl-mode))
   "RET" 'repl-return
   "M-p" 'repl-previous-input

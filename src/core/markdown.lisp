@@ -1,0 +1,574 @@
+;;;; markdown.lisp — reading Markdown, for highlighting and the preview
+;;;;
+;;;; MARKDOWN-INLINES reads a line's inline markup (emphasis, code, links)
+;;;; into nodes with offsets, and MARKDOWN-LINE-SPANS turns a line into
+;;;; (start end face) spans for highlighting, one line at a time with a
+;;;; state carried between lines (inside a fenced code block or not), as the
+;;;; Lisp lexer does. Fenced code marked lisp (or cl, or common-lisp) is
+;;;; highlighted as Lisp. MARKDOWN-BLOCKS reads a whole document into
+;;;; blocks for the preview. This is CommonMark's common ground with GitHub's
+;;;; tables, task lists and strikethrough, not every corner of either.
+
+(in-package #:cadre)
+
+(defparameter *markdown-faces*
+  '(:md-code-block :md-markup :md-url :md-link :md-quote :md-list :md-code
+    :md-emphasis :md-strong :md-strike :md-heading)
+  "The faces of Markdown highlighting, lowest priority first.")
+
+;;; Inline markup
+;;;
+;;; Nodes: (kind start end content-start content-end children . more)
+;;;   :text :escape :code :strong :emphasis :strike :autolink
+;;;   :link and :image, whose MORE is (url-start url-end url)
+
+(defun node-kind* (node) (first node))
+
+(defun md-punctuation-p (c) (and (graphic-char-p c) (not (alphanumericp c)) (char/= c #\Space)))
+
+(defun md-space-p (c) (member c '(#\Space #\Tab #\Newline)))
+
+(defun run-length (string start char)
+  (loop for i from start below (length string)
+        while (char= (char string i) char)
+        count t))
+
+(defun find-code-close (string start ticks end)
+  "Where a run of exactly TICKS backticks starts, from START; nil if none."
+  (loop with i = start
+        while (< i end)
+        do (if (char= (char string i) #\`)
+               (let ((n (min (run-length string i #\`) (- end i))))
+                 (when (= n ticks) (return i))
+                 (incf i n))
+               (incf i))))
+
+(defun find-bracket-close (string start end)
+  "The ] matching the [ before START, or nil."
+  (loop with depth = 0
+        for i from start below end
+        do (case (char string i)
+             (#\\ (incf i))
+             (#\` (let ((close (find-code-close string (+ i (run-length string i #\`))
+                                                (run-length string i #\`) end)))
+                    (when close (setf i (+ close (run-length string i #\`) -1)))))
+             (#\[ (incf depth))
+             (#\] (if (zerop depth) (return i) (decf depth))))))
+
+(defun find-paren-close (string start end)
+  (loop with depth = 0
+        for i from start below end
+        do (case (char string i)
+             (#\\ (incf i))
+             (#\( (incf depth))
+             (#\) (if (zerop depth) (return i) (decf depth)))
+             (#\Space (when (and (zerop depth) (< (1+ i) end) (char= (char string (1+ i)) #\"))
+                        ;; A title: (url "title")
+                        (let ((q (position #\" string :start (+ i 2) :end end)))
+                          (when q (setf i q))))))))
+
+(defun left-flanking-p (string i n end)
+  "Whether the delimiter run at I (N long) can open emphasis."
+  (let ((after (and (< (+ i n) end) (char string (+ i n))))
+        (before (and (> i 0) (char string (1- i)))))
+    (and after (not (md-space-p after))
+         (or (not (md-punctuation-p after)) (null before) (md-space-p before) (md-punctuation-p before)))))
+
+(defun right-flanking-p (string i n start)
+  "Whether the delimiter run at I (N long) can close emphasis begun at START."
+  (let ((before (and (> i start) (char string (1- i))))
+        (after (and (< (+ i n) (length string)) (char string (+ i n)))))
+    (and before (not (md-space-p before))
+         (or (not (md-punctuation-p before)) (null after) (md-space-p after) (md-punctuation-p after)))))
+
+(defun find-emphasis-close (string start end char n)
+  "Where a run of N CHARs closing emphasis begins, from START; nil if none."
+  (loop with i = start
+        while (< i end)
+        do (let ((c (char string i)))
+             (cond ((char= c #\\) (incf i 2))
+                   ((char= c #\`)
+                    (let* ((ticks (run-length string i #\`))
+                           (close (find-code-close string (+ i ticks) ticks end)))
+                      (setf i (if close (+ close ticks) (+ i ticks)))))
+                   ((char= c char)
+                    (let ((run (min (run-length string i char) (- end i))))
+                      (if (and (>= run n) (> i start)
+                               (right-flanking-p string (+ i (- run n)) n start)
+                               ;; _ closes only at the end of a word.
+                               (or (char/= char #\_)
+                                   (let ((after (+ i run)))
+                                     (or (>= after (length string)) (not (alphanumericp (char string after)))))))
+                          (return (+ i (- run n)))
+                          (incf i run))))
+                   (t (incf i))))))
+
+(defun url-end (string start end)
+  (loop for i from start below end
+        while (not (or (md-space-p (char string i)) (member (char string i) '(#\< #\>))))
+        finally (return (let ((j i))
+                          ;; Trailing punctuation isn't part of the URL.
+                          (loop while (and (> j start) (member (char string (1- j)) '(#\. #\, #\; #\: #\! #\? #\) #\' #\")))
+                                do (decf j))
+                          j))))
+
+(defun markdown-inlines (string &optional (start 0) (end (length string)))
+  "The inline nodes of STRING between START and END."
+  (let ((nodes '()) (text-start start) (i start))
+    (flet ((flush (to) (when (< text-start to) (push (list :text text-start to text-start to nil) nodes)))
+           (emit (node next) (push node nodes) (setf i next text-start next)))
+      (loop while (< i end)
+            do (let ((c (char string i)))
+                 (cond
+                   ;; \* is a literal *
+                   ((and (char= c #\\) (< (1+ i) end) (md-punctuation-p (char string (1+ i))))
+                    (flush i)
+                    (emit (list :escape i (+ i 2) (1+ i) (+ i 2) nil) (+ i 2)))
+                   ;; `code`
+                   ((char= c #\`)
+                    (let* ((ticks (run-length string i #\`))
+                           (close (find-code-close string (+ i ticks) ticks end)))
+                      (if close
+                          (progn (flush i)
+                                 (emit (list :code i (+ close ticks) (+ i ticks) close nil) (+ close ticks)))
+                          (incf i ticks))))
+                   ;; [text](url) and ![alt](url)
+                   ((or (char= c #\[) (and (char= c #\!) (< (1+ i) end) (char= (char string (1+ i)) #\[)))
+                    (let* ((open (if (char= c #\!) (1+ i) i))
+                           (close (find-bracket-close string (1+ open) end))
+                           (paren (and close (< (1+ close) end) (char= (char string (1+ close)) #\()
+                                       (find-paren-close string (+ close 2) end))))
+                      (if paren
+                          (let* ((us (+ close 2))
+                                 (ue (or (position #\Space string :start us :end paren) paren))
+                                 (url (string-trim "<>" (subseq string us ue))))
+                            (flush i)
+                            (emit (list* (if (char= c #\!) :image :link) i (1+ paren) (1+ open) close
+                                         (markdown-inlines string (1+ open) close)
+                                         (list us ue url))
+                                  (1+ paren)))
+                          (incf i))))
+                   ;; <https://…>
+                   ((and (char= c #\<) (let ((close (position #\> string :start i :end end)))
+                                         (and close (search "://" string :start2 i :end2 close)
+                                              (not (find #\Space string :start i :end close)))))
+                    (let ((close (position #\> string :start i :end end)))
+                      (flush i)
+                      (emit (list :autolink i (1+ close) (1+ i) close nil (subseq string (1+ i) close)) (1+ close))))
+                   ;; https://… in the text
+                   ((and (or (char= c #\h) (char= c #\w))
+                         (or (zerop i) (not (alphanumericp (char string (1- i)))))
+                         (or (and (< (+ i 8) end) (string= "https://" string :start2 i :end2 (+ i 8)))
+                             (and (< (+ i 7) end) (string= "http://" string :start2 i :end2 (+ i 7)))
+                             (and (< (+ i 4) end) (string= "www." string :start2 i :end2 (+ i 4)))))
+                    (let ((e (url-end string i end)))
+                      (flush i)
+                      (emit (list :autolink i e i e nil (subseq string i e)) e)))
+                   ;; ~~strike~~
+                   ((and (char= c #\~) (< (1+ i) end) (char= (char string (1+ i)) #\~)
+                         (left-flanking-p string i 2 end))
+                    (let ((close (search "~~" string :start2 (+ i 2) :end2 end)))
+                      (if (and close (> close (+ i 2)))
+                          (progn (flush i)
+                                 (emit (list :strike i (+ close 2) (+ i 2) close
+                                             (markdown-inlines string (+ i 2) close))
+                                       (+ close 2)))
+                          (incf i 2))))
+                   ;; **strong**, *emphasis*, ***both***, and the same with _
+                   ((member c '(#\* #\_))
+                    (let ((run (run-length string i c)))
+                      (if (and (left-flanking-p string i (min run 3) end)
+                               (or (char/= c #\_) (zerop i) (not (alphanumericp (char string (1- i))))))
+                          (let* ((n (if (>= run 2) 2 1))
+                                 (close (find-emphasis-close string (+ i n) end c n)))
+                            (when (and (null close) (= n 2))
+                              (setf n 1 close (find-emphasis-close string (+ i 1) end c 1)))
+                            (if close
+                                (progn (flush i)
+                                       (emit (list (if (= n 2) :strong :emphasis) i (+ close n) (+ i n) close
+                                                   (markdown-inlines string (+ i n) close))
+                                             (+ close n)))
+                                (incf i run)))
+                          (incf i run))))
+                   (t (incf i)))))
+      (flush end))
+    (nreverse nodes)))
+
+(defun inline-spans (nodes)
+  "Highlighting spans for the inline NODES."
+  (let ((spans '()))
+    (labels ((span (s e face) (when (< s e) (push (list s e face) spans)))
+             (walk (node)
+               (destructuring-bind (kind s e cs ce children &rest more) node
+                 (case kind
+                   (:code (span s e :md-markup) (span cs ce :md-code))
+                   ((:strong :emphasis :strike)
+                    (span s cs :md-markup) (span ce e :md-markup)
+                    (span s e (ecase kind (:strong :md-strong) (:emphasis :md-emphasis) (:strike :md-strike)))
+                    (mapc #'walk children))
+                   ((:link :image)
+                    (span s e :md-markup)
+                    (span cs ce :md-link)
+                    (span (first more) (second more) :md-url)
+                    (mapc #'walk children))
+                   (:autolink (span s e :md-markup) (span cs ce :md-url))
+                   (:escape (span s cs :md-markup))))))
+      (mapc #'walk nodes))
+    (nreverse spans)))
+
+;;; Lines
+
+(defun leading-spaces (line)
+  (or (position-if-not (lambda (c) (char= c #\Space)) line) (length line)))
+
+(defun lisp-language-p (info)
+  (member (string-downcase (string-trim " " info)) '("lisp" "cl" "common-lisp" "commonlisp" "elisp" "scheme" "clojure")
+          :test #'string=))
+
+(defun fence-open (line)
+  "If LINE opens a fenced code block: the fence character, its length, and the info string."
+  (let ((indent (leading-spaces line)))
+    (when (and (< indent 4) (< indent (length line)) (member (char line indent) '(#\` #\~)))
+      (let* ((c (char line indent))
+             (n (run-length line indent c))
+             (info (string-trim " " (subseq line (+ indent n)))))
+        (when (and (>= n 3) (not (and (char= c #\`) (find #\` info))))
+          (values c n info))))))
+
+(defun fence-close-p (line char count)
+  (let ((indent (leading-spaces line)))
+    (and (< indent 4) (< indent (length line)) (char= (char line indent) char)
+         (let ((n (run-length line indent char)))
+           (and (>= n count) (string= "" (string-trim " " (subseq line (+ indent n)))))))))
+
+(defun heading-level (line)
+  "The level of the ATX heading LINE (# … ######), and where its text starts; nil if not one."
+  (let ((indent (leading-spaces line)))
+    (when (and (< indent 4) (< indent (length line)) (char= (char line indent) #\#))
+      (let ((n (run-length line indent #\#)))
+        (when (and (<= n 6) (or (= (+ indent n) (length line)) (char= (char line (+ indent n)) #\Space)))
+          (values n (min (length line) (+ indent n 1))))))))
+
+(defun thematic-break-p (line)
+  (let ((chars (remove #\Space line)))
+    (and (< (leading-spaces line) 4) (>= (length chars) 3)
+         (member (char chars 0) '(#\- #\* #\_))
+         (every (lambda (c) (char= c (char chars 0))) chars))))
+
+(defun setext-underline (line)
+  "1 for a === line, 2 for ---, else nil."
+  (let ((s (string-trim " " line)))
+    (and (< (leading-spaces line) 4) (plusp (length s))
+         (cond ((every (lambda (c) (char= c #\=)) s) 1)
+               ((every (lambda (c) (char= c #\-)) s) 2)))))
+
+(defun list-marker (line)
+  "If LINE starts a list item: the marker's start and end, where the content
+starts, and :ordered with its number or :bullet."
+  (let ((indent (leading-spaces line)))
+    (when (< indent (length line))
+      (let ((c (char line indent)))
+        (cond ((and (member c '(#\- #\* #\+))
+                    (or (= (1+ indent) (length line)) (char= (char line (1+ indent)) #\Space))
+                    (not (thematic-break-p line)))
+               (values indent (1+ indent) (min (length line) (+ indent 2)) :bullet))
+              ((digit-char-p c)
+               (let ((e (or (position-if-not #'digit-char-p line :start indent) (length line))))
+                 (when (and (< e (length line)) (<= (- e indent) 9) (member (char line e) '(#\. #\)))
+                            (or (= (1+ e) (length line)) (char= (char line (1+ e)) #\Space)))
+                   (values indent (1+ e) (min (length line) (+ e 2)) :ordered
+                           (parse-integer line :start indent :end e))))))))))
+
+(defun table-row-p (line) (and (find #\| line) (not (fence-open line))))
+
+(defun table-delimiter-p (line)
+  (let ((s (string-trim " |" line)))
+    (and (find #\- s) (find #\| line) (every (lambda (c) (member c '(#\- #\: #\| #\Space))) s))))
+
+(defun markdown-line-spans (line state)
+  "Highlighting spans (start end face) for LINE, which begins in STATE, and
+the state after it. The initial state is (:text)."
+  (let ((spans '()))
+    (labels ((span (s e face) (when (< s e) (push (list s e face) spans)))
+             (inline (start) (dolist (s (inline-spans (markdown-inlines line start))) (push s spans)))
+             (done (state) (values (sort (nreverse spans) #'< :key #'first) state)))
+      (if (eq (first state) :fence)
+          (destructuring-bind (char count lisp-state) (rest state)
+            (span 0 (length line) :md-code-block)
+            (if (fence-close-p line char count)
+                (progn (span 0 (length line) :md-markup) (done '(:text)))
+                (if lisp-state
+                    (multiple-value-bind (tokens end) (lex-line line lisp-state)
+                      (loop for tk in tokens
+                            for face = (token-face tk line)
+                            when face do (span (token-start tk) (token-end tk) face))
+                      (done (list :fence char count end)))
+                    (done state))))
+          (multiple-value-bind (char count info) (fence-open line)
+            (when char
+              (span 0 (length line) :md-code-block)
+              (span 0 (length line) :md-markup)
+              (return-from markdown-line-spans
+                (done (list :fence char count (and (lisp-language-p info) '(:code 0))))))
+            (multiple-value-bind (level text-start) (heading-level line)
+              (when level
+                (span 0 text-start :md-markup)
+                (span 0 (length line) :md-heading)
+                (inline text-start)
+                (return-from markdown-line-spans (done '(:text)))))
+            (when (or (thematic-break-p line) (setext-underline line) (table-delimiter-p line))
+              (span 0 (length line) :md-markup)
+              (return-from markdown-line-spans (done '(:text))))
+            (let ((start 0))
+              ;; > quotes, possibly nested, then a list marker.
+              (loop for indent = (leading-spaces (subseq line start))
+                    while (and (< (+ start indent) (length line)) (< indent 4)
+                               (char= (char line (+ start indent)) #\>))
+                    do (let ((gt (+ start indent)))
+                         (span gt (1+ gt) :md-markup)
+                         (span gt (length line) :md-quote)
+                         (setf start (min (length line) (+ gt (if (and (< (1+ gt) (length line))
+                                                                        (char= (char line (1+ gt)) #\Space))
+                                                                   2 1))))))
+              (multiple-value-bind (ms me content) (list-marker (subseq line start))
+                (when ms
+                  (span (+ start ms) (+ start me) :md-list)
+                  (setf start (+ start content))
+                  ;; - [ ] and - [x]
+                  (when (and (<= (+ start 3) (length line)) (char= (char line start) #\[)
+                             (member (char line (1+ start)) '(#\Space #\x #\X)) (char= (char line (+ start 2)) #\]))
+                    (span start (+ start 3) :md-list)
+                    (setf start (min (length line) (+ start 4))))))
+              (when (table-row-p line)
+                (loop for i from start below (length line)
+                      when (and (char= (char line i) #\|) (or (zerop i) (char/= (char line (1- i)) #\\)))
+                        do (span i (1+ i) :md-markup)))
+              (inline start)
+              (done '(:text))))))))
+
+;;; Blocks, for the preview
+;;;
+;;; (:heading level inlines line) (:paragraph inlines line) (:code info text line)
+;;; (:quote blocks line) (:list ordered start items line), each item
+;;; (task blocks) with task nil, :open or :done; (:rule line)
+;;; (:table aligns header-cells rows line), cells as inlines.
+;;; Inlines are nodes over the string they came with: (string . nodes).
+
+(defun inlines-of (string)
+  (cons string (markdown-inlines string)))
+
+(defun strip-indent (line n)
+  "LINE without up to N leading spaces."
+  (subseq line (min (leading-spaces line) n (length line))))
+
+(defun blank-line-p (line) (string= "" (string-trim '(#\Space #\Tab) line)))
+
+(defun paragraph-text (lines)
+  "LINES joined into a paragraph's text: a line ending in two spaces or \\
+breaks the line there; otherwise lines run together."
+  (with-output-to-string (out)
+    (loop for (line . more) on lines
+          do (let* ((trimmed (string-left-trim " " line))
+                    (hard (and more (or (and (>= (length trimmed) 2)
+                                             (string= "  " trimmed :start2 (- (length trimmed) 2)))
+                                        (and (plusp (length trimmed))
+                                             (char= #\\ (char trimmed (1- (length trimmed)))))))))
+               (write-string (string-right-trim " \\" trimmed) out)
+               (when more (write-char (if hard #\Newline #\Space) out))))))
+
+(defun split-table-row (line)
+  (let* ((s (string-trim " " line))
+         (s (if (and (plusp (length s)) (char= (char s 0) #\|)) (subseq s 1) s))
+         (s (if (and (plusp (length s)) (char= (char s (1- (length s))) #\|)
+                     (or (< (length s) 2) (char/= (char s (- (length s) 2)) #\\)))
+                (subseq s 0 (1- (length s))) s)))
+    (loop with cells = '() with start = 0
+          for i from 0 to (length s)
+          do (when (or (= i (length s)) (and (char= (char s i) #\|) (or (zerop i) (char/= (char s (1- i)) #\\))))
+               (push (string-trim " " (subseq s start i)) cells)
+               (setf start (1+ i)))
+          finally (return (nreverse cells)))))
+
+(defun table-alignments (line)
+  (mapcar (lambda (cell)
+            (let ((left (and (plusp (length cell)) (char= (char cell 0) #\:)))
+                  (right (and (plusp (length cell)) (char= (char cell (1- (length cell))) #\:))))
+              (cond ((and left right) :center) (right :right) (t :left))))
+          (split-table-row line)))
+
+(defun parse-blocks (lines first-line)
+  "The blocks in LINES (a list of strings), the first being line FIRST-LINE of the document."
+  (let ((blocks '())
+        (paragraph '())
+        (paragraph-line nil)
+        (lines (coerce lines 'vector))
+        (i 0))
+    (labels ((line (k) (aref lines k))
+             (end-paragraph ()
+               (when paragraph
+                 (push (list :paragraph (inlines-of (paragraph-text (reverse paragraph))) paragraph-line) blocks)
+                 (setf paragraph '())))
+             (add (block) (end-paragraph) (push block blocks)))
+      (loop while (< i (length lines))
+            do (let* ((line (line i))
+                      (n (+ first-line i)))
+                 (cond
+                   ((blank-line-p line) (end-paragraph) (incf i))
+                   ;; ``` fenced code
+                   ((fence-open line)
+                    (multiple-value-bind (char count info) (fence-open line)
+                      (let* ((indent (leading-spaces line))
+                             (end (or (loop for k from (1+ i) below (length lines)
+                                            when (fence-close-p (line k) char count) return k)
+                                      (length lines)))
+                             (code (loop for k from (1+ i) below end collect (strip-indent (line k) indent))))
+                        (add (list :code info (format nil "~{~a~^~%~}" code) n))
+                        (setf i (1+ end)))))
+                   ;; # heading
+                   ((heading-level line)
+                    (multiple-value-bind (level start) (heading-level line)
+                      (let ((text (string-right-trim " #" (subseq line start))))
+                        (add (list :heading level (inlines-of text) n)))
+                      (incf i)))
+                   ;; Text, then === or ---: a heading
+                   ((and paragraph (setext-underline line))
+                    (let ((level (setext-underline line))
+                          (text (paragraph-text (reverse paragraph)))
+                          (at paragraph-line))
+                      (setf paragraph '())
+                      (add (list :heading level (inlines-of text) at))
+                      (incf i)))
+                   ((thematic-break-p line) (add (list :rule n)) (incf i))
+                   ;; > quote
+                   ((and (< (leading-spaces line) 4) (< (leading-spaces line) (length line))
+                         (char= (char line (leading-spaces line)) #\>))
+                    (let ((inner '()) (start i))
+                      (loop while (and (< i (length lines)) (not (blank-line-p (line i))))
+                            do (let* ((l (line i)) (indent (leading-spaces l)))
+                                 (push (if (and (< indent (length l)) (char= (char l indent) #\>))
+                                           (let ((rest (subseq l (1+ indent))))
+                                             (if (and (plusp (length rest)) (char= (char rest 0) #\Space)) (subseq rest 1) rest))
+                                           l)
+                                       inner))
+                               (incf i))
+                      (add (list :quote (parse-blocks (nreverse inner) (+ first-line start)) n))))
+                   ;; - item, 1. item
+                   ((and (list-marker line) (or (null paragraph) (not (blank-line-p (subseq line (nth-value 2 (list-marker line)))))))
+                    (multiple-value-bind (ms me content kind number) (list-marker line)
+                      (declare (ignore ms me))
+                      (let ((items '()))
+                        (loop while (and (< i (length lines)) (eq (nth-value 3 (list-marker (line i))) kind))
+                              do (multiple-value-bind (ims ime icontent) (list-marker (line i))
+                                   (declare (ignore ims ime))
+                                   (let ((item-lines (list (subseq (line i) icontent)))
+                                         (item-line (+ first-line i)))
+                                     (incf i)
+                                     ;; Following lines: indented to the content, blank, or lazy text.
+                                     (loop while (< i (length lines))
+                                           do (let ((l (line i)))
+                                                (cond ((blank-line-p l)
+                                                       (if (and (< (1+ i) (length lines))
+                                                                (>= (leading-spaces (line (1+ i))) icontent)
+                                                                (not (blank-line-p (line (1+ i)))))
+                                                           (progn (push "" item-lines) (incf i))
+                                                           (return)))
+                                                      ((>= (leading-spaces l) icontent)
+                                                       (push (strip-indent l icontent) item-lines) (incf i))
+                                                      ((or (list-marker l) (fence-open l) (heading-level l)
+                                                           (thematic-break-p l)
+                                                           (blank-line-p (first item-lines)))
+                                                       (return))
+                                                      (t (push l item-lines) (incf i)))))
+                                     (let* ((item-lines (nreverse item-lines))
+                                            (first (first item-lines))
+                                            (task (and (>= (length first) 3) (char= (char first 0) #\[)
+                                                       (char= (char first 2) #\])
+                                                       (or (= (length first) 3) (char= (char first 3) #\Space))
+                                                       (case (char first 1)
+                                                         (#\Space :open) ((#\x #\X) :done)))))
+                                       (when task
+                                         (setf (first item-lines) (subseq first (min (length first) 4))))
+                                       (push (list task (parse-blocks item-lines item-line)) items))))
+                                 ;; A blank line between items keeps the list going.
+                                 (when (and (< (1+ i) (length lines)) (blank-line-p (line i))
+                                            (eq (nth-value 3 (list-marker (line (1+ i)))) kind))
+                                   (incf i)))
+                        (add (list :list (eq kind :ordered) (or number 1) (nreverse items) n)))))
+                   ;; | table |
+                   ((and (table-row-p line) (< (1+ i) (length lines)) (table-delimiter-p (line (1+ i))))
+                    (let ((header (split-table-row line))
+                          (aligns (table-alignments (line (1+ i))))
+                          (rows '()))
+                      (incf i 2)
+                      (loop while (and (< i (length lines)) (table-row-p (line i)) (not (blank-line-p (line i))))
+                            do (push (mapcar #'inlines-of (split-table-row (line i))) rows)
+                               (incf i))
+                      (add (list :table aligns (mapcar #'inlines-of header) (nreverse rows) n))))
+                   ;; Indented code
+                   ((and (null paragraph) (>= (leading-spaces line) 4))
+                    (let ((code '()))
+                      (loop while (and (< i (length lines))
+                                       (or (>= (leading-spaces (line i)) 4) (blank-line-p (line i))))
+                            do (push (strip-indent (line i) 4) code) (incf i))
+                      (loop while (and code (blank-line-p (first code))) do (pop code))
+                      (add (list :code "" (format nil "~{~a~^~%~}" (nreverse code)) n))))
+                   (t (unless paragraph (setf paragraph-line n))
+                      (push line paragraph)
+                      (incf i)))))
+      (end-paragraph))
+    (nreverse blocks)))
+
+(defun markdown-blocks (text)
+  "The blocks of the Markdown document TEXT."
+  (parse-blocks (split-text-lines text) 0))
+
+(defun inline-plain-text (inlines)
+  "The text of INLINES ((string . nodes)) without markup."
+  (let ((string (car inlines)))
+    (with-output-to-string (out)
+      (labels ((walk (node)
+                 (destructuring-bind (kind s e cs ce children &rest more) node
+                   (declare (ignore s e more))
+                   (if children (mapc #'walk children) (write-string string out :start cs :end ce))
+                   (when (and (eq kind :image) (null children)) nil))))
+        (mapc #'walk (cdr inlines))))))
+
+(defun markdown-headings (text)
+  "The headings of the Markdown document TEXT, as (level title line)."
+  (let ((headings '()))
+    (labels ((walk (blocks)
+               (dolist (b blocks)
+                 (case (first b)
+                   (:heading (push (list (second b) (inline-plain-text (third b)) (fourth b)) headings))
+                   (:quote (walk (second b)))))))
+      (walk (markdown-blocks text)))
+    (nreverse headings)))
+
+(defun markdown-continuation (line)
+  "What a new line after LINE should start with to continue its list item or
+quote (\"- \", \"3. \", \"> \"), and whether LINE is an empty item, which
+ends the list instead."
+  (let* ((quote-end (loop with i = 0
+                          while (and (< i (length line)) (< (leading-spaces (subseq line i)) 4)
+                                     (< (+ i (leading-spaces (subseq line i))) (length line))
+                                     (char= (char line (+ i (leading-spaces (subseq line i)))) #\>))
+                          do (setf i (+ i (leading-spaces (subseq line i)) 1))
+                             (when (and (< i (length line)) (char= (char line i) #\Space)) (incf i))
+                          finally (return i)))
+         (quote-prefix (subseq line 0 quote-end))
+         (rest (subseq line quote-end)))
+    (multiple-value-bind (ms me content kind number) (list-marker rest)
+      (if ms
+          (let* ((body (subseq rest content))
+                 (task (and (>= (length body) 3) (char= (char body 0) #\[) (char= (char body 2) #\])))
+                 (empty (blank-line-p (if task (subseq body 3) body))))
+            (values (concatenate 'string quote-prefix (subseq rest 0 ms)
+                                 (if (eq kind :ordered)
+                                     (format nil "~d~a " (1+ number) (char rest (1- me)))
+                                     (subseq rest ms me))
+                                 (if (eq kind :ordered) "" " ")
+                                 (if task "[ ] " ""))
+                    empty))
+          (if (plusp quote-end)
+              (values quote-prefix (blank-line-p rest))
+              (values nil nil))))))

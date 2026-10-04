@@ -19,7 +19,7 @@
    ;; modes
    #:define-major-mode #:find-major-mode #:major-mode-for-file
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
-   #:fundamental-mode #:lisp-mode
+   #:fundamental-mode #:lisp-mode #:markdown-mode
    ;; buffers
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
@@ -70,6 +70,8 @@
    #:symbol-occurrences #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement
    #:definition #:make-definition #:source-definitions #:definition-name #:definition-kind #:definition-arglist
    #:definition-documentation #:definition-line #:arglist-hint #:form-argument-position
+   #:*markdown-faces* #:markdown-inlines #:markdown-line-spans #:markdown-blocks #:markdown-headings
+   #:markdown-continuation #:inline-plain-text #:lisp-language-p
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec

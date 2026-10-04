@@ -480,7 +480,16 @@ the first step; Lisp mode is then one client of it.
   the path of the value at the cursor (`$.dependencies.foo`) on the
   clipboard.
 
-**Markdown mode with preview** (`.md`, `.markdown`)
+**Markdown mode with preview** (`.md`, `.markdown`) — *built 2026-10-03*
+(`src/core/markdown.lisp`, `src/ui/markdown.lisp`). As built: the line
+lexer keeps its own per-line state vector rather than sharing a generalised
+cache; the preview is redrawn whole (debounced 250 ms) rather than from the
+changed blocks; tables are aligned monospace text rather than child
+widgets; images are local files only. Not yet: inserting a table, "copy as
+HTML", JSON in fences. Extras: Return continues lists and quotes, Tab and
+Shift+Tab indent list items, typing `*` `_` `~` wraps the selection, Go to
+Heading (`Ctrl+Shift+O` / `M-g i`), and previews are restored with the
+session.
 
 - Source highlighting: headings, emphasis, inline code, links, lists,
   block quotes, tables, and fenced code blocks, with Lisp (and JSON) code

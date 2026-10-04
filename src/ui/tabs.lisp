@@ -105,7 +105,8 @@ one if it has none. Returns the view."
     view))
 
 (defun add-view (win buffer &optional (group (window-active-group win)))
-  (let* ((view (make-editor-view buffer :on-cursor-moved
+  (let* ((preview (buffer-local buffer :preview-of))
+         (view (make-editor-view buffer :gutter (not preview) :on-cursor-moved
                                  (lambda (view)
                                    (update-cursor-decorations view)
                                    (schedule-autodoc view)
@@ -115,12 +116,15 @@ one if it has none. Returns the view."
     (setf (gethash (view-widget view) (window-views win)) view
           (view-group view) group)
     (attach-syntax buffer)
-    (setup-note-tooltips view)
-    (setup-symbol-hover view)
-    (setup-context-menu view)
+    (if preview
+        (setup-preview-view view)
+        (progn (setup-note-tooltips view)
+               (setup-symbol-hover view)
+               (setup-context-menu view)))
     (gobject:connect (gtk:scrolled-window-get-vadjustment (view-widget view)) :value-changed
                      (lambda (adjustment) (declare (ignore adjustment))
-                       (schedule-highlight buffer)))
+                       (schedule-highlight buffer)
+                       (when (buffer-local buffer :preview) (preview-source-scrolled view))))
     ;; The group of the view with the focus is the active one.
     (let ((focus (gtk:event-controller-focus-new)))
       (gobject:connect focus :enter (lambda (&rest args) (declare (ignore args))
