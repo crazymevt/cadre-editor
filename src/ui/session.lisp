@@ -116,6 +116,8 @@
       (:write-string (destructuring-bind (string &optional target thread) args
                        (declare (ignore thread))
                        (repl-output string target)))
+      (:presentation-start (presentation-start (first args)))
+      (:presentation-end (presentation-end (first args)))
       (:new-package (destructuring-bind (package prompt) args
                       (setf (connection-package connection) package
                             (connection-prompt connection) prompt)

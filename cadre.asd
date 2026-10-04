@@ -37,6 +37,7 @@
                (:file "hints")
                (:file "image-faces")
                (:file "inspector")
+               (:file "presentations")
                (:file "xref")
                (:file "macroexpand")
                (:file "systems")

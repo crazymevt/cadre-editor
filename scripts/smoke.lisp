@@ -403,6 +403,31 @@
   (check "the REPL evaluates and prints the result" (search (format nil "42~%CL-USER> ") (repl-text))
          (substitute #\| #\Newline (repl-text)))
   (check "the REPL shows output" (search "hi" (repl-text)))
+  ;; Presentations
+  (let ((presentation (first (cadre-ui::repl-presentations))))
+    (check "results are presentations" (and presentation (string= "42" (cadre-ui::presentation-text presentation)))
+           (and presentation (cadre-ui::presentation-text presentation)))
+    (cadre-ui::set-repl-input "(list :a ")
+    (when presentation (cadre-ui::copy-presentation-to-input presentation))
+    (gtk:text-buffer-insert-at-cursor (cadre-ui::repl-gtk-buffer) ")" -1)
+    (check "a result copied to the input shows as its text" (string= "(list :a 42)" (cadre-ui::repl-input))
+           (cadre-ui::repl-input))
+    (check "but goes to the Lisp as the object"
+           (search "#.(swank:lookup-presented-object-or-lose" (cadre-ui::repl-input-for-lisp))
+           (cadre-ui::repl-input-for-lisp)))
+  (call-command 'repl-return))
+
+(then-when ((search "(:A 42)" (repl-text)))
+  (check "and the Lisp gets the object" (search "(:A 42)" (repl-text)))
+  (let ((presentation (first (cadre-ui::repl-presentations))))
+    (cadre-ui::inspect-presentation presentation)))
+
+(defun inspector-text ()
+  (format nil "~a ~a" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))
+          (cadre:text-string (cadre-ui::inspector-buffer))))
+
+(then-when ((search "proper list" (inspector-text)) :timeout 10)
+  (check "clicking a result inspects it" (search "proper list" (inspector-text)) (inspector-text))
   (show-buffer-named "m2.lisp")
   (set-cursor 1 3)
   (call-command 'compile-defun))

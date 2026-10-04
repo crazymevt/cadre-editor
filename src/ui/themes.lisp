@@ -95,6 +95,7 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
 
 (defparameter *named-tag-faces*
   '(("cadre-repl-prompt" . :repl-prompt) ("cadre-repl-result" . :repl-result) ("cadre-repl-note" . :repl-note)
+    ("cadre-repl-presentation" . :repl-presentation)
     ("cadre-inspector-value" . :inspector-value) ("cadre-inspector-action" . :inspector-action)
     ("cadre-diff-added" . :diff-added) ("cadre-diff-removed" . :diff-removed)
     ("cadre-note-error" . :note-error) ("cadre-note-warning" . :note-warning) ("cadre-note-style" . :note-style))
@@ -206,6 +207,7 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
   (:note-style :underline :error :underline-rgba "#8a8f98")
   (:repl-prompt :foreground "#1d5fb8" :weight 700)
   (:repl-result :foreground "#8a5a00")
+  (:repl-presentation :foreground "#8a5a00" :underline :single :underline-rgba "#d9c7a3")
   (:repl-note :foreground "#7c828c" :style :italic)
   (:inspector-value :foreground "#2b6cb0")
   (:inspector-action :foreground "#a3299e" :underline :single)
@@ -256,6 +258,7 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
   (:note-style :underline :error :underline-rgba "#7f848e")
   (:repl-prompt :foreground "#61afef" :weight 700)
   (:repl-result :foreground "#e5c07b")
+  (:repl-presentation :foreground "#e5c07b" :underline :single :underline-rgba "#6b5a35")
   (:repl-note :foreground "#7f848e" :style :italic)
   (:inspector-value :foreground "#61afef")
   (:inspector-action :foreground "#e386d8" :underline :single)

@@ -305,6 +305,10 @@ Open files that change on disk reload by themselves when they have no
 unsaved changes; otherwise a bar offers *Reload*, *Keep Mine* or *Compare*
 (an inline diff of the version on disk).
 
+REPL results are live objects: click one to inspect it, or right-click to
+copy it into the input, where it stands for the object itself (not its
+printed text) when you send the form.
+
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server
 you started yourself.

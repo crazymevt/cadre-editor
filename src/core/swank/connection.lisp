@@ -222,7 +222,8 @@ since the other Lisp evaluates the form."
 
 (defparameter *swank-contribs*
   '(:swank-repl :swank-arglists :swank-fuzzy :swank-c-p-c :swank-fancy-inspector
-    :swank-package-fu :swank-trace-dialog :swank-macrostep :swank-indentation)
+    :swank-package-fu :swank-trace-dialog :swank-macrostep :swank-indentation
+    :swank-presentations)
   "The contribs Cadre asks the other Lisp to load.")
 
 (defun swank-start-session (connection &key on-ready (on-failure #'default-abort))
@@ -248,4 +249,10 @@ then call ON-READY with the connection."
                                                               (destructuring-bind (package prompt) result
                                                                 (setf (connection-package connection) package
                                                                       (connection-prompt connection) prompt))
-                                                              (when on-ready (funcall on-ready connection)))))))))
+                                                              ;; REPL results as presentations: objects, not just text.
+                                                              (swank-rex connection (list (remote-symbol "swank:init-presentations"))
+                                                                         :on-abort (lambda (reason) (declare (ignore reason))
+                                                                                     (when on-ready (funcall on-ready connection)))
+                                                                         :on-ok (lambda (result)
+                                                                                  (declare (ignore result))
+                                                                                  (when on-ready (funcall on-ready connection)))))))))))
