@@ -3,7 +3,8 @@
 ;;;; A gtk:list-view over a gtk:tree-list-model. Each folder's children come
 ;;;; from a gtk:directory-list, which loads them asynchronously when the
 ;;;; folder is first expanded and follows changes on disk. Folders sort
-;;;; first, then names, ignoring case.
+;;;; first, then names, ignoring case. Right-clicking a file offers Open,
+;;;; Open Preview (for Markdown) and Copy Path.
 
 (in-package #:cadre-ui)
 
@@ -62,6 +63,41 @@
     (gtk:label-set-text label (gio:file-info-get-display-name info))
     (gtk:widget-set-tooltip-text expander (gio:file-get-path (info-file info)))))
 
+(defun explorer-path-at (list-view x y)
+  "The pathname of the file or folder in LIST-VIEW's row at (X, Y), or nil."
+  (loop for w = (gtk:widget-pick list-view x y '(:default)) then (gtk:widget-get-parent w)
+        while (and w (not (eq w list-view)))
+        when (typep w 'gtk:tree-expander)
+          return (let* ((row (gtk:tree-expander-get-list-row w))
+                        (info (and row (gtk:tree-list-row-get-item row))))
+                   (and info
+                        (let ((path (pathname (gio:file-get-path (info-file info)))))
+                          (if (info-directory-p info) (uiop:ensure-directory-pathname path) path))))))
+
+(defun show-explorer-menu (list-view path x y)
+  "A menu for PATH, at (X, Y) in LIST-VIEW."
+  (let* ((box (make-instance 'gtk:box :orientation :vertical))
+         (popover (make-instance 'gtk:popover :child box :has-arrow nil :css-classes '("menu"))))
+    (flet ((item (label action)
+             (let ((button (make-instance 'gtk:button :label label :css-classes '("flat"))))
+               (gtk:widget-set-halign (gtk:button-get-child button) :start)
+               (gobject:connect button :clicked (lambda (b) (declare (ignore b))
+                                                  (gtk:popover-popdown popover)
+                                                  (funcall action)))
+               (gtk:box-append box button))))
+      (unless (uiop:directory-pathname-p path)
+        (item "Open" (lambda () (open-file-path path)))
+        (when (eq (major-mode-for-file path) 'markdown-mode)
+          (item "Open Preview" (lambda () (open-markdown-preview path)))))
+      (item "Copy Path" (lambda () (gdk:clipboard-set-text (gtk:widget-get-clipboard list-view)
+                                                            (uiop:native-namestring path)))))
+    (gtk:widget-set-parent popover list-view)
+    (gtk:popover-set-pointing-to popover (gdk:make-rectangle :x (round x) :y (round y) :width 1 :height 1))
+    (gobject:connect popover :closed (lambda (p)
+                                       (glib:idle-add glib:+priority-default-idle+
+                                                      (lambda () (gtk:widget-unparent p) nil))))
+    (gtk:popover-popup popover)))
+
 (defun make-explorer (directory &key on-open-file)
   "A widget showing the files under DIRECTORY (a pathname). Activating a
 file calls ON-OPEN-FILE with its pathname; activating a folder opens or
@@ -74,6 +110,15 @@ closes it."
          (list-view (gtk:make-list-view tree :setup 'make-explorer-row
                                              :bind 'bind-explorer-row)))
     (gtk:list-view-set-single-click-activate list-view t)
+    (let ((click (gtk:gesture-click-new)))
+      (gtk:gesture-single-set-button click 3)
+      (gobject:connect click :pressed
+                       (lambda (gesture n x y)
+                         (declare (ignore gesture n))
+                         (let ((path (explorer-path-at list-view x y)))
+                           (when path
+                             (show-explorer-menu list-view path x y)))))
+      (gtk:widget-add-controller list-view click))
     (gtk:widget-add-css-class list-view "navigation-sidebar")
     (gobject:connect list-view :activate
                      (lambda (lv position)

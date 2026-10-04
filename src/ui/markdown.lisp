@@ -131,7 +131,7 @@
     (preview-tag gtk-buffer "md-p-strike")
     (preview-tag gtk-buffer "md-p-code" :family "Monospace")
     (preview-tag gtk-buffer "md-p-codeblock" :family "Monospace" :left-margin 28 :right-margin 16
-                                             :pixels-above-lines 0 :pixels-below-lines 0 :wrap-mode :none)
+                                             :pixels-above-lines 0 :pixels-below-lines 0 :wrap-mode :char)
     (preview-tag gtk-buffer "md-p-link")
     (preview-tag gtk-buffer "md-p-quote")
     (preview-tag gtk-buffer "md-p-rule")
@@ -360,16 +360,56 @@ heading, other paths as files beside the source."
       (multiple-value-bind (ok iter) (gtk:text-view-get-iter-at-location text-view bx by)
         (and ok (gtk:text-iter-get-offset iter))))))
 
-(defun scroll-preview-to-line (preview line)
-  "Scroll PREVIEW's views to the block from source LINE (or the one before it)."
-  (let ((entry (let ((best nil))
-                 (dolist (e (buffer-local preview :block-lines) best)
-                   (when (<= (car e) line) (setf best e))))))
-    (dolist (view (buffer-views *window* preview))
-      (let* ((gtk-buffer (view-gtk-buffer view))
-             (mark (gtk:text-buffer-create-mark gtk-buffer nil (iter-at gtk-buffer (if entry (cdr entry) 0)) t)))
-        (gtk:text-view-scroll-to-mark (view-text-view view) mark 0d0 t 0d0 0d0)
-        (gtk:text-buffer-delete-mark gtk-buffer mark)))))
+(defun preview-anchors (preview)
+  "PREVIEW's blocks as (source line . offset), by line, one per line."
+  (let ((anchors '()))
+    (dolist (e (buffer-local preview :block-lines))
+      (let ((same (assoc (car e) anchors)))
+        (if same
+            (setf (cdr same) (min (cdr same) (cdr e)))
+            (push (cons (car e) (cdr e)) anchors))))
+    (sort anchors #'< :key #'car)))
+
+(defun preview-y-for-line (view preview line)
+  "The y in VIEW (of PREVIEW) that matches source LINE (fractional): between
+the blocks before and after it, in proportion."
+  (let* ((text-view (view-text-view view))
+         (gtk-buffer (view-gtk-buffer view))
+         (anchors (preview-anchors preview))
+         (before (let ((best nil)) (dolist (a anchors best) (when (<= (car a) line) (setf best a)))))
+         (after (find-if (lambda (a) (> (car a) line)) anchors)))
+    (flet ((y-of (anchor) (if anchor
+                              (values (gtk:text-view-get-line-yrange text-view (iter-at gtk-buffer (cdr anchor))))
+                              0)))
+      (cond ((and before after)
+             (let ((y1 (y-of before)) (y2 (y-of after)))
+               (+ y1 (* (- y2 y1) (/ (- line (car before)) (- (car after) (car before)))))))
+            (before (y-of before))
+            (t 0)))))
+
+(defun source-top-line (view)
+  "The source line at the top of VIEW, with the fraction of it scrolled past."
+  (let* ((text-view (view-text-view view))
+         (top (gtk:adjustment-get-value (gtk:scrolled-window-get-vadjustment (view-widget view))))
+         (iter (gtk:text-view-get-line-at-y text-view (round top))))
+    (if (<= top 0)
+        0
+        (multiple-value-bind (y height) (gtk:text-view-get-line-yrange text-view iter)
+          (+ (gtk:text-iter-get-line iter)
+             (if (and height (plusp height)) (max 0 (min 1 (/ (- top y) height))) 0))))))
+
+(defun scroll-preview-to-line (preview line &key at-end)
+  "Scroll PREVIEW's views, only up and down, to match source LINE; AT-END
+means the source is scrolled to its end, so the preview goes to its end."
+  (dolist (view (buffer-views *window* preview))
+    (let ((vertical (gtk:scrolled-window-get-vadjustment (view-widget view)))
+          (horizontal (gtk:scrolled-window-get-hadjustment (view-widget view))))
+      (gtk:adjustment-set-value horizontal 0d0)
+      (gtk:adjustment-set-value vertical
+                                (float (if at-end
+                                           (gtk:adjustment-get-upper vertical)
+                                           (preview-y-for-line view preview line))
+                                       1d0)))))
 
 (defun preview-source-scrolled (view)
   "VIEW, of a Markdown buffer with a preview, scrolled: scroll the preview to match."
@@ -381,7 +421,12 @@ heading, other paths as files beside the source."
                      (lambda ()
                        (setf (buffer-local preview :sync-pending) nil)
                        (when (member preview (buffer-list))
-                         (scroll-preview-to-line preview (visible-lines view)))
+                         (let ((adjustment (gtk:scrolled-window-get-vadjustment (view-widget view))))
+                           (scroll-preview-to-line
+                            preview (source-top-line view)
+                            :at-end (and (> (gtk:adjustment-get-value adjustment) 0)
+                                         (>= (+ (gtk:adjustment-get-value adjustment) (gtk:adjustment-get-page-size adjustment))
+                                             (- (gtk:adjustment-get-upper adjustment) 1))))))
                        nil)))))
 
 (defun setup-preview-view (view)
@@ -438,7 +483,11 @@ proportional text, with links that open when clicked."
       (setf (buffer-local source :preview) nil))
     (when (and preview (member preview (buffer-list)))
       (setf (buffer-local preview :preview-of) nil)
-      (dolist (view (buffer-views *window* preview)) (close-view *window* view)))))
+      (dolist (view (buffer-views *window* preview)) (close-view *window* view)))
+    ;; A source opened only for its preview goes when the preview does.
+    (when (and source (member source (buffer-list)) (null (buffer-views *window* source))
+               (not (buffer-modified-p source)))
+      (kill-buffer source))))
 
 (add-hook '*buffer-killed-hook* 'forget-preview)
 
@@ -451,6 +500,14 @@ proportional text, with links that open when clicked."
                             for v = (page-view win page) when v collect v))
           (close-view win view))
         new)))
+
+(defun open-markdown-preview (path &key (group (window-active-group *window*)))
+  "Show a preview of the Markdown file PATH in GROUP, without opening the file in an editor."
+  (let ((source (load-file-buffer path)))
+    (unless source (editor-error "Can't read ~a" (file-namestring path)))
+    (let* ((existing (buffer-local source :preview))
+           (preview (if (and existing (member existing (buffer-list))) existing (make-preview-buffer source))))
+      (show-buffer *window* preview :group group))))
 
 (define-command markdown-preview ()
   "Show this Markdown file rendered, beside it, updated as you type."
@@ -466,7 +523,10 @@ proportional text, with links that open when clicked."
         (show-buffer win preview :group (preview-group win (view-group view)) :focus nil))
     (activate-group win (view-group view))
     (focus-view view)
-    (preview-source-scrolled view)))
+    ;; Now, and again once both views have laid out their text.
+    (preview-source-scrolled view)
+    (glib:timeout-add glib:+priority-default+ 400
+                      (lambda () (when (member source (buffer-list)) (preview-source-scrolled view)) nil))))
 
 ;;; Editing
 

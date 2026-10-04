@@ -1328,7 +1328,32 @@ d" 0 0)
   (call-command 'close-tab))
 
 (then 300
-  (check "closing the source closes its preview" (null (preview-buffer))))
+  (check "closing the source closes its preview" (null (preview-buffer)))
+  ;; From the explorer: a preview without an editor.
+  (let ((list-view (gtk:scrolled-window-get-child (adw:bin-get-child (cadre-ui::window-explorer-holder *window*)))))
+    (cadre-ui::show-explorer-menu list-view (merge-pathnames "guide.md" *root*) 10 10)
+    (let ((popover (find-if (lambda (w) (typep w 'gtk:popover))
+                            (find-widgets list-view (lambda (w) (typep w 'gtk:popover))))))
+      (check "right-clicking a Markdown file offers Open Preview"
+             (and popover (member "Open Preview" (label-texts popover) :test #'string=))
+             (and popover (label-texts popover)))
+      (when popover (gtk:popover-popdown popover)))
+    (cadre-ui::show-explorer-menu list-view (merge-pathnames "src/m1.lisp" *root*) 10 10)
+    (let ((popover (car (last (find-widgets list-view (lambda (w) (typep w 'gtk:popover)))))))
+      (check "and other files don't"
+             (and popover (not (member "Open Preview" (label-texts popover) :test #'string=))))
+      (when popover (gtk:popover-popdown popover))))
+  (cadre-ui::open-markdown-preview (merge-pathnames "guide.md" *root*)))
+
+(then 400
+  (check "the explorer's menu can open just the preview"
+         (and (preview-buffer) (cadre-ui::buffer-views *window* (preview-buffer))
+              (null (cadre-ui::buffer-views *window* (find-buffer "guide.md")))))
+  (check "showing the file" (search "Guide" (preview-text)))
+  (call-command 'close-tab))
+
+(then 300
+  (check "closing that preview lets the file go too" (and (null (preview-buffer)) (null (find-buffer "guide.md")))))
 
 (setf *steps* (reverse *steps*))
 
