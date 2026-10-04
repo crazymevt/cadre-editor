@@ -38,6 +38,17 @@
   "C-k S-RET" 'toggle-pin-tab
   "C-S-o" 'go-to-symbol
   "C-i" 'claude-edit
+  "C-=" 'zoom-in
+  "C-+" 'zoom-in
+  "C--" 'zoom-out
+  "C-0" 'zoom-reset
+  "M-z" 'toggle-word-wrap
+  "M-Up" 'move-lines-up
+  "M-Down" 'move-lines-down
+  "M-S-Up" 'duplicate-lines-up
+  "M-S-Down" 'duplicate-lines-down
+  "C-r" 'open-recent-project
+  "C-k C-r" 'open-recent-file
   "C-TAB" 'next-tab
   "C-S-TAB" 'previous-tab
   "C-Page_Down" 'next-tab
@@ -101,6 +112,21 @@
   "C-x p f" 'quick-open
   "C-s" 'isearch-forward
   "C-r" 'isearch-backward
+  "C-x C-=" 'zoom-in
+  "C-x C-+" 'zoom-in
+  "C-x C--" 'zoom-out
+  "C-x C-0" 'zoom-reset
+  "C-x C-r" 'open-recent-file
+  "C-S-Up" 'move-lines-up
+  "C-S-Down" 'move-lines-down
+  "C-S-d" 'duplicate-lines-down
+  "C-x r k" 'kill-rectangle
+  "C-x r M-w" 'copy-rectangle
+  "C-x r d" 'delete-rectangle
+  "C-x r y" 'yank-rectangle
+  "C-x r o" 'open-rectangle
+  "C-x r c" 'clear-rectangle
+  "C-x r t" 'string-rectangle
   "M-%" 'query-replace
   "C-u" 'universal-argument
   "M--" 'negative-argument
@@ -255,6 +281,8 @@
   "M-n" 'repl-next-input
   "C-Up" 'repl-previous-input
   "C-Down" 'repl-next-input
+  "Up" 'repl-up
+  "Down" 'repl-down
   "TAB" 'complete-symbol)
 
 (bind-keys (mode-profile-keymap 'repl-mode :emacs)

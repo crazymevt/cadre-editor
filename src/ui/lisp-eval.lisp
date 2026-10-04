@@ -233,18 +233,50 @@ otherwise evaluate it and show its value."
           ((getf location :file) (open-file-path (pathname (getf location :file)) :then #'visit))
           (t (editor-error "Cannot show this location")))))
 
+(defun source-definition-choices (name buffer)
+  "NAME's definitions in the source (open buffers and project files), as
+(label location) like Swank's."
+  (loop for (definition . place) in (find-source-definitions name buffer)
+        collect (list (format nil "(~(~a~) ~a)" (kind-name (definition-kind definition)) (definition-name definition))
+                      (if (pathnamep place)
+                          (list :location (list :file (uiop:native-namestring place)) (list :line (definition-line definition)))
+                          (list :location (list :buffer (buffer-name place)) (list :line (definition-line definition)))))))
+
+(defun go-to-definition-choices (view name choices)
+  "Go to the one definition among CHOICES ((label location) lists), or let the user pick."
+  (flet ((visit (choice)
+           (push-position view)
+           (goto-location (parse-location (second choice)))))
+    (if (null (rest choices))
+        (visit (first choices))
+        (open-picker (window-picker *window*)
+                     :items choices :label #'first
+                     :detail (lambda (d) (let* ((l (parse-location (second d)))
+                                                (f (or (getf l :file) (getf l :buffer))))
+                                           (if f (file-namestring f) "")))
+                     :placeholder (format nil "Definitions of ~a" name)
+                     :on-choose #'visit))))
+
 (define-command edit-definition ()
-  "Go to the definition of the symbol at the cursor (M-, comes back)."
+  "Go to the definition of the symbol at the cursor (M-, comes back). With
+no Lisp running, or if it doesn't know the symbol, the source's own
+definitions are used."
   (let* ((view (current-view))
          (syntax (buffer-syntax (view-buffer view)))
          (name (and syntax (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c)))))
     (unless name (editor-error "No symbol at the cursor"))
-    (let ((package (view-package view)))
+    (let ((package (view-package view))
+          (source (source-definition-choices name (view-buffer view))))
+      (if (not (connected-p))
+          (if source
+              (go-to-definition-choices view name source)
+              (message "No definition of ~a in the source (start a Lisp to look in loaded code)" name))
       (with-connection (connection)
         (rex connection (swank-call "swank:find-definitions-for-emacs" name) :package package
              :on-ok (lambda (definitions)
                       (let ((found (remove-if (lambda (d) (getf (parse-location (second d)) :error)) definitions)))
-                        (cond ((null definitions) (message "No definition found for ~a" name))
+                        (cond ((and (null found) source) (go-to-definition-choices view name source))
+                              ((null definitions) (message "No definition found for ~a" name))
                               ((null found) (message "~a" (getf (parse-location (second (first definitions))) :error)))
                               ((null (rest found))
                                (push-position view)
@@ -256,7 +288,7 @@ otherwise evaluate it and show its value."
                                               :placeholder (format nil "Definitions of ~a" name)
                                               :on-choose (lambda (d)
                                                            (push-position view)
-                                                           (goto-location (parse-location (second d))))))))))))))
+                                                           (goto-location (parse-location (second d)))))))))))))))
 
 (define-command pop-definition ()
   "Go back to where the last M-. started."

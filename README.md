@@ -233,6 +233,21 @@ the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.
 
+### Everyday editing
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Bigger / smaller / normal text | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | `C-x C-=` / `C-x C--` / `C-x C-0` |
+| Word wrap in this editor | `Alt+Z` | `M-x toggle-word-wrap` |
+| Move line(s) up / down | `Alt+↑` / `Alt+↓` | `C-S-↑` / `C-S-↓` |
+| Copy line(s) up / down | `Alt+Shift+↑` / `Alt+Shift+↓` | `C-S-d` (down) |
+| Open a recent folder / file | `Ctrl+R` / `Ctrl+K Ctrl+R` | `M-x open-recent-project` / `C-x C-r` |
+| Rectangles: kill, copy, yank, delete, open, clear, replace | `M-x kill-rectangle` … | `C-x r k`, `C-x r M-w`, `C-x r y`, `C-x r d`, `C-x r o`, `C-x r c`, `C-x r t` |
+
+Go to Definition and Find References work without a running Lisp too: they
+use the definitions in your source, and search the project for the symbol.
+`*word-wrap*` wraps new editors; the zoom is saved as `*editor-zoom*`.
+
 ### Outline
 
 The Outline page in the sidebar (the list icon) shows what the current file
@@ -315,6 +330,10 @@ Write your own with `define-theme` in `~/.config/cadre/themes/*.lisp`:
 Open files that change on disk reload by themselves when they have no
 unsaved changes; otherwise a bar offers *Reload*, *Keep Mine* or *Compare*
 (an inline diff of the version on disk).
+
+In the REPL, `↑` and `↓` on the input's first or last line step through
+earlier inputs (going past the newest brings back what you were typing), as
+do `M-p`/`M-n`; the history is kept per project between sessions.
 
 REPL results are live objects: click one to inspect it, or right-click to
 copy it into the input, where it stands for the object itself (not its

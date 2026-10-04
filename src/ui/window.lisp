@@ -116,12 +116,12 @@
   (when *font-provider*
     (gtk:style-context-remove-provider-for-display (gdk:display-get-default) *font-provider*))
   (let* ((font *editor-font*)
-         (space (position #\Space font :from-end t)))
+         ;; "Iosevka 13pt": a family, then a size, which zooming adds to.
+         (family (if (font-size-points font) (subseq font 0 (position #\Space font :from-end t)) font))
+         (size (zoomed-font-size)))
     (setf *font-provider*
-          (gtk:add-css (if space
-                           (format nil "textview.cadre-editor, textview.cadre-editor text { font-family: ~a; font-size: ~a; }"
-                                   (subseq font 0 space) (subseq font (1+ space)))
-                           (format nil "textview.cadre-editor, textview.cadre-editor text { font-family: ~a; }" font))))))
+          (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text, .cadre-gutter { font-family: ~a;~@[ font-size: ~a;~] }"
+                               family size)))))
 
 (defun install-css ()
   (gtk:add-css *css*)
@@ -149,12 +149,17 @@
       (item files "New File" 'new-file)
       (item files "Open File…" 'open-file)
       (item files "Open Folder…" 'open-folder)
+      (item files "Open Recent Folder…" 'open-recent-project)
+      (item files "Open Recent File…" 'open-recent-file)
       (item files "Save" 'save-buffer)
       (item files "Save As…" 'save-buffer-as)
       (item files "Close Tab" 'close-tab)
       (item view "Toggle Sidebar" 'toggle-sidebar)
       (item view "Toggle Panel" 'toggle-panel)
       (item view "Toggle Layout" 'toggle-layout)
+      (item view "Zoom In" 'zoom-in)
+      (item view "Zoom Out" 'zoom-out)
+      (item view "Word Wrap" 'toggle-word-wrap)
       (item view "Automatic Layout" 'use-automatic-layout)
       (item view "ASDF Systems" 'show-systems)
       (item lisp "Load Project" 'load-project)
@@ -334,6 +339,7 @@ and, if given, LABEL."
 (defun set-window-project (win directory)
   "Show DIRECTORY (a pathname) in WIN's explorer."
   (let ((directory (uiop:ensure-directory-pathname directory)))
+    (remember-recent-project directory)
     (setf (window-project win) directory)
     (adw:bin-set-child (window-explorer-holder win)
                        (make-explorer directory :on-open-file #'open-file-path))

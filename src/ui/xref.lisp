@@ -110,6 +110,11 @@ none, ask for a name."
   (call-with-symbol-name
    "Find references to"
    (lambda (name package)
+     (if (not (connected-p))
+         ;; No Lisp to ask: search the project's source for the symbol instead.
+         (progn (setf (ps-symbol *project-search*) name)
+                (open-project-search :text name :mode :symbol)
+                (message "No Lisp running: showing where ~a appears in the project's files" name))
      (with-connection (connection)
        (rex connection
             (if (rest kinds)
@@ -123,7 +128,7 @@ none, ask for a name."
                            (show-references (if (rest kinds)
                                                 (format nil "References to ~a" name)
                                                 (format nil "~@(~a~) ~a" (third (assoc (first kinds) *xref-kinds*)) name))
-                                            xrefs)))))))))
+                                            xrefs))))))))))
 
 (define-command find-references ()
   "Find everything that calls, references, binds, sets, expands or specializes the symbol at the cursor."

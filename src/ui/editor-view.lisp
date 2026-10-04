@@ -22,13 +22,17 @@
 (defun view-gtk-buffer (view)
   (buffer-text (view-buffer view)))
 
+(define-option *word-wrap* nil boolean
+  "Wrap long lines in new editors. Alt+Z (M-x toggle-word-wrap) changes one editor."
+  :category "Editing")
+
 (defun make-editor-view (buffer &key on-cursor-moved (gutter t))
   "A new view of BUFFER, whose text must be a gtk:text-buffer. With GUTTER
 nil, there are no line numbers."
   (let* ((view (make-instance 'editor-view :buffer buffer :on-cursor-moved on-cursor-moved))
          (text-view (make-instance 'gtk:text-view
                                    :buffer (buffer-text buffer)
-                                   :monospace t :wrap-mode :none
+                                   :monospace t :wrap-mode (if *word-wrap* :word-char :none)
                                    :left-margin 8 :right-margin 8
                                    :top-margin 4 :bottom-margin 200
                                    :css-classes '("cadre-editor")))

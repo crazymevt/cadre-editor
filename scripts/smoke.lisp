@@ -1516,6 +1516,108 @@ d" 0 0)
          (buffer-string (find-buffer "m1.lisp")))
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
+;;; Everyday things
+(defun m1-text () (buffer-string (find-buffer "m1.lisp")))
+(defmacro with-current-buffer-repl (&body body)
+  "Run BODY as if typed in the REPL (its buffer current)."
+  `(let ((*frontend* *frontend*))
+     (cadre-ui::focus-view (cadre-ui::repl-view))
+     ,@body))
+
+(then 100
+  (show-buffer-named "m1.lisp")
+  (cadre-ui::focus-view (current-view))
+  ;; Zoom
+  (call-command 'cadre-ui::zoom-in)
+  (call-command 'cadre-ui::zoom-in)
+  (check "zooming in makes the text bigger" (and (= 2 cadre-ui::*editor-zoom*) (search "pt" (cadre-ui::zoomed-font-size)))
+         (cadre-ui::zoomed-font-size))
+  (call-command 'cadre-ui::zoom-reset)
+  (check "and zoom-reset puts it back" (zerop cadre-ui::*editor-zoom*))
+  ;; Word wrap
+  (call-command 'cadre-ui::toggle-word-wrap)
+  (check "word wrap turns on" (eq :word-char (gtk:text-view-get-wrap-mode (view-text-view (current-view)))))
+  (call-command 'cadre-ui::toggle-word-wrap)
+  ;; Lines
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp")) (format nil "one~%two~%three"))
+  (set-cursor 1 1)
+  (call-command 'cadre-ui::move-lines-up)
+  (check "moving a line up" (string= (format nil "two~%one~%three") (m1-text)) (m1-text))
+  (check "takes the cursor along" (equal '(0 1) (cursor)) (cursor))
+  (call-command 'cadre-ui::move-lines-down)
+  (call-command 'cadre-ui::move-lines-down)
+  (check "and down, to the last line" (string= (format nil "one~%three~%two") (m1-text)) (m1-text))
+  (call-command 'cadre-ui::move-lines-down)
+  (check "but not past it" (string= (format nil "one~%three~%two") (m1-text)))
+  (set-cursor 0 0)
+  (call-command 'cadre-ui::duplicate-lines-down)
+  (check "duplicating a line puts the copy below, with the cursor"
+         (and (string= (format nil "one~%one~%three~%two") (m1-text)) (equal '(1 0) (cursor))) (list (m1-text) (cursor)))
+  (gtk:text-buffer-undo (buffer-text (find-buffer "m1.lisp")))
+  (check "in one undo step" (string= (format nil "one~%three~%two") (m1-text)))
+  ;; Rectangles
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp")) (format nil "abcd~%efgh~%ijkl"))
+  (cadre-ui::push-mark (find-buffer "m1.lisp") 1)
+  (set-cursor 2 3)
+  (call-command 'cadre-ui::kill-rectangle)
+  (check "killing a rectangle takes those columns from each line"
+         (string= (format nil "ad~%eh~%il") (m1-text)) (m1-text))
+  (set-cursor 0 0)
+  (call-command 'cadre-ui::yank-rectangle)
+  (check "and yanking puts them back as a rectangle"
+         (string= (format nil "bcad~%fgeh~%jkil") (m1-text)) (m1-text))
+  ;; Recent
+  (check "recent files are remembered"
+         (find "m1.lisp" (cadre-ui::setting :recent-files) :key #'file-namestring :test #'string=))
+  (check "and recent folders"
+         (find (uiop:native-namestring (cadre-ui::window-project *window*)) (cadre-ui::setting :recent-projects)
+               :test #'string=))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
+
+(then 200
+  ;; The REPL's history, at the prompt
+  (let ((cadre-ui::*repl* cadre-ui::*repl*))
+    (cadre-ui::show-repl-page :focus t)
+    (cadre-ui::set-repl-input "draft")
+    (let ((cadre-ui::*this-command* nil))
+      (with-current-buffer-repl
+        (call-command 'cadre-ui::repl-up)))
+    (check "Up at the prompt brings back the last input"
+           (let ((history (cadre-ui::repl-history cadre-ui::*repl*)))
+             (string= (aref history (1- (length history))) (cadre-ui::repl-input)))
+           (cadre-ui::repl-input))
+    (with-current-buffer-repl (call-command 'cadre-ui::repl-down))
+    (check "and Down past the newest brings back what was being typed"
+           (string= "draft" (cadre-ui::repl-input)) (cadre-ui::repl-input))
+    (check "the history is saved for next time"
+           (search "(list :a" (uiop:read-file-string (cadre-ui::repl-history-file))))
+    (cadre-ui::set-repl-input "")))
+
+(then 200
+  (if (cadre-ui::connected-p)
+      (check "Go to Definition without a Lisp (skipped: one is running)" t)
+      (progn
+        (show-buffer-named "m1.lisp")
+        (text-replace-contents (buffer-text (find-buffer "m1.lisp")) (format nil "(scale-shape 'sq 2)~%"))
+        (set-cursor 0 3)
+        (call-command 'edit-definition))))
+
+(then 500
+  (unless (cadre-ui::connected-p)
+    (check "Go to Definition without a Lisp finds it in the project's files"
+           (and (string= "hints.lisp" (buffer-name (current-buffer))) (equal 0 (first (cursor))))
+           (list (buffer-name (current-buffer)) (cursor)))
+    (call-command 'pop-definition)
+    (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+    (set-cursor 0 3)
+    (call-command 'find-references)))
+
+(then 800
+  (unless (cadre-ui::connected-p)
+    (check "and Find References searches the project for the symbol"
+           (and (eq :symbol (cadre-ui::ps-mode cadre-ui::*project-search*))
+                (string= "scale-shape" (gtk:editable-get-text (cadre-ui::ps-entry cadre-ui::*project-search*)))))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
