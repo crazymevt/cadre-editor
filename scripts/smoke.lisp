@@ -1401,6 +1401,45 @@ d" 0 0)
       (check "Move to Trash trashes the folder" (= 1 (length trashed)))
       (check "and closes the unmodified buffers of files in it" (null (find-file-buffer new))))))
 
+;;; Pinned tabs
+(defun group-titles (group) (mapcar #'adw:tab-page-get-title (cadre-ui::group-pages group)))
+
+(then 100
+  (dolist (file '("src/m1.lisp" "src/m2.lisp" "src/m3.lisp"))
+    (open-file-path (merge-pathnames file *root*))))
+
+(then 500
+  (show-buffer-named "m3.lisp")
+  (call-command 'cadre-ui::toggle-pin-tab))
+
+(then 300
+  (let* ((group (cadre-ui::view-group (current-view)))
+         (page (cadre-ui::view-page *window* (current-view)))
+         (strip (cadre-ui::group-strip group))
+         (tab (cdr (assoc page (cadre-ui::strip-tabs strip)))))
+    (check "a pinned tab moves to the front" (string= "m3.lisp" (first (group-titles group))) (group-titles group))
+    (check "and shows a pin instead of ×"
+           (and tab (gtk:widget-has-css-class tab "pinned")
+                (find-widgets tab (lambda (w) (and (typep w 'gtk:button) (gtk:widget-has-css-class w "cadre-tab-pin"))))))
+    (check "the session remembers it"
+           (let ((state (cadre-ui::group-state *window* group)))
+             (equal "m3.lisp" (file-namestring (first (nth (first (getf (rest state) :pinned)) (getf (rest state) :files))))))
+           (cadre-ui::group-state *window* group)))
+  (screenshot "29-pinned-tab")
+  (show-buffer-named "m1.lisp")
+  (dolist (b (buffer-list)) (setf (buffer-modified-p b) nil))
+  (call-command 'cadre-ui::close-other-tabs))
+
+(then 400
+  (let ((titles (group-titles (cadre-ui::view-group (current-view)))))
+    (check "Close Others leaves pinned tabs" (equal '("m3.lisp" "m1.lisp") titles) titles))
+  (show-buffer-named "m3.lisp")
+  (call-command 'cadre-ui::toggle-pin-tab))
+
+(then 300
+  (check "and unpinning puts it back among the others"
+         (not (adw:tab-page-get-pinned (cadre-ui::view-page *window* (current-view))))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

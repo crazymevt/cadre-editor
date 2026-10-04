@@ -35,6 +35,7 @@
   "C-S-s" 'save-buffer-as
   "C-k s" 'save-all
   "C-w" 'close-tab
+  "C-k S-RET" 'toggle-pin-tab
   "C-TAB" 'next-tab
   "C-S-TAB" 'previous-tab
   "C-Page_Down" 'next-tab

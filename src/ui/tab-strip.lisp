@@ -6,7 +6,9 @@
 ;;;; Close, Close Others, Split and Move. Dragging a tab onto another tab
 ;;;; (in this group or another) moves it there; onto the empty end of a
 ;;;; strip, to the end. The strip scrolls sideways when the tabs don't fit,
-;;;; and the button at its end lists every open tab.
+;;;; and the button at its end lists every open tab. Pinned tabs come first,
+;;;; with a pin where the × would be (clicking it unpins), and Close Others
+;;;; leaves them open.
 
 (in-package #:cadre-ui)
 
@@ -50,6 +52,7 @@
                          (declare (ignore tv position))
                          ;; Titles change as buffers are modified and saved.
                          (gobject:connect page "notify::title" refresh)
+                         (gobject:connect page "notify::pinned" refresh)
                          (refresh-tab-strip win strip)))
       (gobject:connect tabs :page-detached refresh)
       (gobject:connect tabs :page-reordered refresh)
@@ -70,13 +73,23 @@
          (label (make-instance 'gtk:label :label title :ellipsize :middle
                                           :width-chars (min (length title) 20)
                                           :max-width-chars 32 :single-line-mode t))
-         (close (make-instance 'gtk:button :icon-name "window-close-symbolic" :valign :center
-                                           :css-classes '("flat" "cadre-tab-close") :tooltip-text "Close"))
-         (tab (gtk:build (gtk:box :spacing 2 :css-classes (if selected '("cadre-tab" "selected") '("cadre-tab"))
+         (pinned (adw:tab-page-get-pinned page))
+         (close (if pinned
+                    (make-instance 'gtk:button :icon-name "cadre-pin-symbolic" :valign :center
+                                               :css-classes '("flat" "cadre-tab-close" "cadre-tab-pin")
+                                               :tooltip-text "Unpin")
+                    (make-instance 'gtk:button :icon-name "window-close-symbolic" :valign :center
+                                               :css-classes '("flat" "cadre-tab-close") :tooltip-text "Close")))
+         (tab (gtk:build (gtk:box :spacing 2 :css-classes (append '("cadre-tab")
+                                                                  (and selected '("selected"))
+                                                                  (and pinned '("pinned")))
                            label close))))
     (gtk:widget-set-tooltip-text tab (adw:tab-page-get-tooltip page))
     (setf (gethash tab *tab-widgets*) (cons group page))
-    (gobject:connect close :clicked (lambda (b) (declare (ignore b)) (tab-close-page group page)))
+    (gobject:connect close :clicked (lambda (b) (declare (ignore b))
+                                      (if pinned
+                                          (adw:tab-view-set-page-pinned (group-tab-view group) page nil)
+                                          (tab-close-page group page))))
     (let ((click (gtk:gesture-click-new)))
       (gtk:gesture-single-set-button click 0)
       (gobject:connect click :pressed
@@ -162,7 +175,12 @@
                 (cond ((null to-group))
                       ((eq to-group from-group)
                        (unless (eq (cdr entry) page)
-                         (adw:tab-view-reorder-page to-tabs page (min position (1- (adw:tab-view-get-n-pages to-tabs))))))
+                         ;; Pinned tabs stay among the pinned, others after them.
+                         (let ((pinned (adw:tab-view-get-n-pinned-pages to-tabs)))
+                           (adw:tab-view-reorder-page to-tabs page
+                                                      (if (adw:tab-page-get-pinned page)
+                                                          (min position (1- pinned))
+                                                          (max pinned (min position (1- (adw:tab-view-get-n-pages to-tabs)))))))))
                       (t (move-page-to-group win from-group page to-group position)))))))))))
 
 (defun move-page-to-group (win from page to position)
@@ -171,13 +189,18 @@
         ;; TO already shows the buffer: show that tab, and close this one.
         (progn (show-buffer win (view-buffer view) :group to)
                (close-view win view))
-        (progn (adw:tab-view-transfer-page (group-tab-view from) page (group-tab-view to) position)
+        (progn (when (adw:tab-page-get-pinned page)   ; only unpinned pages move between groups
+                 (adw:tab-view-set-page-pinned (group-tab-view from) page nil))
+               (adw:tab-view-transfer-page (group-tab-view from) page (group-tab-view to)
+                                           (max position (adw:tab-view-get-n-pinned-pages (group-tab-view to))))
                (select-tab win to page)))))
 
 ;;; The tab's menu
 
 (defun show-tab-menu (tab x y)
-  (let ((menu (gio:menu-new)))
+  (let ((menu (gio:menu-new))
+        (pinned (let ((entry (gethash tab *tab-widgets*))) (and entry (adw:tab-page-get-pinned (cdr entry))))))
+    (command-item menu (if pinned "Unpin" "Pin") 'toggle-pin-tab)
     (command-item menu "Close" 'close-tab)
     (command-item menu "Close Others" 'close-other-tabs)
     (let ((split (gio:menu-new)))
@@ -195,10 +218,18 @@
       (gtk:popover-popup popover))))
 
 (define-command close-other-tabs ()
-  "Close every tab in this group but the selected one."
+  "Close every tab in this group but the selected one and the pinned ones."
   (let* ((win *window*)
          (view (current-tab-view))
          (group (view-group view)))
     (dolist (page (group-pages group))
-      (unless (eq page (view-page win view))
+      (unless (or (eq page (view-page win view)) (adw:tab-page-get-pinned page))
         (tab-close-page group page)))))
+
+(define-command toggle-pin-tab ()
+  "Pin the selected tab (keep it first, and open through Close Others), or unpin it."
+  (let* ((win *window*)
+         (view (current-tab-view))
+         (page (view-page win view))
+         (tabs (group-tab-view (view-group view))))
+    (adw:tab-view-set-page-pinned tabs page (not (adw:tab-page-get-pinned page)))))

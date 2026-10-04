@@ -228,6 +228,12 @@ the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.
 
+### Tabs
+
+Right-click a tab to pin it (`Ctrl+K Shift+Enter`): pinned tabs stay at the
+front with a pin instead of ×, Close Others leaves them open, and they stay
+pinned across sessions. Click the pin to unpin.
+
 ### Files
 
 Right-click in the explorer to make a new file or folder (a name like

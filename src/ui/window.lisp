@@ -89,7 +89,8 @@
     (".cadre-tab:hover" :background-color "alpha(@view_fg_color, 0.06)")
     (".cadre-tab.selected" :background-color "@view_bg_color" :box-shadow "inset 0 2px @accent_color")
     (".cadre-tab-close" :min-height "16px" :min-width "16px" :padding "1px" :margin-left "2px")
-    (".cadre-tab:not(.selected):not(:hover) .cadre-tab-close" :opacity "0")
+    (".cadre-tab:not(.selected):not(:hover) .cadre-tab-close:not(.cadre-tab-pin)" :opacity "0")
+    (".cadre-tab-pin" :opacity "0.6")
     (".cadre-tabs > button" :min-height "22px" :min-width "22px" :padding "2px" :margin "2px")
     (".cadre-search-match" :padding ("2px" "4px"))
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"

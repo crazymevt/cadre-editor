@@ -69,7 +69,11 @@ Markdown preview, or nil if it has no file."
          (selected (group-selected-view win group))
          (files (remove nil (mapcar #'view-state views))))
     (list :group :files files
-               :selected (and selected (position (view-state selected) files :test #'equal)))))
+               :selected (and selected (position (view-state selected) files :test #'equal))
+               :pinned (loop for view in views
+                             for state = (view-state view)
+                             when (and state (adw:tab-page-get-pinned (view-page win view)))
+                               collect (position state files :test #'equal)))))
 
 (defun paned-fraction (paned)
   (let ((extent (if (eq (gtk:orientable-get-orientation paned) :horizontal)
@@ -124,7 +128,7 @@ Markdown preview, or nil if it has no file."
         (and octets (make-buffer :file (pathname path) :text (make-gtk-text (decode-file-contents octets)))))))
 
 (defun restore-group (win group state)
-  (destructuring-bind (&key files selected &allow-other-keys) (rest state)
+  (destructuring-bind (&key files selected pinned &allow-other-keys) (rest state)
     (let ((views (loop for (path line column) in files
                        for preview = (eq path :preview)
                        for file = (if preview line path)
@@ -139,6 +143,9 @@ Markdown preview, or nil if it has no file."
                                           (gtk:text-buffer-place-cursor (view-gtk-buffer view)
                                                                         (line-iter (view-gtk-buffer view) line column))
                                           view))))))
+      (dolist (index pinned)
+        (let ((view (nth index views)))
+          (when view (adw:tab-view-set-page-pinned (group-tab-view group) (view-page win view) t))))
       (let ((view (or (and selected (nth selected views)) (find-if #'identity views))))
         (when view
           (adw:tab-view-set-selected-page (group-tab-view group) (view-page win view))))
