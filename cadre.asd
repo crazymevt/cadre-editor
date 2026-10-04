@@ -62,6 +62,7 @@
                (:file "folding")
                (:file "new-project")
                (:file "build")
+               (:file "gtk-app")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))

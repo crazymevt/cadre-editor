@@ -362,6 +362,8 @@
   "C-S-b" 'build-project
   "C-; a" 'run-tests
   "C-; n" 'run-tests-in-new-lisp
+  "C-F5" 'run-gtk-app
+  "C-S-F5" 'stop-gtk-app
   "C-S-e" 'show-explorer
   ;; While stepping, as in VS Code's debugger.
   "F10" 'step-over
@@ -372,6 +374,8 @@
   "C-x p c" 'build-project
   "C-x p t" 'run-tests
   "C-x p T" 'run-tests-in-new-lisp
+  "C-x p r" 'run-gtk-app
+  "C-x p k" 'stop-gtk-app
   "C-c C-a a" 'claude
   "C-c C-a p" 'ask-claude-about-problems)
 

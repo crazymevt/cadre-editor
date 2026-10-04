@@ -2254,6 +2254,50 @@ d" 0 0)
   (check "and shows the Output page" (equal "output" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
   (screenshot "41-tests"))
 
+;;; Run GTK App
+
+(then 300
+  (cadre-ui::make-new-project *new-parent* "smoke-gtk" :kind :gtk-application :tests :parachute :license nil))
+
+(then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-gtk/" *new-parent*))))
+  (call-command 'cadre-ui::run-gtk-app))
+
+(then 500
+  (check "Run GTK App starts the app" (cadre-ui::gtk-app-running-p))
+  (check "and the status bar says evaluation is on the GTK thread"
+         (search "GTK" (gtk:button-get-label (cadre-ui::window-status-connection *window*)))
+         (gtk:button-get-label (cadre-ui::window-status-connection *window*)))
+  (check "REPL input is wrapped for the GTK thread"
+         (and (search "glib:in-main-thread" (cadre-ui::gtk-thread-source "(foo)"))
+              (string= "(in-package :foo)" (cadre-ui::gtk-thread-source "(in-package :foo)")))))
+
+(defun gtk-title-form ()
+  "(let ((app (gio:application-get-default))) (and app (gtk:application-get-active-window app) (gtk:window-get-title (gtk:application-get-active-window app))))")
+
+(then 3000
+  (cadre-ui::repl-eval (gtk-title-form)))
+
+(then-when ((search "\"smoke-gtk\"" (repl-text)) :timeout 180)
+  (check "the app's window is up, and the REPL reaches it on the GTK thread" (search "\"smoke-gtk\"" (repl-text)))
+  (screenshot "42-gtk-app")
+  (cadre-ui::repl-eval "(glib:idle-add glib:+priority-default+ (lambda () (error \"callback boom\")))"))
+
+(then-when ((find-if (lambda (d) (search "callback boom" (first (cadre-ui::dl-condition d)))) cadre-ui::*debug-levels*) :timeout 20)
+  (let ((level (first cadre-ui::*debug-levels*)))
+    (check "an error in a GTK callback opens the debugger" (search "callback boom" (first (cadre-ui::dl-condition level))))
+    (check "with a restart that returns from the callback"
+           (search "GTK callback" (second (first (cadre-ui::dl-restarts level))))
+           (cadre-ui::dl-restarts level)))
+  (call-command 'cadre-ui::debugger-abort))
+
+(then-when ((null cadre-ui::*debug-levels*) :timeout 20)
+  (check "Abort returns from the callback, and the app keeps running" (cadre-ui::gtk-app-running-p))
+  (call-command 'cadre-ui::stop-gtk-app))
+
+(then-when ((not (cadre-ui::gtk-app-running-p)) :timeout 30)
+  (check "Stop GTK App quits it, and Cadre notices" (not (cadre-ui::gtk-app-running-p)))
+  (check "evaluation is back in the REPL's thread" (string= "(foo)" (cadre-ui::gtk-thread-source "(foo)"))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

@@ -73,7 +73,7 @@
 (defun eval-for-message (string package &optional view line)
   "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."
   (with-connection (connection)
-    (rex connection (swank-call "swank:interactive-eval" string 3 120) :package package
+    (rex connection (swank-call "swank:interactive-eval" (gtk-thread-source string) 3 120) :package package
          :on-ok (lambda (result)
                   (show-result result)
                   (image-changed)
@@ -112,7 +112,7 @@
       (let ((text (gtk:text-buffer-get-text gtk-buffer start end t))
             (package (view-package view)))
         (with-connection (connection)
-          (rex connection (swank-call "swank:interactive-eval-region" text 3 120) :package package
+          (rex connection (swank-call "swank:interactive-eval-region" (gtk-thread-source text) 3 120) :package package
                :on-ok (lambda (result) (show-result result) (image-changed))))))))
 
 (define-command eval-expression-or-region ()

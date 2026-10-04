@@ -7,7 +7,8 @@
 
 (in-package #:cadre-ui)
 
-(defparameter *project-kinds* '((:library . "Library") (:application . "Application (builds a program)")))
+(defparameter *project-kinds* '((:library . "Library") (:application . "Application (builds a program)")
+                                 (:gtk-application . "GTK application (gtk4)")))
 (defparameter *project-test-frameworks* '((:parachute . "Parachute") (:fiveam . "FiveAM")))
 (defparameter *project-licenses* '(("MIT" . "MIT") ("BSD-2-Clause" . "BSD 2-Clause") (nil . "None")))
 

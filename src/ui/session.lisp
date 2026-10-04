@@ -53,7 +53,9 @@
   (panel-log (window-panel *window*) (format nil "Starting ~{~a~^ ~}" command))
   (setf *inferior*
         (start-inferior-lisp :command command :deliver #'deliver-to-gui
-                             :on-output (lambda (line) (panel-log-raw (window-panel *window*) line))
+                             :on-output (lambda (line)
+                                          (panel-log-raw (window-panel *window*) line)
+                                          (gtk-app-output line))
                              :on-port (lambda (port) (connect-to "localhost" port :inferior *inferior*))
                              :on-exit (lambda (why)
                                         (setf *connecting* nil *when-connected* '())
@@ -96,6 +98,7 @@
     (repl-disconnected reason)
     (debugger-clear)
     (traces-disconnected)
+    (gtk-app-disconnected)
     (image-changed)
     (refresh-systems)
     (update-connection-status)
@@ -170,8 +173,8 @@
       (gtk:button-set-label
        label
        (cond ((connected-p)
-              (format nil "● ~a  ~a" (connection-implementation *connection*)
-                      (connection-prompt *connection*)))
+              (format nil "● ~a  ~a~:[~; · GTK~]" (connection-implementation *connection*)
+                      (connection-prompt *connection*) (gtk-thread-evaluation-p)))
              (*connecting* "◌ Starting Lisp…")
              (t "○ No Lisp")))
       (gtk:widget-set-tooltip-text

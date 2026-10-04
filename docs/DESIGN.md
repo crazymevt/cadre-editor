@@ -899,6 +899,14 @@ requests arrive on several threads, and two of them requiring ASDF at the
 same moment (the Systems view and Run Tests, just after connecting) left it
 half loaded ("A package named UIOP/UTILITY already exists").
 
+Run GTK App (UI `gtk-app.lisp`): the started Lisp's first thread sits in the
+Lisp's own REPL on standard input, which Cadre holds, so the launch form is
+written there: load the system, set `gtk4.runtime:*callback-error-handler*`
+to invoke the debugger inside an ABORT restart that returns from the
+callback, call the entry point, then print a marker that the output watcher
+sees when it returns. While it runs, REPL and editor evaluations go through
+`gtk-thread-source`, which wraps them in `glib:in-main-thread` with `:wait`.
+
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop

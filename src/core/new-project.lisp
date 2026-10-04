@@ -4,9 +4,11 @@
 ;;;;
 ;;;;   NAME.asd            the system, and NAME/tests with ASDF's test-op
 ;;;;   src/package.lisp    the package
-;;;;   src/main.lisp       the code (and, for an application, MAIN)
+;;;;   src/main.lisp       the code (and, for an application, MAIN; for a GTK
+;;;;                       application, a window made with the gtk4 library)
 ;;;;   tests/main.lisp     the tests (Parachute or FiveAM)
-;;;;   Makefile            load, test, clean (and build, for an application)
+;;;;   Makefile            load, test, clean (and build, for an application;
+;;;;                       run, dev and build for a GTK application)
 ;;;;   README.md, .gitignore, and LICENSE (MIT or BSD 2-Clause)
 ;;;;
 ;;;; CREATE-LISP-PROJECT writes them into a new folder.
@@ -50,15 +52,19 @@ keywords and strings."
             "  :author \"{{author}}\""
             "  :license \"{{license}}\""
             "  :version \"0.1.0\""
-            "  :depends-on ()"
+            "  :depends-on ({{depends}})"
             "  :components ((:module \"src\""
             "                :serial t"
             "                :components ((:file \"package\")"
             "                             (:file \"main\"))))")
-          (when (eq kind :application)
-            '("  :build-operation \"program-op\""
-              "  :build-pathname \"bin/{{name}}\""
-              "  :entry-point \"{{name}}:main\""))
+          (case kind
+            (:application
+             '("  :build-operation \"program-op\""
+               "  :build-pathname \"bin/{{name}}\""
+               "  :entry-point \"{{name}}:main\""))
+            ;; Built with gtk4:save-executable (make build); Run GTK App reads the entry point.
+            (:gtk-application
+             '("  :entry-point \"{{name}}:main\"")))
           '("  :in-order-to ((test-op (test-op \"{{name}}/tests\"))))"
             ""
             "(defsystem \"{{name}}/tests\""
@@ -82,7 +88,7 @@ keywords and strings."
                   ""
                   "(defpackage #:{{name}}"
                   "  (:use #:cl)"
-                  (if (eq kind :application)
+                  (if (member kind '(:application :gtk-application))
                       "  (:export #:hello #:main))"
                       "  (:export #:hello))")))
 
@@ -96,11 +102,31 @@ keywords and strings."
             "(defun hello (&optional (who \"World\"))"
             "  \"A greeting for WHO.\""
             "  (format nil \"Hello, ~a!\" who))")
-          (when (eq kind :application)
-            '(""
-              "(defun main ()"
-              "  \"The program's entry point (the :entry-point in {{name}}.asd).\""
-              "  (write-line (hello (or (first (uiop:command-line-arguments)) \"World\"))))")))))
+          (case kind
+            (:application
+             '(""
+               "(defun main ()"
+               "  \"The program's entry point (the :entry-point in {{name}}.asd).\""
+               "  (write-line (hello (or (first (uiop:command-line-arguments)) \"World\"))))"))
+            (:gtk-application
+             '(""
+               ";;; Handlers are connected by symbol, so redefining ACTIVATE (or a"
+               ";;; function it calls) changes the running program."
+               ""
+               "(defun activate (app)"
+               "  \"Open the main window.\""
+               "  (let ((window (make-instance 'gtk:application-window"
+               "                               :application app :title \"{{name}}\""
+               "                               :default-width 480 :default-height 320)))"
+               "    (gtk:window-set-child window (make-instance 'gtk:label :label (hello)))"
+               "    (gtk:window-present window)))"
+               ""
+               "(defun main ()"
+               "  \"Run the application; returns when its last window closes. On macOS it"
+               "must run on the first thread: in Cadre, use Run GTK App.\""
+               "  (let ((app (gtk:application-new \"{{app-id}}\" '(:default-flags))))"
+               "    (gobject:connect app :activate 'activate)"
+               "    (gio:application-run app nil)))"))))))
 
 (defun tests-template (tests)
   (ecase tests
@@ -144,7 +170,10 @@ keywords and strings."
                   "LISP ?= sbcl"
                   "RUN = $(LISP) --non-interactive --eval '(require :asdf)' --eval '(push (truename \".\") asdf:*central-registry*)'"
                   ""
-                  (if (eq kind :application) ".PHONY: load test build clean" ".PHONY: load test clean")
+                  (case kind
+                    (:application ".PHONY: load test build clean")
+                    (:gtk-application ".PHONY: load test run dev build clean")
+                    (t ".PHONY: load test clean"))
                   ""
                   "# Load the system, fetching its dependencies"
                   "load:"
@@ -157,11 +186,27 @@ keywords and strings."
                                (ecase tests
                                  (:parachute "--eval '(uiop:quit (if (eq :passed (parachute:status (parachute:test :{{name}}/tests))) 0 1))'")
                                  (:fiveam "--eval '(uiop:quit (if (fiveam:run! (quote {{name}}/tests::{{name}})) 0 1))'"))))
-            (when (eq kind :application)
-              (list ""
-                    "# Build the program: bin/{{name}}"
-                    "build:"
-                    (concatenate 'string tab "$(RUN) --eval '(ql:quickload :{{name}})' --eval '(asdf:make :{{name}})'")))
+            (case kind
+              (:application
+               (list ""
+                     "# Build the program: bin/{{name}}"
+                     "build:"
+                     (concatenate 'string tab "$(RUN) --eval '(ql:quickload :{{name}})' --eval '(asdf:make :{{name}})'")))
+              (:gtk-application
+               (list ""
+                     "# Run the program (on the first thread, as GTK needs on macOS)"
+                     "run:"
+                     (concatenate 'string tab "$(RUN) --eval '(ql:quickload :{{name}})' --eval '({{name}}:main)'")
+                     ""
+                     "# Run it with a Swank server on port 4005, for an editor's REPL (in Cadre, use Run GTK App)"
+                     "dev:"
+                     (concatenate 'string tab "$(LISP) --eval '(require :asdf)' --eval '(push (truename \".\") asdf:*central-registry*)' \\")
+                     (concatenate 'string tab tab "--eval '(ql:quickload (quote (:swank :{{name}})))' --eval '(swank:create-server :port 4005 :dont-close t)' \\")
+                     (concatenate 'string tab tab "--eval '({{name}}:main)'")
+                     ""
+                     "# Build the program: bin/{{name}} (it needs GTK installed where it runs)"
+                     "build:"
+                     (concatenate 'string tab "$(RUN) --eval '(ql:quickload :{{name}})' --eval '(gtk4:save-executable \"bin/{{name}}\" (function {{name}}:main))'"))))
             (list ""
                   "clean:"
                   (concatenate 'string tab "find . -name '*.fasl' -delete")
@@ -180,6 +225,21 @@ keywords and strings."
             "(ql:quickload :{{name}})"
             "({{name}}:hello \"Lisp\")   ; => \"Hello, Lisp!\""
             "```")
+          (when (eq kind :gtk-application)
+            '(""
+              "## Running"
+              ""
+              "On macOS, GTK must run on the process's first thread. In Cadre, **Run GTK App**"
+              "starts it there and keeps the REPL; while it runs, what you evaluate runs on the"
+              "GTK thread. From a terminal:"
+              ""
+              "```sh"
+              "make run      # just the program"
+              "make dev      # with a Swank server on port 4005 for another editor's REPL"
+              "make build    # bin/{{name}}"
+              "```"
+              ""
+              "With `make dev`, wrap GTK calls you evaluate in `(glib:in-main-thread (:wait t) …)`."))
           (when (eq kind :application)
             '(""
               "## Building"
@@ -263,6 +323,8 @@ of *license-templates*, or nil for none."
                        :description (substitute #\' #\" (if (string= description "") "A Common Lisp project." description))
                        :author (substitute #\' #\" author)
                        :license (or license "Proprietary")
+                       :depends (if (eq kind :gtk-application) "\"gtk4\"" "")
+                       :app-id (format nil "org.example.~a" (substitute #\_ #\- name))
                        :year (princ-to-string (nth-value 5 (decode-universal-time (get-universal-time))))))
          (files (list (cons (format nil "~a.asd" name) (asd-template kind tests))
                       (cons "src/package.lisp" (package-template kind))

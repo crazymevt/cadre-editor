@@ -100,6 +100,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
 | Build the project's program | `Ctrl+Shift+B` | `C-x p c` |
 | Run the project's tests in the REPL / in a new Lisp | `Ctrl+; A` / `Ctrl+; N` | `C-x p t` / `C-x p T` |
+| Run / stop the project's GTK app (keeping the REPL) | `Ctrl+F5` / `Ctrl+Shift+F5` | `C-x p r` / `C-x p k` |
 | Inspect a value | `Ctrl+K I` | `C-c I` |
 | Find references (all kinds) | `Shift+F12` | `M-?` |
 | Who calls / references / binds / sets | (palette) | `C-c C-w c` / `r` / `b` / `s` |
@@ -386,6 +387,34 @@ connected Lisp's REPL, after saving the project's files:
 - **Results:** output goes to the Output page, and the status bar says whether
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
+
+### GTK applications
+
+On macOS, GTK must run on a process's first thread, but the REPL runs on
+another one. **Run GTK App** (`Ctrl+F5`, Emacs `C-x p r`, or the main menu)
+handles this:
+- **Starting:** it has the first thread of the Lisp Cadre started (it reads
+  that Lisp's standard input) load the project's system and call its entry
+  point. That's the `:entry-point` in the `.asd`, or a function you name once
+  per project. The REPL and the rest of Cadre stay connected.
+- **Evaluating:** while the app runs, what you evaluate (in the REPL, or a form
+  or region in a file) runs on the GTK thread, wrapped in
+  `(glib:in-main-thread (:wait t) …)`. The status bar shows `· GTK`, and
+  `M-x toggle-gtk-thread-evaluation` turns this off. `in-package` and
+  compiling definitions aren't wrapped.
+- **Errors in GTK callbacks** open the debugger, and the GTK thread waits while
+  it's open. Its Abort restart returns from the callback, and the app keeps
+  running.
+- **Changing it:** handlers connected by symbol pick up redefinitions at once.
+- **Stopping:** when the last window closes, Cadre notices, and Run GTK App
+  starts it again. **Stop GTK App** (`Ctrl+Shift+F5`, `C-x p k`) quits it.
+
+It needs a Lisp that Cadre started (`M-x lisp`), not one it connected to.
+New Lisp Project's **GTK application** kind starts a project ready for this:
+- it depends on `gtk4`, with a window and an entry point to start from;
+- its Makefile has `make run`, `make dev` (a Swank server on port 4005 and the
+  app, for another editor's REPL) and `make build` (an executable, with
+  `gtk4:save-executable`).
 
 ### Folding
 

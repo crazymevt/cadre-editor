@@ -635,3 +635,19 @@ Over lines.\"
              (true (find "(asdf:test-system \"app\")" (getf (c:project-test-plan app "app" :lisp "sbcl") :arguments) :test #'string=))
              (is string= "bin/app" (c:asd-build-pathname (merge-pathnames "app.asd" app)))))
       (uiop:delete-directory-tree parent :validate t :if-does-not-exist :ignore))))
+
+(define-test new-gtk-project :parent cadre-tests
+  (let ((files (c:project-files-for "my-gui" :kind :gtk-application)))
+    (let ((asd (cdr (assoc "my-gui.asd" files :test #'string=)))
+          (main (cdr (assoc "src/main.lisp" files :test #'string=)))
+          (makefile (cdr (assoc "Makefile" files :test #'string=))))
+      (true (search ":depends-on (\"gtk4\")" asd))
+      (true (search ":entry-point \"my-gui:main\"" asd))
+      (false (search ":build-operation" asd))
+      (true (search "org.example.my_gui" main))
+      (true (search "gio:application-run" main))
+      (true (search "gtk4:save-executable" makefile))
+      (true (search (format nil "~%dev:~%") makefile))
+      (true (search "Run GTK App" (cdr (assoc "README.md" files :test #'string=))))))
+  ;; Plain projects have no dependencies.
+  (true (search ":depends-on ()" (cdr (assoc "lib.asd" (c:project-files-for "lib") :test #'string=)))))

@@ -163,7 +163,7 @@ editor REPL) bind it to that buffer's REPL.")
     (return-from repl-eval (funcall (repl-evaluator *repl*) string)))
   (with-connection (connection)
     (setf (repl-busy *repl*) t)
-    (rex connection (swank-call "swank-repl:listener-eval" string)
+    (rex connection (swank-call "swank-repl:listener-eval" (gtk-thread-source string))
          :thread :repl-thread
          :on-ok (lambda (value)
                   (declare (ignore value))
