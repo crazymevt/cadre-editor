@@ -177,6 +177,7 @@
       (item view "ASDF Systems" 'show-systems)
       (item lisp "Load Project" 'load-project)
       (item lisp "Load System…" 'load-system)
+      (item lisp "Build Project" 'build-project)
       (item lisp "Inspect…" 'inspect-value)
       (item lisp "Find References" 'find-references)
       (item lisp "Macroexpand" 'expand-macro-once)

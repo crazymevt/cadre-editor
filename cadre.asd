@@ -61,6 +61,7 @@
                (:file "git-merge")
                (:file "folding")
                (:file "new-project")
+               (:file "build")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -103,6 +104,7 @@
                              (:file "forms")
                              (:file "tools")
                              (:file "image")))
+               (:file "build")
                (:module "claude"
                 :serial t
                 :components ((:file "json")

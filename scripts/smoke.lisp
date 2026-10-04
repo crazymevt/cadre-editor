@@ -2185,6 +2185,35 @@ d" 0 0)
               (null (cadre-ui::hist-commits cadre-ui::*history*))))
   (screenshot "39-new-project-open"))
 
+;;; Build Project
+
+(defun status-text () (gtk:label-get-text (cadre-ui::window-status-message *window*)))
+
+(then 300
+  (call-command 'cadre-ui::build-project))
+
+(then 300
+  (check "a library has nothing to build" (search "Nothing to build" (status-text)) (status-text))
+  (cadre-ui::make-new-project *new-parent* "smoke-app" :kind :application :tests :parachute :license "MIT"))
+
+(then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-app/" *new-parent*))))
+  (call-command 'cadre-ui::build-project)
+  (check "Build Project starts the build" cadre-ui::*build*)
+  (check "and shows its output" (equal "output" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*)))))
+
+(then-when ((null cadre-ui::*build*) :timeout 240)
+  (let ((program (merge-pathnames "smoke-app/bin/smoke-app" *new-parent*)))
+    (check "the build makes the program" (probe-file program) (status-text))
+    (check "and says so" (search "Built " (status-text)) (status-text))
+    (check "the program runs"
+           (and (probe-file program)
+                (string= "Hello, Cadre!" (string-trim '(#\Newline)
+                                                      (uiop:run-program (list (uiop:native-namestring program) "Cadre")
+                                                                        :output :string :ignore-error-status t))))))
+  (check "the build's output is on the Output page"
+         (search "Building " (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))))
+  (screenshot "40-build"))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

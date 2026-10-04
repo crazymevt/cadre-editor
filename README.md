@@ -98,6 +98,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
 | Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
+| Build the project's program | `Ctrl+Shift+B` | `C-x p c` |
 | Inspect a value | `Ctrl+K I` | `C-c I` |
 | Find references (all kinds) | `Shift+F12` | `M-?` |
 | Who calls / references / binds / sets | (palette) | `C-c C-w c` / `r` / `b` / `s` |
@@ -357,6 +358,17 @@ It then opens the new project at `src/main.lisp`. It writes:
 | `tests/main.lisp` | A test of `hello` |
 | `Makefile` | `make load`, `make test` (exits 1 if a test fails), `make clean`, and for an application `make build` (writes `bin/NAME`). It uses Quicklisp, loaded from your Lisp's init file, to fetch dependencies. |
 | `README.md`, `.gitignore`, `LICENSE` | |
+
+**Build Project** (`Ctrl+Shift+B`, Emacs `C-x p c`, or the main menu) builds
+the open project's program:
+- **How:** with `make build` if the Makefile has a build target. Otherwise, if
+  one of its systems has a `:build-operation`, it runs `(asdf:make …)` in a new
+  Lisp, because saving the image ends the Lisp that does it.
+- **First:** it saves the project's changed files.
+- **While it runs:** its output streams to the Output page.
+- **When it ends:** the status bar names the program, its size and how long
+  the build took.
+- `M-x stop-build` stops a build.
 
 ### Folding
 

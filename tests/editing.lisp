@@ -611,3 +611,25 @@ Over lines.\"
       (asdf:clear-system "cadre-sample-proj/tests")
       (uiop:delete-directory-tree parent :validate t :if-does-not-exist :ignore)))
   (when (find-package "TOOL") (delete-package "TOOL")))
+
+(define-test build-plan :parent cadre-tests
+  (let ((parent (merge-pathnames (format nil "cadre-build-~d/" (random 1000000)) (uiop:temporary-directory))))
+    (ensure-directories-exist parent)
+    (unwind-protect
+         (let ((app (c:create-lisp-project parent "app" :kind :application))
+               (lib (c:create-lisp-project parent "lib")))
+           ;; A new application builds with its Makefile, a library doesn't build.
+           (let ((plan (c:project-build-plan app)))
+             (is string= "make" (getf plan :program))
+             (is equal '("build") (getf plan :arguments))
+             (true (search "bin/app" (getf plan :output))))
+           (is eq nil (c:project-build-plan lib))
+           (false (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "build"))
+           (true (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "test"))
+           ;; Without the Makefile, ASDF's make in a new Lisp.
+           (delete-file (merge-pathnames "Makefile" app))
+           (let ((plan (c:project-build-plan app :lisp "sbcl")))
+             (is string= "sbcl" (getf plan :program))
+             (true (find "(asdf:make \"app\")" (getf plan :arguments) :test #'string=))
+             (is string= "bin/app" (c:asd-build-pathname (merge-pathnames "app.asd" app)))))
+      (uiop:delete-directory-tree parent :validate t :if-does-not-exist :ignore))))

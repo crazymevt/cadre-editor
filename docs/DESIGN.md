@@ -886,7 +886,11 @@ Project: the core's `project-files-for` describes the files from templates
 (a library or an application, Parachute or FiveAM, a license);
 `create-lisp-project` writes them into a new or empty folder; the dialog
 (UI `new-project.lisp`) starts the repository and opens the project. A unit
-test makes a project, loads it and runs its own tests.
+test makes a project, loads it and runs its own tests. Build Project: the
+core's `project-build-plan` picks `make build` (a build target in the
+Makefile) or `asdf:make` in a new Lisp (a system with a `:build-operation`);
+the UI runs it in the project folder with output to the Output page, one
+build at a time, and Stop Build signals its process group.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 

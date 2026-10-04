@@ -359,6 +359,7 @@
   "C-M-i" 'claude
   "C-`" 'show-repl
   "F6" 'load-project
+  "C-S-b" 'build-project
   "C-S-e" 'show-explorer
   ;; While stepping, as in VS Code's debugger.
   "F10" 'step-over
@@ -366,6 +367,7 @@
 
 (bind-keys *emacs-global-keymap*
   "C-c L" 'load-project
+  "C-x p c" 'build-project
   "C-c C-a a" 'claude
   "C-c C-a p" 'ask-claude-about-problems)
 
