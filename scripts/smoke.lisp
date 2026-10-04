@@ -1777,6 +1777,78 @@ d" 0 0)
   (uiop:delete-directory-tree *remote* :validate t :if-does-not-exist :ignore)
   (uiop:delete-directory-tree *other* :validate t :if-does-not-exist :ignore))
 
+;;; History, blame, stashes
+(defun history-subjects () (mapcar (lambda (c) (getf c :subject)) (cadre-ui::hist-commits cadre-ui::*history*)))
+
+(then 100
+  (show-buffer-named "m1.lisp")
+  (call-command 'cadre-ui::show-history))
+
+(then-when ((cadre-ui::hist-commits cadre-ui::*history*) :timeout 10)
+  (check "History lists the project's commits, newest first"
+         (and (string= "Theirs" (first (history-subjects))) (member "Start" (history-subjects) :test #'string=))
+         (history-subjects))
+  (check "on the History page" (string= "history" (gtk:stack-get-visible-child-name (cadre-ui::panel-stack (cadre-ui::window-panel *window*)))))
+  (gtk:widget-activate (gtk:list-box-get-row-at-index (cadre-ui::hist-list cadre-ui::*history*) 0)))
+
+(then-when ((find-if (lambda (b) (search "*Commit" (buffer-name b))) (buffer-list)) :timeout 10)
+  (check "clicking a commit shows it"
+         (search "Theirs" (buffer-string (find-if (lambda (b) (search "*Commit" (buffer-name b))) (buffer-list)))))
+  (call-command 'close-tab)
+  (show-buffer-named "m1.lisp")
+  (call-command 'cadre-ui::show-file-history))
+
+(then-when ((equal "src/m1.lisp" (cadre-ui::hist-path cadre-ui::*history*)) :timeout 10)
+  (then-wait-a-moment))
+
+(defun then-wait-a-moment () nil)
+
+(then 1000
+  (check "File History lists the file's commits"
+         (and (member "Add a comment" (history-subjects) :test #'string=)
+              (not (member "Theirs" (history-subjects) :test #'string=)))
+         (history-subjects))
+  (let ((width (gtk:widget-get-width (cadre-ui::view-gutter (current-view)))))
+    (setf (cadre-ui::buffer-local (current-buffer) :gutter-before) width))
+  (call-command 'cadre-ui::toggle-blame))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :blame) :timeout 10)
+  (let ((blame (cadre-ui::buffer-local (current-buffer) :blame)))
+    (check "Blame knows each line's commit"
+           (and (string= "Start" (getf (aref blame 0) :summary))
+                (string= "Add a comment" (getf (aref blame 2) :summary)))
+           (map 'list (lambda (b) (getf b :summary)) blame)))
+  (screenshot "33-blame")
+  (check "the Source Control page fits the sidebar"
+         (<= (gtk:widget-get-width (cadre-ui::sc-widget cadre-ui::*source-control*))
+             (gtk:widget-get-width (cadre-ui::window-sidebar *window*)))
+         (list (gtk:widget-get-width (cadre-ui::sc-widget cadre-ui::*source-control*))
+               (gtk:widget-get-width (cadre-ui::window-sidebar *window*))))
+  (check "and the gutter widens for it"
+         (> (gtk:widget-get-width (cadre-ui::view-gutter (current-view))) (cadre-ui::buffer-local (current-buffer) :gutter-before)))
+  (set-cursor 0 0)
+  (insert-at-cursor (format nil ";; mine~%")))
+
+(then-when ((let ((b (cadre-ui::buffer-local (current-buffer) :blame))) (and b (getf (aref b 0) :uncommitted))) :timeout 10)
+  (check "an edited line shows as not committed yet" t)
+  (call-command 'cadre-ui::toggle-blame)
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((cadre-ui::git-status-of (merge-pathnames "src/m1.lisp" *root*)) :timeout 10)
+  (call-command 'cadre-ui::stash-changes)
+  (choose-name "wip"))
+
+(then-when ((and cadre-ui::*git-stash-list* (null (cadre-ui::git-status-of (merge-pathnames "src/m1.lisp" *root*)))) :timeout 10)
+  (check "Stash puts the change aside" (not (search ";; mine" (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))))
+  (check "and lists the stash" (search "wip" (getf (first cadre-ui::*git-stash-list*) :subject)) cadre-ui::*git-stash-list*)
+  (cadre-ui::apply-stash-entry (project-git-root*) (first cadre-ui::*git-stash-list*) :pop t))
+
+(defun project-git-root* () (cadre-ui::project-git-root))
+
+(then-when ((and (null cadre-ui::*git-stash-list*) (cadre-ui::git-status-of (merge-pathnames "src/m1.lisp" *root*))) :timeout 10)
+  (check "Pop brings it back" (search ";; mine" (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
+         (list (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)) (gtk:label-get-text (cadre-ui::window-status-message *window*)))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

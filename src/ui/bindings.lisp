@@ -132,6 +132,13 @@
   "C-x v f" 'fetch-changes
   "C-x v +" 'pull-changes
   "C-x v P" 'push-changes
+  "C-x v l" 'show-file-history
+  "C-x v L" 'show-history
+  "C-x v g" 'toggle-blame
+  "C-x v z z" 'stash-changes
+  "C-x v z a" 'apply-stash
+  "C-x v z p" 'pop-stash
+  "C-x v z d" 'drop-stash
   "C-S-Up" 'move-lines-up
   "C-S-Down" 'move-lines-down
   "C-S-d" 'duplicate-lines-down

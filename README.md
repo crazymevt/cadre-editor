@@ -263,6 +263,14 @@ In a Git repository:
   message and Commit (`Ctrl+Enter`); with nothing staged it offers to stage
   everything. A folder that isn't a repository gets an Initialize button.
 
+History opens on the panel's History page, newest first (Show more loads
+older ones); click a commit to see it. Blame annotates each run of lines in
+the gutter with its commit, author and age (your unsaved edits show as not
+committed yet); click an annotation for the commit. Blame, File History and
+the others are also in the editor's right-click menu under Git. Stashes are
+listed at the bottom of the Source Control page with Apply, Pop and Drop;
+the Stash button next to Commit makes one (new files included).
+
 The page's top row shows the branch (click it to switch or make one) and
 how many commits there are to push (↑) and pull (↓), with Fetch, Pull and
 Push. The first push of a branch sets up its upstream (on `origin`). Pull
@@ -275,6 +283,9 @@ git's message if those can't supply one.
 | --- | --- | --- |
 | Switch / new / delete branch | `M-x switch-branch` / `create-branch` / `delete-branch` | `C-x v b s` / `C-x v b c` / `C-x v b d` |
 | Fetch / pull / push | `M-x fetch-changes` / `pull-changes` / `push-changes` | `C-x v f` / `C-x v +` / `C-x v P` |
+| Project / file history | `M-x show-history` / `show-file-history` | `C-x v L` / `C-x v l` |
+| Blame in the gutter (toggle) | `M-x toggle-blame` | `C-x v g` |
+| Stash / apply / pop / drop | `M-x stash-changes` / `apply-stash` / `pop-stash` / `drop-stash` | `C-x v z z` / `C-x v z a` / `C-x v z p` / `C-x v z d` |
 | Next / previous change | `Alt+F5` / `Alt+Shift+F5` | `C-x v ]` / `C-x v [` |
 | Revert the change at the cursor | `M-x git-revert-change` | `C-x v n` |
 | Diff this file | `M-x git-diff-file` | `C-x v =` |

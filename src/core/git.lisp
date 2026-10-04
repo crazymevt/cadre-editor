@@ -241,3 +241,94 @@ and make that its upstream."
   (if set-upstream
       (git-network root "push" "-u" set-upstream "HEAD")
       (git-network root "push")))
+
+;;; History
+
+(defun git-log (root &key path (count 200) (skip 0))
+  "Commits, newest first, as plists (:hash :short :author :time :subject),
+TIME being universal time. With PATH, only commits that changed it (following renames)."
+  (let ((output (apply #'git root "log" (format nil "--format=%H~a%h~a%an~a%at~a%s~a"
+                                                 #\Us #\Us #\Us #\Us #\Rs)
+                       (format nil "-n~d" count) (format nil "--skip=~d" skip)
+                       (and path (list "--follow" "--" path)))))
+    (loop for record in (uiop:split-string output :separator (string #\Rs))
+          for fields = (uiop:split-string (string-trim '(#\Newline) record) :separator (string #\Us))
+          when (= (length fields) 5)
+            collect (destructuring-bind (hash short author time subject) fields
+                      (list :hash hash :short short :author author
+                            :time (+ (parse-integer time) (encode-universal-time 0 0 0 1 1 1970 0))
+                            :subject subject)))))
+
+(defun git-show-text (root hash &key path)
+  "The commit HASH: its message and diff (only PATH's, with PATH)."
+  (values (apply #'git root "show" "--no-color" "--no-ext-diff" "--format=fuller" hash
+                 (and path (list "--" path)))))
+
+(defun relative-time (time &optional (now (get-universal-time)))
+  "TIME (universal time) as \"just now\", \"5 minutes ago\", \"3 days ago\" …"
+  (let ((seconds (- now time)))
+    (flet ((ago (n unit) (format nil "~d ~a~p ago" n unit n)))
+      (cond ((< seconds 60) "just now")
+            ((< seconds 3600) (ago (floor seconds 60) "minute"))
+            ((< seconds 86400) (ago (floor seconds 3600) "hour"))
+            ((< seconds (* 86400 30)) (ago (floor seconds 86400) "day"))
+            ((< seconds (* 86400 365)) (ago (floor seconds (* 86400 30)) "month"))
+            (t (ago (floor seconds (* 86400 365)) "year"))))))
+
+;;; Blame
+
+(defun parse-blame-porcelain (output)
+  "Per line, a plist (:hash :short :author :time :summary) from `git blame --porcelain`."
+  (let ((commits (make-hash-table :test 'equal))
+        (lines '())
+        (current nil))
+    (dolist (line (split-text-lines output))
+      (cond ((and (>= (length line) 41) (every (lambda (c) (digit-char-p c 16)) (subseq line 0 40))
+                  (char= (char line 40) #\Space))
+             (let ((hash (subseq line 0 40)))
+               (setf current (or (gethash hash commits)
+                                 (setf (gethash hash commits)
+                                       (list :hash hash :short (subseq hash 0 7)
+                                             :uncommitted (every (lambda (c) (char= c #\0)) hash)))))))
+            ((and current (> (length line) 7) (string= "author " line :end2 7))
+             (setf (getf current :author) (subseq line 7)))
+            ((and current (> (length line) 12) (string= "author-time " line :end2 12))
+             (setf (getf current :time) (+ (parse-integer line :start 12) (encode-universal-time 0 0 0 1 1 1970 0))))
+            ((and current (> (length line) 8) (string= "summary " line :end2 8))
+             (setf (getf current :summary) (subseq line 8)))
+            ((and current (plusp (length line)) (char= (char line 0) #\Tab))
+             ;; The line itself: the commit's details are complete by now.
+             (setf (gethash (getf current :hash) commits) current)
+             (push current lines))))
+    (coerce (nreverse lines) 'vector)))
+
+(defun git-blame (root relative &optional contents)
+  "Who last changed each line of RELATIVE, as from PARSE-BLAME-PORCELAIN.
+With CONTENTS (the text being edited), blame that instead of the saved
+file; lines not committed yet have :uncommitted t."
+  (if contents
+      (let ((file (uiop:with-temporary-file (:stream s :pathname p :keep t :type "blame" :external-format :utf-8)
+                    (write-string contents s) p)))
+        (unwind-protect
+             (parse-blame-porcelain (git-ok root "blame" "--porcelain" "--contents" (uiop:native-namestring file)
+                                            "--" relative))
+          (ignore-errors (delete-file file))))
+      (parse-blame-porcelain (git-ok root "blame" "--porcelain" "--" relative))))
+
+;;; Stashes
+
+(defun git-stashes (root)
+  "The stashes, newest first, as plists (:ref \"stash@{0}\" :subject)."
+  (loop for line in (split-text-lines (git root "stash" "list" (format nil "--format=%gd~a%s" #\Us)))
+        for fields = (uiop:split-string line :separator (string #\Us))
+        when (= (length fields) 2)
+          collect (list :ref (first fields) :subject (second fields))))
+
+(defun git-stash-push (root &key message (untracked t))
+  "Put the uncommitted changes (and new files, with UNTRACKED) in a stash."
+  (apply #'git-ok root "stash" "push" (append (and untracked (list "--include-untracked"))
+                                               (and message (plusp (length message)) (list "-m" message)))))
+
+(defun git-stash-apply (root ref) (git-ok root "stash" "apply" ref))
+(defun git-stash-pop (root ref) (git-ok root "stash" "pop" ref))
+(defun git-stash-drop (root ref) (git-ok root "stash" "drop" ref))

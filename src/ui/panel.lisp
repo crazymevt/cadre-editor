@@ -15,7 +15,7 @@
   (make-instance 'adw:status-page :icon-name icon :title title :description description
                                   :css-classes '("compact")))
 
-(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references")
+(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history")
   "Pages whose tab appears only once they have something to show, so a
 narrow panel (the vertical layout) has room for the others.")
 
@@ -32,7 +32,8 @@ narrow panel (the vertical layout) has room for the others.")
          (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :automatic :vscrollbar-policy :never
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("repl" "REPL") ("problems" "Problems") ("debugger" "Debugger")
-                    ("inspector" "Inspector") ("references" "References") ("claude" "Claude")))
+                    ("inspector" "Inspector") ("references" "References") ("history" "History")
+                    ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))

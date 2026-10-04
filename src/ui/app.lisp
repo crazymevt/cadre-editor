@@ -51,6 +51,7 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "debugger" (make-debugger-widget))
       (panel-set-page-child panel "inspector" (make-inspector-widget))
       (panel-set-page-child panel "references" (make-references-widget))
+      (panel-set-page-child panel "history" (make-history-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
       ;; However the Claude tab is opened (its tab, a key, the menu), find out
       ;; whether Claude Code is ready.

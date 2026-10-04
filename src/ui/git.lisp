@@ -105,7 +105,9 @@ ON-ERROR with the message of an error it signals."
             (glib:timeout-add glib:+priority-default+ 400
                               (lambda ()
                                 (setf (gf-timer gf) nil)
-                                (when (member buffer (buffer-list)) (refresh-git-hunks buffer))
+                                (when (member buffer (buffer-list))
+                                  (refresh-git-hunks buffer)
+                                  (refresh-blame buffer))
                                 nil))))))
 
 (defun redraw-gutters (buffer)
@@ -249,14 +251,18 @@ ON-ERROR with the message of an error it signals."
       (let ((click (gtk:gesture-click-new)))
         (gobject:connect click :pressed
                          (lambda (gesture n x y)
-                           (declare (ignore gesture n x))
+                           (declare (ignore gesture n))
                            (let ((gf (buffer-git (view-buffer view))))
                              (when gf
                                (let* ((text-view (view-text-view view))
                                       (by (nth-value 1 (gtk:text-view-window-to-buffer-coords text-view :left 0 (round y))))
                                       (line (gtk:text-iter-get-line (gtk:text-view-get-line-at-y text-view by)))
+                                      (blame (and (< 6 x (blame-width view)) (blame-at-line (view-buffer view) line)))
                                       (hunk (hunk-at-line gf line)))
-                                 (when hunk (show-hunk-popover view hunk y)))))))
+                                 (cond (blame (if (getf blame :uncommitted)
+                                                  (message "Not committed yet")
+                                                  (show-commit (gf-root gf) (getf blame :hash))))
+                                       (hunk (show-hunk-popover view hunk y))))))))
         (gtk:widget-add-controller gutter click)))))
 
 ;;; Commands on changes
@@ -344,6 +350,7 @@ ON-ERROR with the message of an error it signals."
 (defvar *git-head* nil)
 (defvar *git-ahead* nil "Commits the branch is ahead of its upstream, or nil without one.")
 (defvar *git-behind* nil)
+(defvar *git-stash-list* '() "The project's stashes, from git-stashes.")
 (defvar *git-busy* nil "What git is doing with a remote, while it does (\"Pushing\" …), or nil.")
 
 (define-option *git-pull-mode* :ff-only (member :ff-only :merge :rebase)
@@ -367,11 +374,12 @@ real path: /var and /private/var are one place on macOS.)"
   (when root
     (git-async (lambda ()
                  (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)
-                       (multiple-value-list (ignore-errors (git-ahead-behind root)))))
+                       (multiple-value-list (ignore-errors (git-ahead-behind root)))
+                       (ignore-errors (git-stashes root))))
                ;; (Without an upstream there's no ahead or behind: (nil).)
                (lambda (result)
-                 (destructuring-bind (entries branch head (&optional ahead behind)) result
-                   (setf *git-ahead* ahead *git-behind* behind)
+                 (destructuring-bind (entries branch head (&optional ahead behind) stashes) result
+                   (setf *git-ahead* ahead *git-behind* behind *git-stash-list* stashes)
                    (let ((moved (and *git-head* head (string/= head *git-head*))))
                      (setf *git-entries* entries *git-branch* branch *git-head* head)
                      (clrhash *git-status*)
@@ -437,7 +445,7 @@ real path: /var and /private/var are one place on macOS.)"
 ;;; The Source Control page
 
 (defstruct (source-control (:conc-name sc-))
-  widget branch message staged changes not-repo body sync)
+  widget branch message staged changes not-repo body sync stashes)
 
 (defvar *source-control* nil)
 (defvar *sc-openers* (make-hash-table :test 'eq) "Source Control row → what clicking it opens.")
@@ -506,7 +514,7 @@ real path: /var and /private/var are one place on macOS.)"
                          (git-run root (lambda () (git-discard root (list path)))))))))))
 
 (defun make-source-control-widget ()
-  (let* ((branch (make-instance 'gtk:label :xalign 0.0 :ellipsize :end))
+  (let* ((branch (make-instance 'gtk:label :xalign 0.0 :ellipsize :end :max-width-chars 18))
          (sync (make-instance 'gtk:label :xalign 0.0 :hexpand t :css-classes '("dim-label" "caption")))
          (message-view (make-instance 'gtk:text-view :wrap-mode :word-char :top-margin 6 :bottom-margin 6
                                                      :left-margin 6 :right-margin 6 :accepts-tab nil
@@ -515,6 +523,7 @@ real path: /var and /private/var are one place on macOS.)"
                                             :tooltip-text "Commit the staged changes (Ctrl+Enter in the message)"))
          (staged (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
          (changes (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
+         (stashes (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
          (not-repo (gtk:build
                      (gtk:box :orientation :vertical :spacing 8 :margin-start 12 :margin-end 12 :margin-top 12
                        (gtk:label :label "This folder isn't a Git repository." :xalign 0.0 :wrap t)
@@ -533,9 +542,12 @@ real path: /var and /private/var are one place on macOS.)"
                      (gtk:label :label "Message (Ctrl+Enter commits)" :xalign 0.0
                                 :css-classes '("dim-label" "caption"))
                      (gtk:frame :child message-view :height-request 60)
-                     commit)
+                     (gtk:box :spacing 6
+                       (gtk:box :hexpand t :orientation :vertical commit)
+                       (gtk:button :label "Stash" :tooltip-text "Put your uncommitted changes aside"
+                                   :on-clicked (lambda (b) (declare (ignore b)) (call-command 'stash-changes)))))
                    (gtk:scrolled-window :vexpand t :hscrollbar-policy :never
-                                        :child (gtk:build (gtk:box :orientation :vertical staged changes))))))
+                                        :child (gtk:build (gtk:box :orientation :vertical staged changes stashes))))))
          (widget (gtk:build
                    (gtk:box :orientation :vertical
                      (gtk:box :margin-top 8 :margin-end 6
@@ -543,20 +555,23 @@ real path: /var and /private/var are one place on macOS.)"
                                   :css-classes '("caption-heading" "dim-label"))
                        (gtk:button :label "↻" :tooltip-text "Refresh" :css-classes '("flat")
                                    :on-clicked (lambda (b) (declare (ignore b)) (git-changed))))
+                     ;; The branch and how it stands against its upstream, then the remote's buttons.
                      (gtk:box :spacing 4 :margin-start 8 :margin-end 6 :margin-top 2
                        (gtk:button :css-classes '("flat") :tooltip-text "Switch branch"
                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'switch-branch))
                          (gtk:box :spacing 4 (gtk:image :icon-name "cadre-git-symbolic") branch))
-                       sync
-                       (gtk:button :label "Fetch" :css-classes '("flat" "caption") :tooltip-text "Fetch from the remote"
+                       sync)
+                     (gtk:box :spacing 4 :margin-start 8 :margin-end 8 :homogeneous t
+                       (gtk:button :label "Fetch" :css-classes '("caption") :tooltip-text "Fetch from the remote"
                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'fetch-changes)))
-                       (gtk:button :label "Pull" :css-classes '("flat" "caption") :tooltip-text "Pull the upstream's commits"
+                       (gtk:button :label "Pull" :css-classes '("caption") :tooltip-text "Pull the upstream's commits"
                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'pull-changes)))
-                       (gtk:button :label "Push" :css-classes '("flat" "caption") :tooltip-text "Push your commits"
+                       (gtk:button :label "Push" :css-classes '("caption") :tooltip-text "Push your commits"
                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'push-changes))))
                      not-repo
                      body))))
-    (setf *source-control* (make-source-control :widget widget :branch branch :sync sync :message message-view
+    (setf *source-control* (make-source-control :widget widget :branch branch :sync sync :stashes stashes
+                                                :message message-view
                                                 :staged staged :changes changes :not-repo not-repo :body body))
     (gobject:connect commit :clicked (lambda (b) (declare (ignore b)) (commit-from-page)))
     (dolist (list (list staged changes))
@@ -613,7 +628,8 @@ real path: /var and /private/var are one place on macOS.)"
         (let ((staged (remove-if (lambda (e) (member (first e) '(#\Space #\?))) *git-entries*))
               (changes (remove-if (lambda (e) (char= (second e) #\Space)) *git-entries*)))
           (fill-change-list (sc-staged sc) root "Staged Changes" staged t :stage-all t)
-          (fill-change-list (sc-changes sc) root "Changes" changes nil :stage-all t))))))
+          (fill-change-list (sc-changes sc) root "Changes" changes nil :stage-all t)
+          (fill-stash-list (sc-stashes sc) root))))))
 
 (defun commit-from-page ()
   (let* ((sc *source-control*)

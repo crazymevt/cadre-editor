@@ -92,7 +92,7 @@ nil, there are no line numbers."
       (let ((layout (gtk:widget-create-pango-layout (view-text-view view)
                                                     (make-string digits :initial-element #\8))))
         (gtk:widget-set-size-request (view-gutter view)
-                                     (+ (pango:layout-get-pixel-size layout) 20) -1)))))
+                                     (+ (pango:layout-get-pixel-size layout) 20 (blame-width view)) -1)))))
 
 (defun draw-line-numbers (view area cr width)
   (let* ((text-view (view-text-view view))
@@ -113,7 +113,8 @@ nil, there are no line numbers."
                  (cairo:set-source-rgba cr (gdk:rgba-red color) (gdk:rgba-green color)
                                         (gdk:rgba-blue color) (if (= line cursor-line) 0.9d0 0.4d0))
                  (cairo:move-to cr (- width (pango:layout-get-pixel-size layout) 10) wy)
-                 (pango-cairo:show-layout cr layout))
+                 (pango-cairo:show-layout cr layout)
+                 (draw-blame-line view cr layout line wy))
                y)))
       (let ((iter (gtk:text-view-get-line-at-y text-view top)))
         (loop

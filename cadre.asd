@@ -55,6 +55,7 @@
                (:file "outline")
                (:file "everyday")
                (:file "git")
+               (:file "git-history")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))

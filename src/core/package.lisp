@@ -77,6 +77,8 @@
    #:line-changes #:hunk-kind #:git-stage #:git-unstage #:git-discard #:git-commit #:git-diff-text
    #:git-branches #:git-switch #:git-delete-branch #:git-remotes #:git-upstream #:git-ahead-behind
    #:*git-network-environment* #:git-network #:git-fetch #:git-pull #:git-push
+   #:git-log #:git-show-text #:relative-time #:parse-blame-porcelain #:git-blame
+   #:git-stashes #:git-stash-push #:git-stash-apply #:git-stash-pop #:git-stash-drop
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec
