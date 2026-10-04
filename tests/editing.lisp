@@ -552,3 +552,21 @@ Over lines.\"
              (is eq nil (c:git-operation root))
              (true (search "Merge branch 'other'" (c:git-ok root "log" "-1" "--format=%s"))))
         (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))))
+
+(define-test project-files-through-links :parent cadre-tests
+  ;; A project reached through a link (as /var is on macOS) still has its
+  ;; subfolders walked; a link to a folder inside it is not followed.
+  (let* ((base (merge-pathnames (format nil "cadre-links-~d/" (random 1000000)) (uiop:temporary-directory)))
+         (real (merge-pathnames "real/" base))
+         (via (merge-pathnames "via/" base)))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist (merge-pathnames "sub/a.lisp" real))
+           (with-open-file (o (merge-pathnames "sub/a.lisp" real) :direction :output) (write-line "(a)" o))
+           (sb-posix:symlink (string-right-trim "/" (namestring real)) (string-right-trim "/" (namestring via)))
+           (sb-posix:symlink (string-right-trim "/" (namestring real)) (namestring (merge-pathnames "loop" real)))
+           (true (c:directory-link-p via))
+           (false (c:directory-link-p (merge-pathnames "sub/" real)))
+           (is equal '("sub/a.lisp")
+               (mapcar (lambda (f) (enough-namestring f via)) (c:project-files via))))
+      (uiop:delete-directory-tree base :validate t :if-does-not-exist :ignore))))

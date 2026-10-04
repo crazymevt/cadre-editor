@@ -903,7 +903,24 @@ itself.
   check widget state.
 - **Performance budgets:** a key press to its repaint under 16 ms in a
   10,000-line file; opening a 1 MB file under 300 ms; the tree showing 5,000
-  files without stalling.
+  files without stalling. `make perf` (`scripts/perf.lisp`) measures them in
+  a real window on generated files. A key's time is its work plus the next
+  frame's layout and paint, without the wait for the display's refresh, after
+  one unmeasured pass to warm up. A 5 ms timer measures the longest main-loop
+  stall in each scenario (budget 100 ms), which catches deferred work.
+
+  First results (2026-10-04, Apple Silicon): a key press about 9 ms (95th
+  percentile 10 ms, mostly painting the completion popup); a page of
+  scrolling 5 ms; a 1 MB file opened in 40 ms; the 5,000-file project shown in
+  90 ms, with a longest stall of 65 ms.
+
+  The first run found two bugs. `source-definitions` counted newlines from
+  the start of the text for every definition, which is quadratic: 466 ms on
+  10,000 lines, run after each edit by completion and hints, and now 18 ms.
+  And the project file walkers (Quick Open, Find in Project) thought every
+  folder was a symbolic link when the project's path went through one, as
+  `/var` does on macOS, so they skipped the folders. They now check with
+  `lstat`.
 
 ## 12. Risks
 

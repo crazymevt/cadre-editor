@@ -168,7 +168,7 @@
                (dolist (sub (uiop:subdirectories dir))
                  (unless (or (hidden-p (car (last (pathname-directory sub))))
                              ;; Do not follow links to directories (they may loop).
-                             (not (equal (namestring (truename sub)) (namestring sub))))
+                             (directory-link-p sub))
                    (walk sub)))))
       (walk directory))
     (sort (nreverse files) #'< :key #'length)))

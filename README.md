@@ -467,7 +467,21 @@ Cadre writes its own choices (keybindings, layout, last folder) to
 ```sh
 make test     # headless tests of the editor model (src/core)
 make smoke    # drive a real window through the M0 features; screenshots in build/smoke/
+make perf     # measure against the performance budgets; report in build/perf/latest.txt
 ```
+
+`make perf` opens a window on generated files and times what you'd feel:
+- **Keys and scrolling:** a key press to its repaint at three places in a
+  10,000-line file (budget 16 ms), and scrolling it a page at a time (16 ms).
+- **Opening:** a 10,000-line file and a 1 MB file, until each is painted
+  (300 ms).
+- **A 5,000-file project:** the explorer, a 1,000-file folder, and Quick
+  Open's file list (300 ms).
+- **Stalls:** throughout, it watches for the main loop being busy, which is
+  where deferred work like highlighting shows up. No stall may pass 100 ms.
+
+It exits 1 if a budget is missed. `CADRE_PERF_PROFILE=1 make perf` also prints
+SBCL's statistical profile.
 
 | Path | Contents |
 | --- | --- |
@@ -478,7 +492,7 @@ make smoke    # drive a real window through the M0 features; screenshots in buil
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |
 | `tests/` | Parachute tests for `src/core/` |
-| `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp` |
+| `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `perf.lisp` |
 | `icons/` | Cadre's own symbolic icons |
 
 ## License

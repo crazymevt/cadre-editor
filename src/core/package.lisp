@@ -66,7 +66,7 @@
    #:paredit-raise #:paredit-splice #:paredit-splice-killing-backward #:paredit-splice-killing-forward
    #:paredit-wrap #:paredit-split #:paredit-join #:paredit-open #:paredit-close #:paredit-quote
    #:read-form-tree #:bound-variables-at #:extract-function-edits #:extract-variable-edits
-   #:project-files #:read-text-file #:split-text-lines #:line-matches #:text-matches
+   #:directory-link-p #:project-files #:read-text-file #:split-text-lines #:line-matches #:text-matches
    #:symbol-occurrences #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement
    #:definition #:make-definition #:source-definitions #:definition-name #:definition-kind #:definition-arglist
    #:definition-documentation #:definition-line #:arglist-hint #:form-argument-position

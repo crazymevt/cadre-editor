@@ -118,15 +118,38 @@ element (the lexer gives a piece for each line)."
                          :arglist (and lambda-list (eq (node-kind lambda-list) :list)
                                        (node-source lambda-list text))
                          :documentation documentation
-                         :line (count #\Newline text :end (node-start name-node)))))))
+                         :line (line-at-position text (node-start name-node)))))))
 
 (defparameter *definition-containers*
   '("progn" "eval-when" "let" "let*" "flet" "labels" "macrolet" "symbol-macrolet" "locally")
   "Forms whose bodies may hold definitions.")
 
+(defvar *newline-positions* nil
+  "While reading TEXT's definitions: TEXT and where its newlines are.")
+
+(defun line-at-position (text position)
+  "The line (from 0) of POSITION in TEXT. Within SOURCE-DEFINITIONS, a binary
+search over the newlines found once, rather than counting them each time."
+  (if (and *newline-positions* (eq (car *newline-positions*) text))
+      (let* ((newlines (cdr *newline-positions*))
+             (low 0) (high (length newlines)))
+        ;; The number of newlines before POSITION.
+        (loop while (< low high)
+              do (let ((mid (floor (+ low high) 2)))
+                   (if (< (aref newlines mid) position) (setf low (1+ mid)) (setf high mid))))
+        low)
+      (count #\Newline text :end position)))
+
+(defun newline-positions (text)
+  (let ((positions (make-array 64 :adjustable t :fill-pointer 0)))
+    (loop for i = (position #\Newline text) then (position #\Newline text :start (1+ i))
+          while i do (vector-push-extend i positions))
+    positions))
+
 (defun source-definitions (text)
   "The definitions in TEXT (Lisp source), in order."
-  (let ((definitions '()))
+  (let ((definitions '())
+        (*newline-positions* (cons text (newline-positions text))))
     (labels ((walk (nodes depth)
                (dolist (node nodes)
                  (when (eq (node-kind node) :list)

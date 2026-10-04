@@ -8,6 +8,12 @@
 
 (in-package #:cadre)
 
+(defun directory-link-p (directory)
+  "True if DIRECTORY (a directory pathname) is a symbolic link. Comparing
+truenames would be wrong where a parent is a link, as /var is on macOS."
+  (let ((path (string-right-trim "/" (uiop:native-namestring directory))))
+    (ignore-errors (sb-posix:s-islnk (sb-posix:stat-mode (sb-posix:lstat path))))))
+
 (defun project-files (directory &key (hidden-names '(".git")) (hidden-types '()) (max-size 2000000))
   "Every file under DIRECTORY, leaving out HIDDEN-NAMES (files or folders),
 files whose type is in HIDDEN-TYPES, and files bigger than MAX-SIZE bytes."
@@ -24,7 +30,7 @@ files whose type is in HIDDEN-TYPES, and files bigger than MAX-SIZE bytes."
                (dolist (sub (uiop:subdirectories dir))
                  (unless (or (hidden-p (car (last (pathname-directory sub))))
                              ;; Don't follow links to directories (they may loop).
-                             (not (equal (namestring (truename sub)) (namestring sub))))
+                             (directory-link-p sub))
                    (walk sub)))))
       (walk (uiop:ensure-directory-pathname directory)))
     (sort files #'string< :key #'namestring)))
