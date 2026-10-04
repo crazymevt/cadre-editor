@@ -108,6 +108,7 @@ you what's missing when you use a feature that needs it.
 | Git: the gutter, the Source Control page, history, merges | `git` | Comes with the Xcode Command Line Tools: `xcode-select --install` |
 | JavaScript, TypeScript, JSON, HTML and CSS modes ([below](#javascript-typescript-json-html-and-css-tree-sitter)) | The tree-sitter library, a C compiler, and `git` | `brew install tree-sitter`, and `xcode-select --install` for `cc`. Then run **Install Language Grammar…** in Cadre once for each language. |
 | Format Document for JavaScript, TypeScript and HTML ([below](#format-document)) | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS and Lisp need nothing. |
+| The Terminal page ([below](#terminal)) | VTE, GNOME's terminal widget, for GTK 4 | `brew install vte3`. On Debian or Ubuntu: `sudo apt install libvte-2.91-gtk4-0` |
 | Claude ([below](#claude)) | The [Claude Code](https://claude.com/claude-code) CLI, signed in | Install it from its site, then `claude auth login` |
 | Run GTK App, and GTK projects from New Lisp Project | The gtk4 bindings, which you already have from setup | — |
 
@@ -181,6 +182,8 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Complete symbol | `Ctrl+Space` | `C-M-i` |
 | Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
+| Show the Terminal | `` Ctrl+Shift+` `` | `C-x p s` |
+| Claude Code in a Terminal | (palette) | `C-c C-a t` |
 | Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
 | Build the project's program | `Ctrl+Shift+B` | `C-x p c` |
 | Run the project's tests in the REPL / in a new Lisp | `Ctrl+; A` / `Ctrl+; N` | `C-x p t` / `C-x p T` |
@@ -516,6 +519,46 @@ its line.
   names the program for any mode. A mode listed there uses it even where
   Cadre has its own formatter.
 
+### Terminal
+
+The **Terminal** page in the panel runs your shell in the project's folder.
+It's a real terminal (VTE, the widget GNOME Terminal uses), so full-screen
+programs like `vim`, `htop` and Claude Code work, with colors and the mouse.
+- **Opening one:** open the Terminal tab, or use **Show Terminal**
+  (`` Ctrl+Shift+` ``, Emacs `C-x p s`). It starts a shell if there's none.
+  `+` opens another. Each terminal gets a tab. Middle-click a tab, or use
+  the trash button (Kill Terminal), to end one.
+- **Ending:** a shell that exits normally closes its terminal. One that
+  fails stays open, ending with "[Process exited with code N]", so you can
+  read what went wrong.
+- **Keys:** keys go to the terminal, so `Ctrl+C`, `Ctrl+R` and `Esc` work as
+  in any terminal. These stay Cadre's:
+  - on macOS, ⌘ keys (⌘P, ⌘⇧P, ⌘B, ⌘J…). In the terminal, ⌘C and ⌘V copy
+    and paste, ⌘A selects all, ⌘K clears, and ⌘← ⌘→ ⌘⌫ go to the start or
+    end of the line or delete it.
+  - `` Ctrl+` ``, `` Ctrl+Shift+` ``, `Ctrl+Shift+P` and `F1`
+  - in the Emacs profile, `C-x` and `M-x` (and so `C-x o`, `C-x b`, …)
+
+  On Linux, `Ctrl+Shift+C` and `Ctrl+Shift+V` copy and paste. On macOS,
+  Option works as Meta (`M-b`, `M-f`, `M-DEL` in the shell); turn off
+  `*terminal-option-as-meta*` to type Option's characters instead.
+  `*terminal-editor-keys*` changes which keys stay Cadre's.
+- **Links:** ⌘-click (Ctrl+click on Linux) a URL to open it in the browser.
+  ⌘-click a file reference such as `src/app.lisp:42:7`, as compilers and
+  test runners print them, to open the file at that line.
+- **Send to Terminal** runs the selection, or the current line, in the
+  current terminal.
+- **Claude Code in a Terminal** (the ✦ button, `C-c C-a t`, or the main
+  menu) runs Claude Code's own interface in a terminal. It's connected to
+  Cadre's MCP server, so Claude can read your buffers, ask your running
+  Lisp, and propose edits as diffs in the editor, as in the Claude tab.
+
+Right-click a terminal for Copy, Paste, Select All, Clear, New Terminal and
+Kill Terminal. Terminals use the editor's font (and zoom) and the theme's
+colors. Settings, under Terminal: the shell (`*terminal-shell*`, default
+`$SHELL`), scrollback lines, Option as Meta, and the keys that stay
+Cadre's. Without VTE, the Terminal tab tells you how to install it.
+
 ### GTK applications
 
 On macOS, GTK must run on a process's first thread, but the REPL runs on
@@ -694,6 +737,7 @@ SBCL's statistical profile.
 | `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
 | `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
 | `src/core/claude/` | JSON, the Claude Code CLI driver (stream-json), the MCP server, line diffs |
+| `src/core/terminal.lisp`, `src/ui/terminal.lisp` | The Terminal page: what runs, keys, file references (core); VTE through CFFI (UI) |
 | `src/core/tree-sitter/` | tree-sitter: a C shim (by-value structs as integers), the FFI, the language list, building grammars, highlight queries (with their predicates), folds and the outline |
 | `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers, inspector/xref/debugger replies, classifying symbols in the image |
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |

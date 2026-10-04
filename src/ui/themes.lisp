@@ -139,7 +139,8 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
       (let ((css (theme-stylesheet theme)))
         (when (plusp (length css))
           (setf *theme-provider* (gtk:add-css css :priority (1+ gtk:+style-provider-priority-application+)))))))
-  (restyle-all-buffers))
+  (restyle-all-buffers)
+  (restyle-terminals))
 
 (defun load-user-themes ()
   "Load the themes in ~/.config/cadre/themes/. Errors are reported, not fatal."

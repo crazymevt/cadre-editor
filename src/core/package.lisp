@@ -145,5 +145,9 @@
    #:define-mcp-tool #:register-mcp-tool #:*mcp-tools* #:mcp-tool-name #:tool-error #:tool-argument
    #:mcp-tool-error #:mcp-handle #:call-mcp-tool #:start-mcp-server #:stop-mcp-server
    #:mcp-server-url #:mcp-server-port #:mcp-server-token #:write-mcp-config #:http-post-json
+   ;; the Terminal page
+   #:*terminal-shell* #:terminal-shell-command #:*terminal-environment* #:terminal-environment
+   #:terminal-title-for #:*terminal-default-editor-keys* #:terminal-key-action #:meta-key-bytes
+   #:parse-file-reference #:resolve-file-reference
    ;; diffs
    #:split-lines #:diff-lines #:diff-stats #:replace-unique))

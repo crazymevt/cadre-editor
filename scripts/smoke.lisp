@@ -2471,6 +2471,86 @@ d" 0 0)
          (string= (format nil "(defun f ()~%  (+ 1~%     2))~%") (buffer-string (current-buffer)))
          (buffer-string (current-buffer))))
 
+;;; The Terminal page (VTE)
+
+(defun term () cadre-ui::*current-terminal*)
+(defun term-text () (if (term) (or (cadre-ui::terminal-text (term)) "") ""))
+(defun terminal-count () (length (cadre-ui::live-terminals)))
+(defvar *vte* nil)
+
+(then 100
+  (setf *vte* (cadre-ui::vte-available-p))
+  (check "VTE is installed for the Terminal" *vte* (and (not *vte*) (cadre-ui::vte-missing-message)))
+  ;; A plain shell, so the user's prompt and profile don't matter here.
+  (setf cadre:*terminal-shell* "/bin/sh")
+  ;; Earlier steps opened other projects; terminals start in the project's folder.
+  (cadre-ui::open-project *root*)
+  (call-command 'cadre-ui::show-terminal))
+
+(then-when ((and *vte* (term) (cadre-ui::term-pid (term))) :timeout 10)
+  (check "Show Terminal opens the Terminal page with a shell"
+         (and (term) (string= "terminal" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*)))))
+  (check "the terminal has the keyboard focus" (eq (term) (cadre-ui::focused-terminal *window*)))
+  (check "it starts in the project's folder"
+         (equal (truename *root*) (truename (cadre-ui::term-directory (term)))))
+  (check "Ctrl+C goes to the terminal, not to Cadre" (null (press "C-c")))
+  (check "Ctrl+P too (the shell's previous command)" (null (press "C-p")))
+  (check "Escape too" (null (press "ESC")))
+  (cadre-ui::feed-terminal (term) (format nil "echo cadre-$((6*7)) $TERM~c" #\Return)))
+
+(then-when ((search "cadre-42 xterm-256color" (term-text)) :timeout 10)
+  (check "commands run in the terminal, with TERM set" (search "cadre-42 xterm-256color" (term-text)) (term-text))
+  (screenshot "44-terminal")
+  (cadre-ui::feed-terminal (term) (format nil "printf 'src/hello.lisp:2:3\\n'~c" #\Return)))
+
+(then-when ((search "src/hello.lisp:2:3" (term-text)) :timeout 10)
+  (cadre-ui::open-terminal-link (term) "src/hello.lisp:2:3"))
+
+(then-when ((and (find-buffer "hello.lisp") (eq (current-buffer) (find-buffer "hello.lisp"))) :timeout 10)
+  (check "a file:line:column in the terminal opens there" (equal '(1 2) (cursor)) (cursor))
+  (call-command 'cadre-ui::new-terminal))
+
+(then-when ((= 2 (terminal-count)) :timeout 10)
+  (check "New Terminal opens a second one, and selects it" (eq (term) (second cadre-ui::*terminals*)))
+  (check "each has a tab" (= 2 (length (find-widgets cadre-ui::*terminal-tabs* (lambda (w) (typep w 'gtk:toggle-button))))))
+  (cadre-ui::feed-terminal (term) (format nil "exit 3~c" #\Return)))
+
+(then-when ((cadre-ui::term-exited (second cadre-ui::*terminals*)) :timeout 10)
+  (check "a shell that fails stays, saying how it ended"
+         (search "exited with code 3" (term-text)) (term-text))
+  (check "and its tab says it ended" (search "(ended)" (gtk:button-get-label (cadre-ui::term-button (term)))))
+  (call-command 'cadre-ui::kill-terminal))
+
+(then 300
+  (check "Kill Terminal closes it" (= 1 (length cadre-ui::*terminals*)))
+  (check "the first terminal is current again" (eq (term) (first cadre-ui::*terminals*)))
+  (with-open-file (o (merge-pathnames "run.sh" *root*) :direction :output :if-exists :supersede)
+    (format o "echo sent-$((40+2))~%"))
+  (open-file-path (merge-pathnames "run.sh" *root*)))
+
+(then-when ((and (find-buffer "run.sh") (eq (current-buffer) (find-buffer "run.sh"))) :timeout 10)
+  (set-cursor 0 0)
+  (call-command 'cadre-ui::send-to-terminal))
+
+(then-when ((search "sent-42" (term-text)) :timeout 10)
+  (check "Send to Terminal runs the current line there" (search "sent-42" (term-text)))
+  (call-command 'cadre-ui::claude-code-in-terminal))
+
+(then-when ((= 2 (length cadre-ui::*terminals*)) :timeout 10)
+  (check "Claude Code in a Terminal runs claude with Cadre's MCP tools"
+         (and (string= "Claude Code" (cadre-ui::term-title (term)))
+              (member "--mcp-config" (cadre-ui::term-command (term)) :test #'string=))
+         (cadre-ui::term-command (term)))
+  (call-command 'cadre-ui::kill-terminal))
+
+(then 300
+  (cadre-ui::feed-terminal (term) (format nil "exit~c" #\Return)))
+
+(then-when ((null cadre-ui::*terminals*) :timeout 10)
+  (check "a shell that exits cleanly closes its terminal" (null cadre-ui::*terminals*))
+  (check "and the page offers a new one"
+         (string= "empty" (gtk:stack-get-visible-child-name cadre-ui::*terminal-stack*))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

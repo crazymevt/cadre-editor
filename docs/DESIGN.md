@@ -82,7 +82,7 @@ Priority: **P0** = must have for the first usable release, **P1** = 1.0,
 | Claude | Agent mode: Claude uses tools (read files, inspect the image, evaluate with your approval) | P1 |
 | Claude | Claude Code CLI driver: sign-in check, conversations, streaming, resume | P0 |
 | Claude | MCP server exposing editor and Swank tools to Claude Code | P0 |
-| Claude | Interactive Claude Code in a terminal panel | Later |
+| Claude | Interactive Claude Code in a terminal panel | Later (done: the Terminal page) |
 | Extensibility | Commands, keymaps, major/minor modes, hooks, user init file | P0 |
 | Extensibility | Editor REPL: a REPL in the editor's own image | P0 |
 | Extensibility | Themes: GTK CSS plus syntax colours; dark and light | P1 |
@@ -688,9 +688,9 @@ an HTTP request (handled by keeping processes warm, 9.6).
    files, runs commands or evaluates code waits for your approval.
 4. **Explain this error** (P1). A button in the debugger that sends the
    condition, backtrace and frame source to Claude.
-5. **Claude Code in a terminal** (Later). An interactive `claude` session in
-   a terminal panel, connected to the editor's MCP server. This needs a
-   terminal widget (VTE for GTK 4), which the gtk4 bindings don't cover yet.
+5. **Claude Code in a terminal** (Later, done). An interactive `claude`
+   session on the Terminal page, started with `--mcp-config` pointing at
+   the editor's MCP server, so it has the same editor and Lisp tools.
 
 ### 9.4 Tools
 
@@ -940,7 +940,36 @@ that work on tokens, never values. Lisp re-indents. Other modes use
 on a thread with the text on standard input; the result is applied only if
 the text hasn't changed meanwhile.
 
-| **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
+The Terminal page (core `terminal.lisp`, UI `terminal.lisp`): each terminal
+is a VteTerminal from libvte for GTK 4, an optional dependency loaded on
+first use and called through CFFI (about thirty functions, so no generated
+bindings). Decisions:
+- **Starting the child:** VTE's own `vte_terminal_spawn_async` kills the
+  child with SIGSEGV on macOS (in plain C as well), so Cadre makes the pty
+  with `vte_pty_new_sync` and starts the child with `g_spawn_async`, passing
+  `vte_pty_child_setup` (a C function, so no Lisp runs between fork and
+  exec) as the child setup. `vte_terminal_watch_child` reports the exit.
+- **Environment:** Cadre's own, with `TERM=xterm-256color`,
+  `COLORTERM=truecolor` and `TERM_PROGRAM=Cadre`. The shell is
+  `*terminal-shell*` or `$SHELL`, as a login shell on macOS.
+- **Keys:** the window's capture-phase key handler sees keys first, so
+  `handle-key` asks `terminal-handle-key` when a terminal has the focus.
+  `terminal-key-action` (core, unit-tested) sends most keys to the
+  terminal. ⌘ keys stay Cadre's on macOS, except ⌘C/⌘V/⌘A/⌘K and ⌘←/⌘→/⌘⌫,
+  which become terminal actions or bytes. So do the profile's
+  `*terminal-editor-keys*` (Emacs: `C-x` and `M-x`, as in vterm), and any
+  key while a prefix is pending. Option as Meta sends Esc and the key.
+- **Ending:** a clean exit closes the terminal; a failure keeps it, with
+  "[Process exited with code N]", so an error message stays readable.
+- **Links:** two PCRE2 match patterns (URLs, and file references with
+  `:line:column`) plus OSC 8 hyperlinks; ⌘-click (Ctrl+click) opens URLs in
+  the browser and files in a tab, relative to the shell's reported folder
+  (OSC 7), the terminal's starting folder, or the project.
+- **Look:** the editor font through CSS (`.cadre-terminal`, so zooming
+  applies), the theme's colors (a transparent background when the theme
+  leaves the editor's to GTK), and a 16-color palette for dark or light.
+
+| **Later** | Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop
 itself.

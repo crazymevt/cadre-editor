@@ -366,6 +366,7 @@
 (bind-keys *standard-global-keymap*
   "C-M-i" 'claude
   "C-`" 'show-repl
+  "C-~" 'show-terminal
   "F6" 'load-project
   "C-S-b" 'build-project
   "C-; a" 'run-tests
@@ -384,6 +385,8 @@
   "C-x p T" 'run-tests-in-new-lisp
   "C-x p r" 'run-gtk-app
   "C-x p k" 'stop-gtk-app
+  "C-x p s" 'show-terminal
+  "C-c C-a t" 'claude-code-in-terminal
   "C-c C-a a" 'claude
   "C-c C-a p" 'ask-claude-about-problems)
 
@@ -636,6 +639,13 @@ argument, a printable key is typed that many times."
 (defun handle-key (win keyval state &optional keycode)
   "Route a key press to a command. Returns t if Cadre used the key."
   (setf *typed-key* nil)
+  ;; In a terminal, most keys are the terminal's (see terminal-key-action).
+  (let ((term (and (null (dispatcher-pending (window-dispatcher win))) (null *key-reader*)
+                   (focused-terminal win))))
+    (when term
+      (let ((result (terminal-handle-key term keyval state keycode)))
+        (unless (eq result :editor)
+          (return-from handle-key result)))))
   (when (and (null (dispatcher-pending (window-dispatcher win))) (null *key-reader*)
              (completion-key keyval state))
     (return-from handle-key t))

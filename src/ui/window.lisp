@@ -77,6 +77,8 @@
     (".cadre-activity" :padding "4px")
     (".cadre-panel" :background-color "@view_bg_color")
     (".cadre-panel-switcher button" :padding ("2px" "10px") :min-width "0")
+    (".cadre-terminal" :padding ("4px" "8px"))
+    (".cadre-terminal-tab" :padding ("2px" "10px") :min-height "0")
     (".cadre-review-bar" :background-color "alpha(@accent_bg_color, 0.12)")
     (".cadre-conflict-bar" :background-color "alpha(@warning_bg_color, 0.2)")
     (".cadre-search-match label" :font-weight "normal")
@@ -130,7 +132,7 @@
          (family (if (font-size-points font) (subseq font 0 (position #\Space font :from-end t)) font))
          (size (zoomed-font-size)))
     (setf *font-provider*
-          (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text, .cadre-gutter { font-family: ~a;~@[ font-size: ~a;~] }"
+          (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text, .cadre-gutter, .cadre-terminal { font-family: ~a;~@[ font-size: ~a;~] }"
                                family size)))))
 
 (defun install-css ()
@@ -190,6 +192,9 @@
       (item lisp "Show Traces" 'show-traces)
       (item lisp "Restart Lisp" 'restart-lisp)
       (item lisp "Chat with Claude" 'claude)
+      (item view "Terminal" 'show-terminal)
+      (item view "New Terminal" 'new-terminal)
+      (item lisp "Claude Code in a Terminal" 'claude-code-in-terminal)
       (item app "Settings…" 'settings)
       (item app "Color Theme…" 'choose-theme)
       (item app "Keyboard Shortcuts: Standard" 'use-standard-keys)

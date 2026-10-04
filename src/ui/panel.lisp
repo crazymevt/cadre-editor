@@ -1,6 +1,6 @@
 ;;;; panel.lisp — the panel, below or beside the editor
 ;;;;
-;;;; Pages: the REPL, Problems (compiler notes), the Debugger, the Inspector,
+;;;; Pages: the REPL, the Terminal, Problems (compiler notes), the Debugger, the Inspector,
 ;;;; References (cross-references), History (commits), Trace (traced calls),
 ;;;; Claude (a chat) and Output (a log of messages).
 
@@ -32,7 +32,7 @@ narrow panel (the vertical layout) has room for the others.")
          ;; forcing the panel wider.
          (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :automatic :vscrollbar-policy :never
                                                    :propagate-natural-width t :hexpand t :child switcher)))
-    (dolist (page '(("repl" "REPL") ("problems" "Problems") ("debugger" "Debugger")
+    (dolist (page '(("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
                     ("trace" "Trace") ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))

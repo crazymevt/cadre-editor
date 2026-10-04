@@ -61,6 +61,7 @@
                (:file "git-merge")
                (:file "folding")
                (:file "tree-sitter")
+               (:file "terminal")
                (:file "format")
                (:file "new-project")
                (:file "build")
@@ -109,6 +110,7 @@
                              (:file "tools")
                              (:file "image")))
                (:file "build")
+               (:file "terminal")
                (:file "tree-sitter" :pathname "tree-sitter/tree-sitter")
                (:module "claude"
                 :serial t
@@ -130,5 +132,6 @@
                (:file "lisp")
                (:file "editing")
                (:file "swank")
-               (:file "claude"))
+               (:file "claude")
+               (:file "terminal"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))
