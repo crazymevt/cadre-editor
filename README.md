@@ -79,7 +79,7 @@ In Lisp files, in both profiles:
 | Select s-expression | `C-M-Space` |
 | Indent top-level form / selection | `C-M-q` / `C-M-\` |
 
-(`C-M-` is Ctrl+Alt; on macOS, Ctrl+Option.)
+(`C-M-` is Ctrl+Alt; on macOS, Ctrl+Option. In the Emacs profile on macOS, ⌘ with a key Emacs leaves unbound does what it does in Standard: ⌘↩ evaluates, ⌘S saves, ⌘F finds.)
 
 Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 `sbcl` by default, the first time one is needed):

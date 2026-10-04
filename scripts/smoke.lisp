@@ -1228,6 +1228,13 @@ d" 0 0)
   (insert-at-cursor "; scale")
   (check "completions don't appear inside comments" (not (cadre-ui::auto-complete-p (current-view))))
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+  ;; In the Emacs profile on macOS, ⌘ keys Emacs leaves alone act as in Standard.
+  (let ((cadre-ui::*keybinding-profile* :emacs))
+    (check "Emacs profile: ⌘↩ still evaluates, ⌘S still saves"
+           (or (not (cadre-ui::macos-p))
+               (and (eq 'compile-or-eval-defun (cadre-ui::mac-command-fallback *window* "s-RET"))
+                    (eq 'save-buffer (cadre-ui::mac-command-fallback *window* "s-s"))))))
+  (check "the Standard profile needs no fallback" (null (cadre-ui::mac-command-fallback *window* "s-RET")))
   ;; Closing doesn't ask about Cadre's own buffers.
   (call-command 'cadre-ui::editor-repl)
   (insert-at-cursor "(+ 1 2)")

@@ -119,11 +119,15 @@ change it makes can start completion.")
   (let ((completion (selected-completion)))
     (and completion (string= (prefix-before-cursor (cp-view *completion*)) (first completion)))))
 
-(defun completion-key (keyval)
-  "Handle KEYVAL if the completion popup wants it. Returns t if used."
+(defun completion-key (keyval &optional state)
+  "Handle KEYVAL if the completion popup wants it. Returns t if used. A
+chord (⌘↩, C-s …) closes the popup and goes on to its command."
   (when (completion-open-p)
     (let ((name (gdk:keyval-name keyval)))
-      (cond ((string= name "Down") (move-completion 1) t)
+      (cond ((and (intersection (modifier-list state) '(:control-mask :alt-mask :super-mask :meta-mask))
+                  (not (member name *modifier-key-names* :test #'string=)))
+             (close-completion) nil)
+            ((string= name "Down") (move-completion 1) t)
             ((string= name "Up") (move-completion -1) t)
             ((string= name "Page_Down") (move-completion 8) t)
             ((string= name "Page_Up") (move-completion -8) t)

@@ -459,7 +459,31 @@ typed into the focused widget here."
            (:command (run-key-command win command keys) t)
            (:undefined (clear-prefix-arg) (show-pending-keys win nil)
             (message "~a is undefined" (keys-string keys)) t)
-           (:unbound (unbound-key win key text :replaying replaying))))))))
+           (:unbound
+            (let ((command (and (= 1 (length keys)) (mac-command-fallback win key))))
+              (if command
+                  (progn (run-key-command win command keys) t)
+                  (unbound-key win key text :replaying replaying))))))))))
+
+(defun mac-command-fallback (win key)
+  "In the Emacs profile on macOS, ⌘ with a key Emacs's keys leave unbound
+does what it does in the Standard profile (⌘↩ evaluates, ⌘S saves, ⌘F
+finds). Returns the command, or nil."
+  (when (and (macos-p) (eq *keybinding-profile* :emacs))
+    (let ((mods (key-modifiers key)))
+      (when (and (member #\s mods) (not (member #\C mods)))
+        (let* ((control-key (make-key (subseq key (* 2 (length mods)))
+                                      :control t :meta (member #\M mods) :shift (member #\S mods)))
+               (view (focused-view win))
+               (buffer (and view (view-buffer view)))
+               (keymaps (append (and buffer
+                                     (append (list (mode-profile-keymap (buffer-major-mode buffer) :standard))
+                                             (buffer-minor-mode-keymaps buffer)
+                                             (list (major-mode-keymap (find-major-mode (buffer-major-mode buffer)))
+                                                   *standard-editing-keymap*)))
+                                (list *standard-global-keymap*)))
+               (binding (lookup-keys keymaps (list control-key))))
+          (and binding (symbolp binding) binding))))))
 
 (defun unbound-key (win key text &key replaying)
   "A key no keymap binds: typing. It ends a run of kills. With a prefix
@@ -481,7 +505,7 @@ argument, a printable key is typed that many times."
   "Route a key press to a command. Returns t if Cadre used the key."
   (setf *typed-key* nil)
   (when (and (null (dispatcher-pending (window-dispatcher win))) (null *key-reader*)
-             (completion-key keyval))
+             (completion-key keyval state))
     (return-from handle-key t))
   (let ((mods (modifier-list state)))
     ;; On macOS, Option changes the character typed; for Meta and for
