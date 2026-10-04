@@ -49,6 +49,9 @@
   "M-S-Down" 'duplicate-lines-down
   "C-r" 'open-recent-project
   "C-k C-r" 'open-recent-file
+  "C-S-g" 'show-source-control
+  "M-F5" 'git-next-change
+  "M-S-F5" 'git-previous-change
   "C-TAB" 'next-tab
   "C-S-TAB" 'previous-tab
   "C-Page_Down" 'next-tab
@@ -117,6 +120,12 @@
   "C-x C--" 'zoom-out
   "C-x C-0" 'zoom-reset
   "C-x C-r" 'open-recent-file
+  "C-x v v" 'show-source-control
+  "C-x v =" 'git-diff-file
+  "C-x v ]" 'git-next-change
+  "C-x v [" 'git-previous-change
+  "C-x v n" 'git-revert-change
+  "C-x v s" 'git-stage-file
   "C-S-Up" 'move-lines-up
   "C-S-Down" 'move-lines-down
   "C-S-d" 'duplicate-lines-down

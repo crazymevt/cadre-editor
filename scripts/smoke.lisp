@@ -1618,6 +1618,92 @@ d" 0 0)
            (and (eq :symbol (cadre-ui::ps-mode cadre-ui::*project-search*))
                 (string= "scale-shape" (gtk:editable-get-text (cadre-ui::ps-entry cadre-ui::*project-search*)))))))
 
+;;; Git
+(defun m1-git () (cadre-ui::buffer-git (find-buffer "m1.lisp")))
+
+(then 100
+  (show-buffer-named "m1.lisp")
+  (cadre-ui::show-source-control)
+  (check "a folder that isn't a repository says so"
+         (gtk:widget-get-visible (cadre-ui::sc-not-repo cadre-ui::*source-control*)))
+  ;; Make the project a repository with one commit.
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp")) (format nil "(defun area (w h)~%  (* w h))~%"))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) t)
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((string= (format nil "(defun area (w h)~%  (* w h))~%")
+                      (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*))))
+  (check "the file is saved before committing"
+         (string= (format nil "(defun area (w h)~%  (* w h))~%") (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
+         (list (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)) (buffer-file (find-buffer "m1.lisp"))
+               (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+  (git-ok *root* "init" "-q")
+  (git-ok *root* "config" "user.email" "smoke@example.com")
+  (git-ok *root* "config" "user.name" "Smoke")
+  (git-ok *root* "add" "-A")
+  (git-ok *root* "commit" "-q" "-m" "Start")
+  (cadre-ui::git-project-opened)
+  (dolist (b (buffer-list)) (cadre-ui::git-attach b)))
+
+(then-when ((and (m1-git) cadre-ui::*git-branch*) :timeout 10)
+  (check "the status bar shows the branch"
+         (let ((b (gethash :status-branch cadre-ui::*named-widgets*)))
+           (and (gtk:widget-get-visible b)
+                (search cadre-ui::*git-branch* (gtk:label-get-text (gethash :status-branch-label cadre-ui::*named-widgets*))))))
+  (check "and the page shows the repository" (gtk:widget-get-visible (cadre-ui::sc-body cadre-ui::*source-control*)))
+  (set-cursor 1 5)
+  (insert-at-cursor "1 ")                 ; (* 1 w h)
+  (set-cursor 2 0)
+  (insert-at-cursor (format nil ";; new~%")))
+
+(then-when ((cadre-ui::gf-hunks (m1-git)) :timeout 10)
+  (check "the gutter marks changed and added lines, before saving"
+         (equal '(:modified) (mapcar #'hunk-kind (cadre-ui::gf-hunks (m1-git))))
+         (list (cadre-ui::gf-hunks (m1-git)) (m1-text) (cadre-ui::head-text-of (m1-git))))
+  (screenshot "31-git-gutter")
+  (set-cursor 1 0)
+  (call-command 'cadre-ui::git-revert-change)
+  (check "reverting a change puts the committed lines back"
+         (string= (format nil "(defun area (w h)~%  (* w h))~%") (m1-text)) (m1-text))
+  (set-cursor 2 0)
+  (insert-at-cursor (format nil ";; new~%"))
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((equal '(:added) (mapcar #'hunk-kind (cadre-ui::gf-hunks (m1-git)))) :timeout 10)
+  (set-cursor 0 0)
+  (call-command 'cadre-ui::git-next-change)
+  (check "next change goes to the added line" (= 2 (first (cursor))) (cursor)))
+
+(then-when ((cadre-ui::git-status-of (merge-pathnames "src/m1.lisp" *root*)) :timeout 10)
+  (check "the explorer knows the saved file is modified"
+         (eq :modified (first (cadre-ui::git-status-of (merge-pathnames "src/m1.lisp" *root*))))
+         (list (loop for k being the hash-keys of cadre-ui::*git-status* using (hash-value v) collect (list k v))
+               cadre-ui::*git-entries* (namestring (merge-pathnames "src/m1.lisp" *root*))))
+  (check "the page lists it under Changes"
+         (find "src/m1.lisp" cadre-ui::*git-entries* :key #'third :test #'string=))
+  (call-command 'cadre-ui::git-diff-file))
+
+(then-when ((find-buffer "*Diff m1.lisp*") :timeout 10)
+  (check "Diff shows the change" (search "+;; new" (buffer-string (find-buffer "*Diff m1.lisp*")))
+         (buffer-string (find-buffer "*Diff m1.lisp*")))
+  (call-command 'close-tab)
+  (show-buffer-named "m1.lisp")
+  (call-command 'cadre-ui::git-stage-file))
+
+(then-when ((find #\M cadre-ui::*git-entries* :key #'first) :timeout 10)
+  (check "staging moves it to Staged Changes" (find #\M cadre-ui::*git-entries* :key #'first))
+  (screenshot "32-source-control")
+  (text-replace-contents (gtk:text-view-get-buffer (cadre-ui::sc-message cadre-ui::*source-control*)) "Add a comment")
+  (cadre-ui::commit-from-page))
+
+(then-when ((null (find "src/m1.lisp" cadre-ui::*git-entries* :key #'third :test #'string=)) :timeout 10)
+  (check "committing records it" (search "Add a comment" (git-ok *root* "log" "--oneline")))
+  (check "and clears the message"
+         (string= "" (cadre:text-string (gtk:text-view-get-buffer (cadre-ui::sc-message cadre-ui::*source-control*))))))
+
+(then-when ((null (cadre-ui::gf-hunks (m1-git))) :timeout 10)
+  (check "after the commit, the gutter has nothing to mark" (null (cadre-ui::gf-hunks (m1-git)))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

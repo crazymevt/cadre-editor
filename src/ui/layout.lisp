@@ -94,4 +94,5 @@ has a size, try again shortly."
           (gtk:stack-set-visible-child-name (window-sidebar-stack win) name)
           (set-sidebar-visible win t)
           (when (string= name "systems") (refresh-systems))
-          (when (string= name "outline") (refresh-outline :force t))))))
+          (when (string= name "outline") (refresh-outline :force t))
+          (when (string= name "git") (git-changed) (refresh-source-control))))))

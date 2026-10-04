@@ -72,6 +72,9 @@
    #:definition-documentation #:definition-line #:arglist-hint #:form-argument-position
    #:*markdown-faces* #:markdown-inlines #:markdown-line-spans #:markdown-blocks #:markdown-headings
    #:markdown-continuation #:inline-plain-text #:lisp-language-p
+   #:*git-program* #:git #:git-ok #:git-available-p #:git-toplevel #:git-relative-path #:git-branch
+   #:git-head-id #:git-head-text #:parse-git-status #:git-status #:git-status-kind #:parse-unified-hunks
+   #:line-changes #:hunk-kind #:git-stage #:git-unstage #:git-discard #:git-commit #:git-diff-text
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec

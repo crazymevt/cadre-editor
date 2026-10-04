@@ -334,3 +334,54 @@ Over lines.\"
   (let ((link (find :link (c:markdown-inlines "see [the docs](https://x.org/a_b) now") :key #'first)))
     (is equal "https://x.org/a_b" (ninth link)))
   (is equal "a b" (c:inline-plain-text (cons "*a* `b`" (c:markdown-inlines "*a* `b`")))))
+
+;;; Git
+
+(define-test git-parsing :parent cadre-tests
+  (is equal '(10 2 10 3) (c::parse-hunk-header "@@ -10,2 +10,3 @@ (defun f ()"))
+  (is equal '(5 0 6 2) (c::parse-hunk-header "@@ -5,0 +6,2 @@"))
+  (is equal '(7 1 7 1) (c::parse-hunk-header "@@ -7 +7 @@"))
+  (is equal '((#\M #\Space "src/a.lisp" nil) (#\? #\? "new file.md" nil) (#\R #\Space "b.lisp" "old.lisp"))
+      (c:parse-git-status (format nil "M  src/a.lisp~a?? new file.md~aR  b.lisp~aold.lisp~a"
+                                  (code-char 0) (code-char 0) (code-char 0) (code-char 0))))
+  (is eq :untracked (c:git-status-kind #\? #\?))
+  (is eq :modified (c:git-status-kind #\Space #\M))
+  (is eq :added (c:git-status-kind #\A #\Space))
+  (is eq :conflict (c:git-status-kind #\U #\U)))
+
+(define-test git-changes :parent cadre-tests
+  (when (c:git-available-p)
+    (let ((old (format nil "a~%b~%c~%d~%"))
+          (new (format nil "a~%B~%c~%d~%e~%")))
+      (is equal '((2 1 2 1) (4 0 5 1)) (c:line-changes old new))
+      (is equal '(:modified :added) (mapcar #'c:hunk-kind (c:line-changes old new)))
+      (is equal '((2 1 1 0)) (c:line-changes old (format nil "a~%c~%d~%")))
+      (is equal '() (c:line-changes old old)))
+    ;; A repository: status, HEAD text, staging, committing.
+    (let ((root (uiop:ensure-directory-pathname
+                 (merge-pathnames (format nil "cadre-git-test-~d/" (random 1000000)) (uiop:temporary-directory)))))
+      (ensure-directories-exist root)
+      (unwind-protect
+           (progn
+             (c:git-ok root "init" "-q")
+             (c:git-ok root "config" "user.email" "test@example.com")
+             (c:git-ok root "config" "user.name" "Test")
+             (with-open-file (o (merge-pathnames "a.lisp" root) :direction :output) (format o "(one)~%"))
+             (is equal '((#\? #\? "a.lisp" nil)) (c:git-status root))
+             (c:git-stage root '("a.lisp"))
+             (is equal '((#\A #\Space "a.lisp" nil)) (c:git-status root))
+             (c:git-unstage root '("a.lisp"))
+             (is equal '((#\? #\? "a.lisp" nil)) (c:git-status root))
+             (c:git-stage root '("a.lisp"))
+             (c:git-commit root "First")
+             (is equal '() (c:git-status root))
+             (is equal (format nil "(one)~%") (c:git-head-text root "a.lisp"))
+             (true (c:git-branch root))
+             (is equal (namestring (truename root)) (namestring (c:git-toplevel (merge-pathnames "a.lisp" root))))
+             (with-open-file (o (merge-pathnames "a.lisp" root) :direction :output :if-exists :supersede) (format o "(two)~%"))
+             (is equal '((#\Space #\M "a.lisp" nil)) (c:git-status root))
+             (true (search "+(two)" (c:git-diff-text root "a.lisp")))
+             (c:git-discard root '("a.lisp"))
+             (is equal '() (c:git-status root))
+             (fail (c:git-ok root "frobnicate") 'c:editor-error))
+        (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))))

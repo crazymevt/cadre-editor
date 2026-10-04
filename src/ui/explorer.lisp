@@ -48,9 +48,10 @@
 
 (defun make-explorer-row ()
   (let ((icon (make-instance 'gtk:image))
-        (label (make-instance 'gtk:label :xalign 0.0 :ellipsize :end :hexpand t)))
+        (label (make-instance 'gtk:label :xalign 0.0 :ellipsize :end :hexpand t))
+        (status (make-instance 'gtk:label :margin-end 6 :css-classes '("caption"))))  ; Git's letter
     (make-instance 'gtk:tree-expander
-                   :child (gtk:build (gtk:box :spacing 6 :margin-start 2 icon label)))))
+                   :child (gtk:build (gtk:box :spacing 6 :margin-start 2 icon label status)))))
 
 (defun bind-explorer-row (expander row)
   (gtk:tree-expander-set-list-row expander row)
@@ -62,7 +63,9 @@
                                            "folder-symbolic"
                                            "text-x-generic-symbolic"))
     (gtk:label-set-text label (gio:file-info-get-display-name info))
-    (gtk:widget-set-tooltip-text expander (gio:file-get-path (info-file info)))))
+    (gtk:widget-set-tooltip-text expander (gio:file-get-path (info-file info)))
+    (let ((path (pathname (gio:file-get-path (info-file info)))))
+      (decorate-explorer-row expander (if (info-directory-p info) (uiop:ensure-directory-pathname path) path)))))
 
 (defun explorer-path-at (list-view x y)
   "The pathname of the file or folder in LIST-VIEW's row at (X, Y), or nil."

@@ -248,6 +248,28 @@ Go to Definition and Find References work without a running Lisp too: they
 use the definitions in your source, and search the project for the symbol.
 `*word-wrap*` wraps new editors; the zoom is saved as `*editor-zoom*`.
 
+### Git
+
+In a Git repository:
+
+- The gutter marks lines added (green), changed (blue) and deleted (red
+  wedge) since the last commit, including unsaved edits. Click a mark to see
+  what was there and revert it.
+- The explorer colors changed files (and dots their folders); the status bar
+  shows the branch (● when there are changes).
+- The Source Control page (`Ctrl+Shift+G`, `C-x v v`, or the branch icon)
+  lists staged and unstaged changes: click one for its diff; `+` stages, `−`
+  unstages, `↶` discards (after asking; new files go to the Trash). Write a
+  message and Commit (`Ctrl+Enter`); with nothing staged it offers to stage
+  everything. A folder that isn't a repository gets an Initialize button.
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Next / previous change | `Alt+F5` / `Alt+Shift+F5` | `C-x v ]` / `C-x v [` |
+| Revert the change at the cursor | `M-x git-revert-change` | `C-x v n` |
+| Diff this file | `M-x git-diff-file` | `C-x v =` |
+| Stage this file | `M-x git-stage-file` | `C-x v s` |
+
 ### Outline
 
 The Outline page in the sidebar (the list icon) shows what the current file

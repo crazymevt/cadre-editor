@@ -123,4 +123,5 @@ nil, there are no line numbers."
               ;; At the end. A final empty line (after a newline) still gets a number.
               (when (> (gtk:text-iter-get-line iter) line)
                 (draw-line iter))
-              (return))))))))
+              (return)))))
+      (draw-git-marks view cr))))

@@ -849,7 +849,11 @@ buffers along, move to Trash), pinned tabs, REPL presentations
 the Outline page with Go to Symbol, and Claude edit on a selection (the
 request goes through the chat; the answer is a `propose_edit` diff). Also
 completion as you type and arglist hints from the source, and Markdown mode
-with a live preview (7.5).
+with a live preview (7.5), and Git through the `git` command (core
+`git.lisp`, UI `git.lisp`): gutter marks from `git diff --no-index -U0`
+between HEAD's text and the buffer (so unsaved edits count), revert per
+change, explorer status colors, the branch in the status bar, and a Source
+Control page for staging, discarding and committing. Git runs on threads.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 

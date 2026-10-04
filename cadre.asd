@@ -54,6 +54,7 @@
                (:file "file-ops")
                (:file "outline")
                (:file "everyday")
+               (:file "git")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -85,6 +86,7 @@
                (:file "search")
                (:file "definitions" :pathname "lisp/definitions")
                (:file "markdown")
+               (:file "git")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")

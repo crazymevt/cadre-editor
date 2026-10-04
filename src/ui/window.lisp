@@ -93,6 +93,11 @@
     (".cadre-tab-pin" :opacity "0.6")
     (".cadre-tabs > button" :min-height "22px" :min-width "22px" :padding "2px" :margin "2px")
     (".cadre-search-match" :padding ("2px" "4px"))
+    (".cadre-git-modified" :color "@warning_color")
+    (".cadre-git-added, .cadre-git-untracked, .cadre-git-renamed" :color "@success_color")
+    (".cadre-git-deleted, .cadre-git-conflict" :color "@error_color")
+    (".cadre-git-folder" :color "alpha(@warning_color, 0.8)")
+    (".cadre-sc-button" :min-height "20px" :min-width "20px" :padding ("0" "4px"))
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))
     (".cadre-chat-code" :background-color "alpha(@view_fg_color, 0.06)" :border-radius "6px"
@@ -250,6 +255,10 @@ and, if given, LABEL."
                                      :tooltip-text "Search the project" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
                                                    (show-sidebar-page win "search")))
+                  (gtk:toggle-button :id :git-button :icon-name "cadre-git-symbolic"
+                                     :tooltip-text "Source Control" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "git")))
                   (gtk:toggle-button :id :outline-button :icon-name "cadre-outline-symbolic"
                                      :tooltip-text "Outline" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
@@ -276,6 +285,12 @@ and, if given, LABEL."
                 (gtk:button :id :status-connection :label "○ No Lisp" :css-classes '("flat")
                             :action-name "app.command"
                             :action-target (glib:variant-new-string "show-repl"))
+                (gtk:button :id :status-branch :visible nil :css-classes '("flat")
+                            :tooltip-text "Source Control" :action-name "app.command"
+                            :action-target (glib:variant-new-string "show-source-control")
+                  (gtk:box :spacing 4
+                    (gtk:image :icon-name "cadre-git-symbolic")
+                    (gtk:label :id :status-branch-label)))
                 (gtk:label :id :status-arglist :xalign 0.0 :ellipsize :end :max-width-chars 90
                            :css-classes '("monospace"))
                 (gtk:label :id :status-message :xalign 1.0 :hexpand t :ellipsize :end)
@@ -303,10 +318,13 @@ and, if given, LABEL."
               (slot-value win 'status-connection) (id :status-connection)
               (slot-value win 'status-arglist) (id :status-arglist)
               (slot-value win 'layout-button) (gethash :layout-button *named-widgets*))
+        (setf (gethash :status-branch *named-widgets*) (id :status-branch)
+              (gethash :status-branch-label *named-widgets*) (id :status-branch-label))
         (setf (window-sidebar-toggles win) (list (id :sidebar-button))
               (window-activity-buttons win) (list (cons "explorer" (id :explorer-button))
                                                   (cons "search" (id :search-button))
                                                   (cons "outline" (id :outline-button))
+                                                  (cons "git" (id :git-button))
                                                   (cons "systems" (id :systems-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
@@ -317,6 +335,7 @@ and, if given, LABEL."
                              "explorer")
         (gtk:stack-add-named stack (make-project-search-widget) "search")
         (gtk:stack-add-named stack (make-outline-widget) "outline")
+        (gtk:stack-add-named stack (make-source-control-widget) "git")
         (gtk:stack-add-named stack (make-systems-widget) "systems")
         (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
@@ -332,6 +351,10 @@ and, if given, LABEL."
       (setup-tabs win)
       (setup-layout win)
       (setup-keys win)
+      ;; Coming back to Cadre: files may have changed in Git meanwhile.
+      (gobject:connect window "notify::is-active"
+                       (lambda (w pspec) (declare (ignore pspec))
+                         (when (gtk:window-is-active w) (git-changed))))
       (gobject:connect window :close-request (lambda (w) (declare (ignore w))
                                                (request-close win)))
       win)))
@@ -340,6 +363,7 @@ and, if given, LABEL."
   "Show DIRECTORY (a pathname) in WIN's explorer."
   (let ((directory (uiop:ensure-directory-pathname directory)))
     (remember-recent-project directory)
+    (git-project-opened)
     (setf (window-project win) directory)
     (adw:bin-set-child (window-explorer-holder win)
                        (make-explorer directory :on-open-file #'open-file-path))
