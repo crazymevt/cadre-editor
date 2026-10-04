@@ -23,9 +23,9 @@
     (setf (buffer-local (view-buffer view) :mark-active) nil)
     (scroll-to-cursor view)))
 
-(defun ask-name (prompt then)
+(defun ask-name (prompt then &key (text ""))
   (open-picker (window-picker *window*)
-               :placeholder prompt
+               :placeholder prompt :text text
                :on-choose (lambda (name)
                             (let ((name (string-trim " " name)))
                               (when (string= name "") (editor-error "No name given"))

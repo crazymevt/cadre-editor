@@ -3,8 +3,9 @@
 ;;;; A gtk:list-view over a gtk:tree-list-model. Each folder's children come
 ;;;; from a gtk:directory-list, which loads them asynchronously when the
 ;;;; folder is first expanded and follows changes on disk. Folders sort
-;;;; first, then names, ignoring case. Right-clicking a file offers Open,
-;;;; Open Preview (for Markdown) and Copy Path.
+;;;; first, then names, ignoring case. Right-clicking offers opening (and a
+;;;; preview for Markdown), new files and folders, renaming, moving to the
+;;;; Trash (file-ops.lisp) and copying the path.
 
 (in-package #:cadre-ui)
 
@@ -74,8 +75,9 @@
                         (let ((path (pathname (gio:file-get-path (info-file info)))))
                           (if (info-directory-p info) (uiop:ensure-directory-pathname path) path))))))
 
-(defun show-explorer-menu (list-view path x y)
-  "A menu for PATH, at (X, Y) in LIST-VIEW."
+(defun show-explorer-menu (list-view path x y &key root)
+  "A menu for PATH, at (X, Y) in LIST-VIEW; with PATH nil (the empty space
+below the files), a menu for ROOT, the project's folder."
   (let* ((box (make-instance 'gtk:box :orientation :vertical))
          (popover (make-instance 'gtk:popover :child box :has-arrow nil :css-classes '("menu"))))
     (flet ((item (label action)
@@ -85,12 +87,23 @@
                                                   (gtk:popover-popdown popover)
                                                   (funcall action)))
                (gtk:box-append box button))))
-      (unless (uiop:directory-pathname-p path)
-        (item "Open" (lambda () (open-file-path path)))
-        (when (eq (major-mode-for-file path) 'markdown-mode)
-          (item "Open Preview" (lambda () (open-markdown-preview path)))))
-      (item "Copy Path" (lambda () (gdk:clipboard-set-text (gtk:widget-get-clipboard list-view)
-                                                            (uiop:native-namestring path)))))
+      (let* ((folder (or (null path) (uiop:directory-pathname-p path)))
+             (target (or path root))
+             (directory (if folder target (uiop:pathname-directory-pathname target))))
+        (unless folder
+          (item "Open" (lambda () (open-file-path path)))
+          (when (eq (major-mode-for-file path) 'markdown-mode)
+            (item "Open Preview" (lambda () (open-markdown-preview path))))
+          (gtk:box-append box (make-instance 'gtk:separator)))
+        (item "New File…" (lambda () (new-file-in directory)))
+        (item "New Folder…" (lambda () (new-folder-in directory)))
+        (when path
+          (gtk:box-append box (make-instance 'gtk:separator))
+          (item "Rename…" (lambda () (rename-in-explorer path)))
+          (item "Move to Trash" (lambda () (delete-in-explorer path))))
+        (gtk:box-append box (make-instance 'gtk:separator))
+        (item "Copy Path" (lambda () (gdk:clipboard-set-text (gtk:widget-get-clipboard list-view)
+                                                              (uiop:native-namestring target))))))
     (gtk:widget-set-parent popover list-view)
     (gtk:popover-set-pointing-to popover (gdk:make-rectangle :x (round x) :y (round y) :width 1 :height 1))
     (gobject:connect popover :closed (lambda (p)
@@ -115,9 +128,8 @@ closes it."
       (gobject:connect click :pressed
                        (lambda (gesture n x y)
                          (declare (ignore gesture n))
-                         (let ((path (explorer-path-at list-view x y)))
-                           (when path
-                             (show-explorer-menu list-view path x y)))))
+                         (show-explorer-menu list-view (explorer-path-at list-view x y) x y
+                                             :root (uiop:ensure-directory-pathname directory))))
       (gtk:widget-add-controller list-view click))
     (gtk:widget-add-css-class list-view "navigation-sidebar")
     (gobject:connect list-view :activate

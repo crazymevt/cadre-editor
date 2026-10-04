@@ -226,7 +226,14 @@ tables; fenced `lisp` code as Lisp). `Ctrl+K V` (`C-c C-c p` in Emacs) opens
 a live preview beside the file: it redraws as you type, scrolls along with
 the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
-the explorer and choose Open Preview. In the editor, `Return` continues a list or quote and
+the explorer and choose Open Preview.
+
+### Files
+
+Right-click in the explorer to make a new file or folder (a name like
+`src/util.lisp` makes the folders too), rename, or move to the Trash.
+Renaming carries open tabs along, unsaved changes included; moving to the
+Trash closes the tabs of what went, unless they have unsaved changes. In the editor, `Return` continues a list or quote and
 ends it on an empty item, `Tab` / `Shift+Tab` indent and outdent list items,
 and typing `*`, `_` or `~` with text selected wraps it. Bold, italic, code,
 strikethrough and link are in the right-click menu's Format submenu (Emacs:

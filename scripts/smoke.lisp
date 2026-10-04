@@ -1355,6 +1355,52 @@ d" 0 0)
 (then 300
   (check "closing that preview lets the file go too" (and (null (preview-buffer)) (null (find-buffer "guide.md")))))
 
+;;; Files from the explorer
+(defun choose-name (text)
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) text)
+  (cadre-ui::choose (picker)))
+
+(then 100
+  (cadre-ui::new-file-in (uiop:ensure-directory-pathname *root*))
+  (choose-name "docs/new.lisp"))
+
+(then 400
+  (let ((path (merge-pathnames "docs/new.lisp" *root*)))
+    (check "New File makes the file, and its folders" (probe-file path))
+    (check "and opens it" (and (find-file-buffer path) (string= "new.lisp" (buffer-name (current-buffer))))))
+  (insert-at-cursor "(defun x ())")
+  (cadre-ui::rename-in-explorer (merge-pathnames "docs/new.lisp" *root*))
+  (check "Rename starts with the old name" (string= "new.lisp" (gtk:editable-get-text (cadre-ui::picker-entry (picker)))))
+  (choose-name "renamed.md"))
+
+(then 400
+  (let ((new (merge-pathnames "docs/renamed.md" *root*)))
+    (check "Rename moves the file" (and (probe-file new) (not (probe-file (merge-pathnames "docs/new.lisp" *root*)))))
+    (check "and its buffer follows, unsaved changes and all"
+           (let ((b (find-file-buffer new)))
+             (and b (string= "renamed.md" (buffer-name b)) (buffer-modified-p b)
+                  (search "(defun x ())" (buffer-string b))))
+           (mapcar #'buffer-name (buffer-list)))
+    (check "taking the mode of its new name" (eq 'markdown-mode (buffer-major-mode (find-file-buffer new))))
+    (check "and the tab its name" (member "renamed.md ●" (tab-titles) :test #'string=) (tab-titles)))
+  (cadre-ui::save-buffer))
+
+(then-when ((not (buffer-modified-p (current-buffer))))
+  (cadre-ui::rename-in-explorer (uiop:ensure-directory-pathname (merge-pathnames "docs/" *root*)))
+  (choose-name "notes"))
+
+(then 400
+  (let ((new (merge-pathnames "notes/renamed.md" *root*)))
+    (check "renaming a folder carries the buffers of files inside it"
+           (and (probe-file new) (find-file-buffer new))
+           (list (probe-file new) (mapcar (lambda (b) (list (buffer-name b) (buffer-file b))) (buffer-list))
+                 (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+    (let* ((trashed '())
+           (cadre-ui::*trash-function* (lambda (path) (push path trashed))))
+      (cadre-ui::trash-path (uiop:ensure-directory-pathname (merge-pathnames "notes/" *root*)))
+      (check "Move to Trash trashes the folder" (= 1 (length trashed)))
+      (check "and closes the unmodified buffers of files in it" (null (find-file-buffer new))))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
