@@ -1,5 +1,7 @@
 # Cadre
 
+[![Tests](https://github.com/crazymevt/cadre-editor/actions/workflows/test.yml/badge.svg)](https://github.com/crazymevt/cadre-editor/actions/workflows/test.yml)
+
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 

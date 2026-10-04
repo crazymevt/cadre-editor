@@ -1,0 +1,33 @@
+# Runs the headless unit tests (make test: cadre/core, no GTK) on each push
+# and pull request. The smoke and performance tests need a display, so they
+# run locally.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SBCL
+        run: brew install sbcl
+
+      - name: Install Quicklisp
+        run: |
+          curl -fsSO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --load quicklisp.lisp \
+               --eval '(quicklisp-quickstart:install)' \
+               --eval '(ql-util:without-prompting (ql:add-to-init-file))'
+
+      - name: Set a Git identity (the Git tests make commits)
+        run: |
+          git config --global user.name "Cadre CI"
+          git config --global user.email "ci@example.invalid"
+          git config --global init.defaultBranch main
+
+      - name: Unit tests
+        run: make test
