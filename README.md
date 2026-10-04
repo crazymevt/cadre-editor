@@ -338,6 +338,26 @@ git's message if those can't supply one.
 | Diff this file | `M-x git-diff-file` | `C-x v =` |
 | Stage this file | `M-x git-stage-file` | `C-x v s` |
 
+### New Lisp projects
+
+**New Lisp Project…** (in the main menu, or `M-x new-lisp-project`) asks for:
+- the project's name, description and author
+- where to put it
+- whether it's a library or an application
+- the test framework (Parachute or FiveAM)
+- the license (MIT, BSD 2-Clause or none)
+- whether to start a Git repository
+
+It then opens the new project at `src/main.lisp`. It writes:
+
+| File | What it is |
+| --- | --- |
+| `NAME.asd` | The system, and `NAME/tests` hooked to ASDF's `test-op`, so `(asdf:test-system :NAME)` runs the tests. An application also gets `:build-operation`, `:build-pathname` and `:entry-point`. |
+| `src/package.lisp`, `src/main.lisp` | The package, and a `hello` function to start from (an application also gets `main`) |
+| `tests/main.lisp` | A test of `hello` |
+| `Makefile` | `make load`, `make test` (exits 1 if a test fails), `make clean`, and for an application `make build` (writes `bin/NAME`). It uses Quicklisp, loaded from your Lisp's init file, to fetch dependencies. |
+| `README.md`, `.gitignore`, `LICENSE` | |
+
 ### Folding
 
 Lisp forms that span lines, Markdown sections (a heading down to the next

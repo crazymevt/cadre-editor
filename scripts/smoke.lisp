@@ -2138,6 +2138,53 @@ d" 0 0)
 (then 300
   (check "Unfold All shows everything" (and (null (folds)) (not (line-hidden-p 13)))))
 
+;;; A new Lisp project
+
+(defun np (key) (getf cadre-ui::*new-project-dialog* key))
+(defvar *new-parent* (merge-pathnames "new-projects/" *root*))
+
+(then 300
+  (ensure-directories-exist *new-parent*)
+  (setf (cadre-ui::setting :new-project-folder) (namestring *new-parent*))
+  (call-command 'cadre-ui::new-lisp-project))
+
+(then 600
+  (check "New Lisp Project opens its dialog" (np :dialog))
+  (gtk:editable-set-text (np :name) "Bad Name"))
+
+(then 200
+  (check "a bad name can't be created" (not (gtk:widget-get-sensitive (np :create))))
+  (gtk:editable-set-text (np :name) "smoke-proj")
+  (gtk:editable-set-text (np :description) "A smoke test project."))
+
+(then 300
+  (check "a good name says where it goes"
+         (and (gtk:widget-get-sensitive (np :create))
+              (search "new-projects/smoke-proj" (gtk:label-get-text (np :where))))
+         (gtk:label-get-text (np :where)))
+  (screenshot "38-new-project")
+  (gtk:widget-activate (np :create)))
+
+(defun proj-file (path) (merge-pathnames (concatenate 'string "smoke-proj/" path) *new-parent*))
+
+(then-when ((find-buffer "main.lisp") :timeout 10)
+  (check "Create writes the project"
+         (every (lambda (p) (probe-file (proj-file p)))
+                '("smoke-proj.asd" "src/package.lisp" "src/main.lisp" "tests/main.lisp" "Makefile" "README.md" ".gitignore" "LICENSE")))
+  (check "with a Git repository" (uiop:directory-exists-p (proj-file ".git/")))
+  (check "and the description in the system" (search "A smoke test project." (uiop:read-file-string (proj-file "smoke-proj.asd"))))
+  (check "and opens it" (equal (truename (cadre-ui::window-project *window*)) (truename (proj-file ""))))
+  (check "showing its main file" (string= "main.lisp" (buffer-name (current-buffer)))))
+
+(then 1500
+  (check "Source Control follows the new project's repository"
+         (equal (truename (cadre-ui::project-git-root)) (truename (proj-file "")))
+         (cadre-ui::project-git-root))
+  (check "and forgets the last one's message and history"
+         (and (string= "" (cadre:text-string (gtk:text-view-get-buffer (cadre-ui::sc-message cadre-ui::*source-control*))))
+              (null (cadre-ui::hist-commits cadre-ui::*history*))))
+  (screenshot "39-new-project-open"))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

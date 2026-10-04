@@ -93,6 +93,17 @@
     (panel-show (window-panel *window*) "history")
     (load-history h)))
 
+(defun forget-history ()
+  "Empty the History page and take its tab away (the project changed)."
+  (let ((h *history*))
+    (when h
+      (setf (hist-root h) nil (hist-path h) nil (hist-commits h) '())
+      (gtk:label-set-text (hist-title h) "No history yet")
+      (fill-history h)
+      (when *window*
+        (panel-set-title (window-panel *window*) "history" "History")
+        (panel-hide-page (window-panel *window*) "history")))))
+
 (define-command show-history ()
   "Show the project's commits, newest first."
   (show-history-page (git-root-or-error)))

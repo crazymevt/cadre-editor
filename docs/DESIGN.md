@@ -881,7 +881,12 @@ one range per line, the longest; `markdown-fold-ranges` for sections and
 fenced blocks), again 400 ms after an edit. The UI hides a fold's lines after
 the first, newlines included, with an invisible tag between two marks; the
 gutter skips lines with no height and draws ▸/▾. Moving the cursor into a
-fold, or an insertion or deletion touching it, unfolds it.
+fold, or an insertion or deletion touching it, unfolds it. New Lisp
+Project: the core's `project-files-for` describes the files from templates
+(a library or an application, Parachute or FiveAM, a license);
+`create-lisp-project` writes them into a new or empty folder; the dialog
+(UI `new-project.lisp`) starts the repository and opens the project. A unit
+test makes a project, loads it and runs its own tests.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 

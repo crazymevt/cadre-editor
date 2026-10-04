@@ -700,6 +700,10 @@ real path: /var and /private/var are one place on macOS.)"
   (clrhash *git-roots*)
   (setf *git-head* nil *git-branch* nil *git-entries* nil)
   (clrhash *git-status*)
+  ;; What was there belonged to the last project's repository.
+  (when *source-control*
+    (gtk:text-buffer-set-text (gtk:text-view-get-buffer (sc-message *source-control*)) "" -1))
+  (forget-history)
   (git-changed)
   (update-branch-label))
 

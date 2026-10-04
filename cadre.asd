@@ -60,6 +60,7 @@
                (:file "git-history")
                (:file "git-merge")
                (:file "folding")
+               (:file "new-project")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
@@ -93,6 +94,7 @@
                (:file "markdown")
                (:file "folding")
                (:file "git")
+               (:file "new-project")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")

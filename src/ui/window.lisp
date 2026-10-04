@@ -159,6 +159,7 @@
       (item files "New File" 'new-file)
       (item files "Open File…" 'open-file)
       (item files "Open Folder…" 'open-folder)
+      (item files "New Lisp Project…" 'new-lisp-project)
       (item files "Open Recent Folder…" 'open-recent-project)
       (item files "Open Recent File…" 'open-recent-file)
       (item files "Save" 'save-buffer)
@@ -372,8 +373,9 @@ and, if given, LABEL."
   "Show DIRECTORY (a pathname) in WIN's explorer."
   (let ((directory (uiop:ensure-directory-pathname directory)))
     (remember-recent-project directory)
-    (git-project-opened)
     (setf (window-project win) directory)
+    ;; After the project changes, so Git looks at the new one.
+    (git-project-opened)
     (adw:bin-set-child (window-explorer-holder win)
                        (make-explorer directory :on-open-file #'open-file-path))
     (refresh-systems)
