@@ -71,7 +71,7 @@
         when (eq (view-buffer view) buffer) collect view))
 
 (defun tab-title (buffer)
-  (format nil "~a~:[~; ●~]" (buffer-display-name buffer) (buffer-modified-p buffer)))
+  (format nil "~a~:[~; ●~]" (buffer-display-name buffer) (buffer-needs-saving-p buffer)))
 
 (defun update-tab-titles (win buffer)
   (dolist (view (buffer-views win buffer))
@@ -191,7 +191,7 @@ forget a closed page's view and remove the group if it is now empty."
   (let* ((view (page-view win page))
          (tabs (group-tab-view (view-group view)))
          (buffer (and view (view-buffer view))))
-    (if (and buffer (buffer-modified-p buffer) (= 1 (length (buffer-views win buffer))))
+    (if (and buffer (buffer-needs-saving-p buffer) (= 1 (length (buffer-views win buffer))))
         (ask-to-save win (list buffer)
                      (lambda (proceed) (adw:tab-view-close-page-finish tabs page proceed)))
         (adw:tab-view-close-page-finish tabs page t))))
@@ -363,6 +363,14 @@ current buffer. Returns the new group."
 
 ;;; Asking about unsaved changes
 
+(defun buffer-needs-saving-p (buffer)
+  "Whether closing BUFFER would lose work: it has unsaved changes, and is a
+file or an untitled buffer, not one of Cadre's own (*repl*, *Help*, …)."
+  (and (buffer-modified-p buffer)
+       (or (buffer-file buffer)
+           (let ((name (buffer-name buffer)))
+             (not (and (plusp (length name)) (char= (char name 0) #\*)))))))
+
 (defun ask-to-save (win buffers continuation)
   "Ask whether to save BUFFERS, which have unsaved changes. Calls
 CONTINUATION with t once they are saved or discarded, or nil if the user cancels."
@@ -390,7 +398,7 @@ CONTINUATION with t once they are saved or discarded, or nil if the user cancels
   "Handle the window's close button: ask about unsaved buffers. Returns t
 to stop GTK closing the window now."
   (save-session win)
-  (let ((modified (remove-if-not #'buffer-modified-p (buffer-list))))
+  (let ((modified (remove-if-not #'buffer-needs-saving-p (buffer-list))))
     (cond ((null modified) nil)
           (t (ask-to-save win modified
                           (lambda (proceed)

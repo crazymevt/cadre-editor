@@ -150,7 +150,7 @@ THEN, if given, is called with the view once the file is showing."
 
 (define-command save-all ()
   "Save every buffer with unsaved changes."
-  (let ((modified (remove-if-not #'buffer-modified-p (buffer-list))))
+  (let ((modified (remove-if-not #'buffer-needs-saving-p (buffer-list))))
     (if modified
         (save-buffers *window* modified (lambda (ok) (declare (ignore ok))))
         (message "No changes to save"))))

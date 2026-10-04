@@ -88,11 +88,14 @@ editor REPL) bind it to that buffer's REPL.")
     (repl-scroll-to-end)))
 
 (defun repl-scroll-to-end ()
-  (let ((view (repl-view)))
+  ;; The buffer is found now: by the time the idle runs, *REPL* may be
+  ;; another REPL (the editor REPL binds it while it works).
+  (let ((view (repl-view))
+        (gtk-buffer (repl-gtk-buffer)))
     (when view
       (glib:idle-add glib:+priority-default-idle+
                      (lambda ()
-                       (let ((gtk-buffer (repl-gtk-buffer)))
+                       (when (eq (gtk:text-view-get-buffer (view-text-view view)) gtk-buffer)
                          (gtk:text-view-scroll-to-iter (view-text-view view)
                                                        (gtk:text-buffer-get-end-iter gtk-buffer)
                                                        0d0 nil 0d0 0d0))

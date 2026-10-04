@@ -1227,7 +1227,18 @@ d" 0 0)
          (gtk:widget-get-has-tooltip (view-text-view (current-view))))
   (insert-at-cursor "; scale")
   (check "completions don't appear inside comments" (not (cadre-ui::auto-complete-p (current-view))))
-  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+  ;; Closing doesn't ask about Cadre's own buffers.
+  (call-command 'cadre-ui::editor-repl)
+  (insert-at-cursor "(+ 1 2)")
+  (check "a REPL with typed input doesn't need saving"
+         (and (buffer-modified-p (find-buffer "*cadre-repl*"))
+              (not (cadre-ui::buffer-needs-saving-p (find-buffer "*cadre-repl*")))
+              (not (cadre-ui::buffer-needs-saving-p (find-buffer "*repl*")))))
+  (let ((asked (remove-if-not (lambda (b) (and (null (buffer-file b)) (cadre-ui::buffer-needs-saving-p b)))
+                              (buffer-list))))
+    (check "so closing the window asks only about files and untitled buffers" (null asked)
+           (mapcar #'buffer-name asked))))
 
 (setf *steps* (reverse *steps*))
 
