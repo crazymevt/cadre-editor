@@ -245,6 +245,10 @@ and, if given, LABEL."
                                      :tooltip-text "Search the project" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
                                                    (show-sidebar-page win "search")))
+                  (gtk:toggle-button :id :outline-button :icon-name "cadre-outline-symbolic"
+                                     :tooltip-text "Outline" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "outline")))
                   (gtk:toggle-button :id :systems-button :icon-name "cadre-system-symbolic"
                                      :tooltip-text "ASDF Systems" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
@@ -297,6 +301,7 @@ and, if given, LABEL."
         (setf (window-sidebar-toggles win) (list (id :sidebar-button))
               (window-activity-buttons win) (list (cons "explorer" (id :explorer-button))
                                                   (cons "search" (id :search-button))
+                                                  (cons "outline" (id :outline-button))
                                                   (cons "systems" (id :systems-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
@@ -306,6 +311,7 @@ and, if given, LABEL."
                                        (window-explorer-holder win)))
                              "explorer")
         (gtk:stack-add-named stack (make-project-search-widget) "search")
+        (gtk:stack-add-named stack (make-outline-widget) "outline")
         (gtk:stack-add-named stack (make-systems-widget) "systems")
         (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
@@ -340,6 +346,7 @@ and, if given, LABEL."
 
 (defun update-status (win)
   "Show the current view's position and mode in the status bar."
+  (refresh-outline)
   (let ((view (selected-view win)))
     (if view
         (multiple-value-bind (line column) (view-cursor-line-column view)

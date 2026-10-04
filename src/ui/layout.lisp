@@ -93,4 +93,5 @@ has a size, try again shortly."
         (progn
           (gtk:stack-set-visible-child-name (window-sidebar-stack win) name)
           (set-sidebar-visible win t)
-          (when (string= name "systems") (refresh-systems))))))
+          (when (string= name "systems") (refresh-systems))
+          (when (string= name "outline") (refresh-outline :force t))))))

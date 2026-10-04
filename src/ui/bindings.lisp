@@ -36,6 +36,7 @@
   "C-k s" 'save-all
   "C-w" 'close-tab
   "C-k S-RET" 'toggle-pin-tab
+  "C-S-o" 'go-to-symbol
   "C-TAB" 'next-tab
   "C-S-TAB" 'previous-tab
   "C-Page_Down" 'next-tab
@@ -129,6 +130,7 @@
   "C-c r" 'rename-symbol
   "M-g n" 'next-note
   "M-g p" 'previous-note
+  "M-g i" 'go-to-symbol
   "M-g g" 'go-to-line
   "M-g M-g" 'go-to-line
   "C-g" 'keyboard-quit)

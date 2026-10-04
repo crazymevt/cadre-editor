@@ -52,6 +52,7 @@
                (:file "refactor")
                (:file "markdown")
                (:file "file-ops")
+               (:file "outline")
                (:file "bindings")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))

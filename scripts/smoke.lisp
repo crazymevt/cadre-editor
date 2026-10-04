@@ -1465,6 +1465,38 @@ d" 0 0)
   (check "and unpinning puts it back among the others"
          (not (adw:tab-page-get-pinned (cadre-ui::view-page *window* (current-view))))))
 
+;;; Outline
+(defun outline-labels ()
+  (mapcar #'first (cadre-ui::ol-items cadre-ui::*outline*)))
+
+(then 100
+  (open-file-path (merge-pathnames "src/m1.lisp" *root*)))
+
+(then 400
+  (text-replace-contents (buffer-text (current-buffer))
+                         (format nil "(defvar *size* 3)~%(defun area (w h)~%  (* w h))~%(defmacro twice (x) `(progn ,x ,x))~%"))
+  (set-cursor 2 2)
+  (call-command 'cadre-ui::show-outline))
+
+(then 300
+  (check "the Outline lists the file's definitions" (equal '("*size*" "area" "twice") (outline-labels)) (outline-labels))
+  (check "with the one at the cursor selected"
+         (let ((row (gtk:list-box-get-selected-row (cadre-ui::ol-list cadre-ui::*outline*))))
+           (and row (= 1 (gtk:list-box-row-get-index row)))))
+  (screenshot "30-outline")
+  (set-cursor 3 0)
+  (insert-at-cursor (format nil "(defun perimeter (w h) (* 2 (+ w h)))~%")))
+
+(then 800
+  (check "and follows edits" (member "perimeter" (outline-labels) :test #'string=) (outline-labels))
+  (gtk:widget-activate (gtk:list-box-get-row-at-index (cadre-ui::ol-list cadre-ui::*outline*) 0))
+  (check "clicking an item goes there" (equal '(0 0) (cursor)) (cursor))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+  (open-file-path (merge-pathnames "guide.md" *root*)))
+
+(then 500
+  (check "for Markdown, the headings" (member "Usage" (outline-labels) :test #'string=) (outline-labels)))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

@@ -228,6 +228,12 @@ the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.
 
+### Outline
+
+The Outline page in the sidebar (the list icon) shows what the current file
+defines, or a Markdown file's headings, with the one around the cursor
+selected; click one to go there. `Ctrl+Shift+O` (`M-g i`) picks one by name.
+
 ### Tabs
 
 Right-click a tab to pin it (`Ctrl+K Shift+Enter`): pinned tabs stay at the
