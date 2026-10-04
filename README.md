@@ -263,6 +263,22 @@ In a Git repository:
   message and Commit (`Ctrl+Enter`); with nothing staged it offers to stage
   everything. A folder that isn't a repository gets an Initialize button.
 
+To stage part of a file: click a change's mark in the gutter and choose
+Stage, or put the cursor in it and `M-x git-stage-change` (`C-x v S`; staged
+from the saved file). A file's diff opened from Source Control is live: `s`
+stages the change at the cursor, `u` unstages it (in the staged diff), `x`
+discards it (asking first), `n`/`p` move between changes and `g` refreshes.
+
+Merge conflicts: `M-x merge-branch` (`C-x v m`) merges another branch in.
+Conflicted files are listed first on the Source Control page, with a banner
+offering Abort and Commit (Continue for a rebase), and the merge message
+ready. In a conflicted file each conflict is colored (yours green, theirs
+blue) with Accept Current / Accept Incoming / Accept Both buttons on its
+first line; the same are in the right-click menu under Git, and in Emacs
+`C-c ^ u` / `C-c ^ l` / `C-c ^ a`, with `C-c ^ n` / `C-c ^ p` to move
+between conflicts. Save, stage the file (`+`) to mark it resolved, and
+Commit.
+
 History opens on the panel's History page, newest first (Show more loads
 older ones); click a commit to see it. Blame annotates each run of lines in
 the gutter with its commit, author and age (your unsaved edits show as not

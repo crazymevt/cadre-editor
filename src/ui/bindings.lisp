@@ -139,6 +139,13 @@
   "C-x v z a" 'apply-stash
   "C-x v z p" 'pop-stash
   "C-x v z d" 'drop-stash
+  "C-x v S" 'git-stage-change
+  "C-x v m" 'merge-branch
+  "C-c ^ n" 'next-conflict
+  "C-c ^ p" 'previous-conflict
+  "C-c ^ u" 'accept-current-change
+  "C-c ^ l" 'accept-incoming-change
+  "C-c ^ a" 'accept-both-changes
   "C-S-Up" 'move-lines-up
   "C-S-Down" 'move-lines-down
   "C-S-d" 'duplicate-lines-down
@@ -296,6 +303,14 @@
   "C-c C-s s" 'markdown-strikethrough
   "C-c C-l" 'markdown-link
   "M-g i" 'markdown-goto-heading)
+
+(bind-keys (major-mode-keymap (find-major-mode 'git-diff-mode))
+  "s" 'diff-stage-hunk
+  "u" 'diff-unstage-hunk
+  "x" 'diff-discard-hunk
+  "n" 'diff-next-hunk
+  "p" 'diff-previous-hunk
+  "g" 'diff-refresh)
 
 (bind-keys (major-mode-keymap (find-major-mode 'repl-mode))
   "RET" 'repl-return

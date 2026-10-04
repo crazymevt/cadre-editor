@@ -332,3 +332,129 @@ file; lines not committed yet have :uncommitted t."
 (defun git-stash-apply (root ref) (git-ok root "stash" "apply" ref))
 (defun git-stash-pop (root ref) (git-ok root "stash" "pop" ref))
 (defun git-stash-drop (root ref) (git-ok root "stash" "drop" ref))
+
+;;; Staging one change at a time
+
+(defun diff-file-header (diff)
+  "The lines of DIFF (a unified diff of one file) before its first hunk."
+  (loop for line in (split-text-lines diff)
+        until (and (> (length line) 2) (string= "@@" line :end2 2))
+        collect line))
+
+(defun diff-hunks (diff)
+  "DIFF's hunks, each (header-line body-lines old-start old-count new-start new-count)."
+  (let ((hunks '()) (current nil))
+    (dolist (line (split-text-lines diff))
+      (cond ((and (> (length line) 2) (string= "@@" line :end2 2))
+             (when current (push current hunks))
+             (setf current (list line '())))
+            ((and current (plusp (length line)) (member (char line 0) '(#\Space #\+ #\- #\\)))
+             (push line (second current)))))
+    (when current (push current hunks))
+    (mapcar (lambda (h) (append (list (first h) (reverse (second h))) (parse-hunk-header (first h))))
+            (nreverse hunks))))
+
+(defun hunk-patch (header hunk)
+  "A patch of one HUNK of a file, with the file's diff HEADER lines."
+  (format nil "~{~a~%~}~a~%~{~a~%~}" header (first hunk) (second hunk)))
+
+(defun git-apply-patch (root patch &key cached reverse zero-context)
+  "Apply PATCH (text) to the index (CACHED) or the working tree."
+  (let ((file (uiop:with-temporary-file (:stream s :pathname p :keep t :type "patch" :external-format :utf-8)
+                (write-string patch s) p)))
+    (unwind-protect
+         (apply #'git-ok root "apply" (append (and cached (list "--cached")) (and reverse (list "--reverse"))
+                                              (and zero-context (list "--unidiff-zero"))
+                                              (list "--whitespace=nowarn" (uiop:native-namestring file))))
+      (ignore-errors (delete-file file)))))
+
+(defun hunk-new-range (hunk)
+  "The lines (from 1) a hunk covers in the new text, as first and last; a
+deletion covers the line before it."
+  (destructuring-bind (old-start old-count new-start new-count) (cddr hunk)
+    (declare (ignore old-start old-count))
+    (if (zerop new-count) (values new-start new-start) (values new-start (+ new-start new-count -1)))))
+
+(defun git-stage-lines (root relative first last)
+  "Stage the saved changes of RELATIVE that touch lines FIRST to LAST (from 1).
+Returns how many changes were staged."
+  (let* ((diff (git root "diff" "--no-color" "--no-ext-diff" "-U0" "--" relative))
+         (header (diff-file-header diff))
+         (hunks (remove-if-not (lambda (h) (multiple-value-bind (a b) (hunk-new-range h) (and (<= a last) (>= b first))))
+                               (diff-hunks diff))))
+    (dolist (h hunks)
+      (git-apply-patch root (hunk-patch header h) :cached t :zero-context t))
+    (length hunks)))
+
+;;; Merge conflicts
+
+(defun find-conflicts (text)
+  "The conflict regions in TEXT, as plists of lines (from 0): :start (the
+<<<<<<< line), :base (a ||||||| line, or nil), :middle (=======), :end (>>>>>>>)."
+  (let ((conflicts '()) (start nil) (base nil) (middle nil))
+    (loop for line in (split-text-lines text)
+          for n from 0
+          do (flet ((marker-p (prefix) (and (>= (length line) 7) (string= prefix line :end2 7)
+                                            (or (= (length line) 7) (char= (char line 7) #\Space)))))
+               (cond ((marker-p "<<<<<<<") (setf start n base nil middle nil))
+                     ((and start (not middle) (marker-p "|||||||")) (setf base n))
+                     ((and start (not middle) (string= line "=======")) (setf middle n))
+                     ((and start middle (marker-p ">>>>>>>"))
+                      (push (list :start start :base base :middle middle :end n) conflicts)
+                      (setf start nil base nil middle nil)))))
+    (nreverse conflicts)))
+
+(defun conflict-resolution (lines conflict choice)
+  "The lines that replace CONFLICT (in LINES, a vector) for CHOICE: :ours,
+:theirs or :both."
+  (destructuring-bind (&key start base middle end) conflict
+    (let ((ours (loop for i from (1+ start) below (or base middle) collect (aref lines i)))
+          (theirs (loop for i from (1+ middle) below end collect (aref lines i))))
+      (ecase choice
+        (:ours ours)
+        (:theirs theirs)
+        (:both (append ours theirs))))))
+
+(defun git-directory (root)
+  (let ((dir (string-trim '(#\Newline) (git-ok root "rev-parse" "--git-dir"))))
+    (uiop:ensure-directory-pathname (merge-pathnames dir root))))
+
+(defun git-operation (root)
+  "What's in progress in ROOT: :merge, :rebase, :cherry-pick, :revert, or nil."
+  (let ((dir (ignore-errors (git-directory root))))
+    (when dir
+      (cond ((or (uiop:directory-exists-p (merge-pathnames "rebase-merge/" dir))
+                 (uiop:directory-exists-p (merge-pathnames "rebase-apply/" dir)))
+             :rebase)
+            ((probe-file (merge-pathnames "MERGE_HEAD" dir)) :merge)
+            ((probe-file (merge-pathnames "CHERRY_PICK_HEAD" dir)) :cherry-pick)
+            ((probe-file (merge-pathnames "REVERT_HEAD" dir)) :revert)))))
+
+(defun git-merge-message (root)
+  "The message git prepared for the merge commit, or nil."
+  (let ((file (merge-pathnames "MERGE_MSG" (git-directory root))))
+    (and (probe-file file)
+         (format nil "~{~a~^~%~}" (remove-if (lambda (l) (and (plusp (length l)) (char= (char l 0) #\#)))
+                                            (split-text-lines (uiop:read-file-string file)))))))
+
+(defun git-merge (root branch)
+  "Merge BRANCH into the current branch. Returns git's output; a merge with
+conflicts signals an editor-error whose message says so."
+  (git-ok root "merge" "--no-edit" branch))
+
+(defun git-abort (root operation)
+  (ecase operation
+    (:merge (git-ok root "merge" "--abort"))
+    (:rebase (git-ok root "rebase" "--abort"))
+    (:cherry-pick (git-ok root "cherry-pick" "--abort"))
+    (:revert (git-ok root "revert" "--abort"))))
+
+(defun git-continue (root operation)
+  "Go on with OPERATION once its conflicts are resolved and staged (without
+opening an editor for messages)."
+  (let ((*git-network-environment* (list "GIT_EDITOR=true")))
+    (ecase operation
+      (:merge (git-network root "commit" "--no-edit"))
+      (:rebase (git-network root "rebase" "--continue"))
+      (:cherry-pick (git-network root "cherry-pick" "--continue"))
+      (:revert (git-network root "revert" "--continue")))))

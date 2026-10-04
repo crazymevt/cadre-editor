@@ -98,6 +98,10 @@
     (".cadre-git-deleted, .cadre-git-conflict" :color "@error_color")
     (".cadre-git-folder" :color "alpha(@warning_color, 0.8)")
     (".cadre-sc-button" :min-height "20px" :min-width "20px" :padding ("0" "4px"))
+    (".cadre-conflict-actions" :background-color "alpha(@view_bg_color, 0.9)" :border-radius "6px")
+    (".cadre-conflict-actions button" :min-height "0" :padding ("0" "6px") :margin "0")
+    (".cadre-operation-banner" :background-color "alpha(@warning_bg_color, 0.25)" :border-radius "8px"
+                               :padding ("4px" "8px"))
     (".cadre-chat-user" :background-color "alpha(@accent_bg_color, 0.15)" :border-radius "8px"
                         :padding ("6px" "10px"))
     (".cadre-chat-code" :background-color "alpha(@view_fg_color, 0.06)" :border-radius "6px"

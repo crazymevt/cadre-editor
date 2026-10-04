@@ -236,6 +236,7 @@ ON-ERROR with the message of an error it signals."
       (gtk:box-append box (make-instance 'gtk:scrolled-window :child label :propagate-natural-height t
                                                               :propagate-natural-width t :max-content-height 300
                                                               :max-content-width 640))
+      (button "Stage" (lambda () (stage-hunk view hunk)))
       (button "Revert" (lambda () (revert-hunk view hunk)) '("destructive-action"))
       (gtk:box-append box buttons))
     (gtk:widget-set-parent popover (view-gutter view))
@@ -296,11 +297,24 @@ ON-ERROR with the message of an error it signals."
          (hunk (or (hunk-at-line gf (cursor-line-column view)) (editor-error "No change at the cursor"))))
     (revert-hunk view hunk)))
 
-(defun show-diff-buffer (title text)
-  "Show the unified diff TEXT in a buffer named TITLE, colored."
-  (let* ((buffer (or (find-buffer title) (make-buffer :name title :text (make-gtk-text))))
-         (gtk-buffer (buffer-text buffer)))
-    (gtk:text-buffer-set-text gtk-buffer (if (string= text "") "No changes." text) -1)
+(defun show-diff-buffer (title text &key root relative kind)
+  "Show the unified diff TEXT in a buffer named TITLE, colored. With ROOT,
+RELATIVE and KIND (:worktree, :staged or :head), it's a file's live diff."
+  (let ((buffer (or (find-buffer title) (make-buffer :name title :text (make-gtk-text) :major-mode 'git-diff-mode))))
+    (setf (buffer-local buffer :diff-root) root
+          (buffer-local buffer :diff-relative) relative
+          (buffer-local buffer :diff-kind) kind)
+    (fill-diff-buffer buffer (if (string= text "") "No changes." text))
+    (let ((view (show-buffer *window* buffer)))
+      (gtk:text-view-set-editable (view-text-view view) nil)
+      (gtk:text-buffer-place-cursor (buffer-text buffer) (gtk:text-buffer-get-start-iter (buffer-text buffer)))
+      (when (member kind '(:worktree :staged))
+        (message "~:[s stages~;u unstages~] the change at the cursor; n and p move between changes" (eq kind :staged)))
+      view)))
+
+(defun fill-diff-buffer (buffer text)
+  (let ((gtk-buffer (buffer-text buffer)))
+    (gtk:text-buffer-set-text gtk-buffer text -1)
     (let ((added (ensure-face-tag gtk-buffer "cadre-diff-added" :diff-added))
           (removed (ensure-face-tag gtk-buffer "cadre-diff-removed" :diff-removed))
           (header (ensure-face-tag gtk-buffer "cadre-diff-header" :md-markup)))
@@ -316,23 +330,23 @@ ON-ERROR with the message of an error it signals."
                             ((and (plusp (length line)) (char= (char line 0) #\-)) removed))
             when tag
               do (gtk:text-buffer-apply-tag gtk-buffer tag (line-iter gtk-buffer n) (line-end-iter gtk-buffer n))))
-    (setf (buffer-modified-p buffer) nil)
-    (let ((view (show-buffer *window* buffer)))
-      (gtk:text-view-set-editable (view-text-view view) nil)
-      (gtk:text-buffer-place-cursor gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer))
-      view)))
+    (setf (buffer-modified-p buffer) nil)))
 
-(defun open-git-diff (root relative &key staged)
-  (git-async (lambda () (if staged (git-diff-text root relative :staged t) (git-diff-text root relative :head t)))
+(defun open-git-diff (root relative &key (kind :head))
+  "Show RELATIVE's changes: KIND :worktree (not staged yet), :staged, or
+:head (all of them, against the last commit)."
+  (git-async (lambda () (git-diff-text root relative :staged (eq kind :staged) :head (eq kind :head)))
              (lambda (text)
-               (show-diff-buffer (format nil "*Diff ~a~:[~; (staged)~]*" (file-namestring relative) staged) text))))
+               (show-diff-buffer (format nil "*Diff ~a~a*" (file-namestring relative)
+                                         (ecase kind (:worktree " (unstaged)") (:staged " (staged)") (:head "")))
+                                 text :root root :relative relative :kind kind))))
 
 (define-command git-diff-file ()
   "Show this file's changes since the last commit (as saved)."
   (let* ((view (current-view))
          (gf (current-git-file view)))
     (when (buffer-modified-p (view-buffer view)) (message "Showing the saved file; it has unsaved changes"))
-    (open-git-diff (gf-root gf) (gf-relative gf))))
+    (open-git-diff (gf-root gf) (gf-relative gf) :kind :head)))
 
 (define-command git-stage-file ()
   "Stage this file's saved changes."
@@ -351,6 +365,8 @@ ON-ERROR with the message of an error it signals."
 (defvar *git-ahead* nil "Commits the branch is ahead of its upstream, or nil without one.")
 (defvar *git-behind* nil)
 (defvar *git-stash-list* '() "The project's stashes, from git-stashes.")
+(defvar *git-operation* nil "A merge, rebase … under way (:merge, :rebase …), or nil.")
+(defvar *git-merge-message* nil)
 (defvar *git-busy* nil "What git is doing with a remote, while it does (\"Pushing\" …), or nil.")
 
 (define-option *git-pull-mode* :ff-only (member :ff-only :merge :rebase)
@@ -375,11 +391,14 @@ real path: /var and /private/var are one place on macOS.)"
     (git-async (lambda ()
                  (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)
                        (multiple-value-list (ignore-errors (git-ahead-behind root)))
-                       (ignore-errors (git-stashes root))))
+                       (ignore-errors (git-stashes root))
+                       (let ((op (ignore-errors (git-operation root))))
+                         (list op (and (eq op :merge) (ignore-errors (git-merge-message root)))))))
                ;; (Without an upstream there's no ahead or behind: (nil).)
                (lambda (result)
-                 (destructuring-bind (entries branch head (&optional ahead behind) stashes) result
-                   (setf *git-ahead* ahead *git-behind* behind *git-stash-list* stashes)
+                 (destructuring-bind (entries branch head (&optional ahead behind) stashes (operation merge-message)) result
+                   (setf *git-ahead* ahead *git-behind* behind *git-stash-list* stashes
+                         *git-operation* operation *git-merge-message* merge-message)
                    (let ((moved (and *git-head* head (string/= head *git-head*))))
                      (setf *git-entries* entries *git-branch* branch *git-head* head)
                      (clrhash *git-status*)
@@ -445,7 +464,7 @@ real path: /var and /private/var are one place on macOS.)"
 ;;; The Source Control page
 
 (defstruct (source-control (:conc-name sc-))
-  widget branch message staged changes not-repo body sync stashes)
+  widget branch message staged changes not-repo body sync stashes conflicts banner)
 
 (defvar *source-control* nil)
 (defvar *sc-openers* (make-hash-table :test 'eq) "Source Control row → what clicking it opens.")
@@ -478,14 +497,10 @@ real path: /var and /private/var are one place on macOS.)"
               (button "↶" "Discard changes" (lambda () (confirm-discard root entry)))
               (button "+" "Stage" (lambda () (git-run root (lambda () (git-stage root (list path)))))))))
       (values row (lambda ()
-                    (if (char= worktree #\D)
-                        (open-git-diff root path :staged staged)
-                        (if staged
-                            (open-git-diff root path :staged t)
-                            (let ((file (merge-pathnames path root)))
-                              (if (char= index #\?)
-                                  (open-file-path file)
-                                  (open-git-diff root path))))))))))
+                    (let ((file (merge-pathnames path root)))
+                      (cond (staged (open-git-diff root path :kind :staged))
+                            ((or (char= index #\?) (eq kind :conflict)) (open-file-path file))
+                            (t (open-git-diff root path :kind :worktree)))))))))
 
 (defun git-run (root thunk &optional done)
   "Run THUNK (which runs git) on a thread, then refresh everything."
@@ -524,6 +539,8 @@ real path: /var and /private/var are one place on macOS.)"
          (staged (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
          (changes (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
          (stashes (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
+         (conflicts (make-instance 'gtk:list-box :selection-mode :none :css-classes '("navigation-sidebar")))
+         (banner (make-instance 'adw:bin))
          (not-repo (gtk:build
                      (gtk:box :orientation :vertical :spacing 8 :margin-start 12 :margin-end 12 :margin-top 12
                        (gtk:label :label "This folder isn't a Git repository." :xalign 0.0 :wrap t)
@@ -538,6 +555,7 @@ real path: /var and /private/var are one place on macOS.)"
                                                                   (dolist (b (buffer-list)) (git-attach b)))))))))))
          (body (gtk:build
                  (gtk:box :orientation :vertical :spacing 4
+                   banner
                    (gtk:box :margin-start 8 :margin-end 8 :margin-top 4 :orientation :vertical :spacing 4
                      (gtk:label :label "Message (Ctrl+Enter commits)" :xalign 0.0
                                 :css-classes '("dim-label" "caption"))
@@ -547,7 +565,7 @@ real path: /var and /private/var are one place on macOS.)"
                        (gtk:button :label "Stash" :tooltip-text "Put your uncommitted changes aside"
                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'stash-changes)))))
                    (gtk:scrolled-window :vexpand t :hscrollbar-policy :never
-                                        :child (gtk:build (gtk:box :orientation :vertical staged changes stashes))))))
+                                        :child (gtk:build (gtk:box :orientation :vertical conflicts staged changes stashes))))))
          (widget (gtk:build
                    (gtk:box :orientation :vertical
                      (gtk:box :margin-top 8 :margin-end 6
@@ -571,10 +589,11 @@ real path: /var and /private/var are one place on macOS.)"
                      not-repo
                      body))))
     (setf *source-control* (make-source-control :widget widget :branch branch :sync sync :stashes stashes
+                                                :conflicts conflicts :banner banner
                                                 :message message-view
                                                 :staged staged :changes changes :not-repo not-repo :body body))
     (gobject:connect commit :clicked (lambda (b) (declare (ignore b)) (commit-from-page)))
-    (dolist (list (list staged changes))
+    (dolist (list (list staged changes conflicts))
       (gtk:list-box-set-activate-on-single-click list t)
       (gobject:connect list :row-activated (lambda (lb row) (declare (ignore lb))
                                              (let ((open (gethash row *sc-openers*))) (when open (funcall open))))))
@@ -625,10 +644,20 @@ real path: /var and /private/var are one place on macOS.)"
                                              ((null *git-ahead*) "no upstream")
                                              (t "up to date")))
       (when root
-        (let ((staged (remove-if (lambda (e) (member (first e) '(#\Space #\?))) *git-entries*))
-              (changes (remove-if (lambda (e) (char= (second e) #\Space)) *git-entries*)))
+        (let* ((conflicted (remove-if-not (lambda (e) (eq :conflict (git-status-kind (first e) (second e)))) *git-entries*))
+               (others (remove-if (lambda (e) (member e conflicted)) *git-entries*))
+               (staged (remove-if (lambda (e) (member (first e) '(#\Space #\?))) others))
+               (changes (remove-if (lambda (e) (char= (second e) #\Space)) others)))
+          (adw:bin-set-child (sc-banner sc) (and *git-operation* (operation-banner root *git-operation*)))
+          (if conflicted
+              (fill-change-list (sc-conflicts sc) root "Merge Conflicts" conflicted nil)
+              (gtk:list-box-remove-all (sc-conflicts sc)))
           (fill-change-list (sc-staged sc) root "Staged Changes" staged t :stage-all t)
           (fill-change-list (sc-changes sc) root "Changes" changes nil :stage-all t)
+          ;; While merging, the message git prepared is the commit's.
+          (let ((input (gtk:text-view-get-buffer (sc-message sc))))
+            (when (and *git-merge-message* (string= "" (text-string input)))
+              (text-replace-contents input *git-merge-message*)))
           (fill-stash-list (sc-stashes sc) root))))))
 
 (defun commit-from-page ()

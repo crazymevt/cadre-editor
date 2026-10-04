@@ -1849,6 +1849,112 @@ d" 0 0)
   (check "Pop brings it back" (search ";; mine" (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
          (list (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)) (gtk:label-get-text (cadre-ui::window-status-message *window*)))))
 
+;;; Staging single changes, and merge conflicts
+(defun staged-diff () (git *root* "diff" "--cached" "--no-color" "-U0"))
+(defun m1-disk () (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
+(defun set-m1 (text)
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp")) text)
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) t)
+  (call-command 'cadre-ui::save-buffer))
+
+(then 100
+  (show-buffer-named "m1.lisp")
+  (set-m1 (format nil "(defun area (w h)~%  (* w h))~%;; a~%~%~%~%~%~%~%~%~%~%;; b~%")))
+
+(then-when ((search ";; b" (m1-disk)) :timeout 10)
+  (git-ok *root* "add" "-A")
+  (git-ok *root* "commit" "-q" "-m" "Before staging")
+  (set-m1 (format nil "(defun area (w h)~%  (* w h))~%;; one~%~%~%~%~%~%~%~%~%~%;; two~%")))
+
+(then-when ((search ";; two" (m1-disk)) :timeout 10)
+  (cadre-ui::stage-hunk-lines (current-view) 3 3))
+
+(then-when ((search "+;; one" (staged-diff)) :timeout 10)
+  (check "staging one change stages only it"
+         (and (search "+;; one" (staged-diff)) (not (search "+;; two" (staged-diff)))) (staged-diff))
+  (cadre-ui::open-git-diff (cadre-ui::project-git-root) "src/m1.lisp" :kind :worktree))
+
+(then-when ((find-buffer "*Diff m1.lisp (unstaged)*") :timeout 10)
+  (let ((buffer (find-buffer "*Diff m1.lisp (unstaged)*")))
+    (check "a file's unstaged changes open as a live diff" (eq 'cadre-ui::git-diff-mode (buffer-major-mode buffer)))
+    (show-buffer-named "*Diff m1.lisp (unstaged)*")
+    (set-cursor (position-if (lambda (l) (search "@@" l)) (split-text-lines (buffer-string buffer))) 0)
+    (call-command 'cadre-ui::diff-stage-hunk)))
+
+(then-when ((search "+;; two" (staged-diff)) :timeout 10)
+  (check "s in a diff stages the change at the cursor" (search "+;; two" (staged-diff)))
+  (call-command 'close-tab)
+  (cadre-ui::open-git-diff (cadre-ui::project-git-root) "src/m1.lisp" :kind :staged))
+
+(then-when ((find-buffer "*Diff m1.lisp (staged)*") :timeout 10)
+  (show-buffer-named "*Diff m1.lisp (staged)*")
+  (let ((lines (split-text-lines (buffer-string (current-buffer)))))
+    (set-cursor (position-if (lambda (l) (search "+;; two" l)) lines) 0))
+  (call-command 'cadre-ui::diff-unstage-hunk))
+
+(then-when ((not (search "+;; two" (staged-diff))) :timeout 10)
+  (check "and u in a staged diff unstages it" (and (search "+;; one" (staged-diff)) (not (search "+;; two" (staged-diff)))))
+  (call-command 'close-tab)
+  ;; A conflict: the same line changed on two branches.
+  (git-ok *root* "add" "-A")
+  (git-ok *root* "commit" "-q" "-m" "Two comments")
+  (git-ok *root* "checkout" "-q" "-b" "side")
+  (with-open-file (o (merge-pathnames "src/m1.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(defun area (w h)~%  (* w h 2))~%"))
+  (git-ok *root* "commit" "-q" "-am" "Double it")
+  (git-ok *root* "checkout" "-q" "-")
+  (with-open-file (o (merge-pathnames "src/m1.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(defun area (w h)~%  (* w h 3))~%"))
+  (git-ok *root* "commit" "-q" "-am" "Triple it")
+  (cadre-ui::merge-into-current (cadre-ui::project-git-root) "side"))
+
+(then-when ((and (eq :merge cadre-ui::*git-operation*) (search "<<<<<<<" (buffer-string (find-buffer "m1.lisp")))) :timeout 15)
+  (check "a merge with a conflict shows the merge banner"
+         (gtk:widget-get-visible (adw:bin-get-child (cadre-ui::sc-banner cadre-ui::*source-control*))))
+  (check "and the conflicted file under Merge Conflicts"
+         (find :conflict cadre-ui::*git-entries* :key (lambda (e) (git-status-kind (first e) (second e)))))
+  (check "with the merge's message ready"
+         (search "Merge branch" (cadre:text-string (gtk:text-view-get-buffer (cadre-ui::sc-message cadre-ui::*source-control*))))))
+
+(then-when ((cadre-ui::buffer-local (find-buffer "m1.lisp") :conflicts) :timeout 10)
+  (show-buffer-named "m1.lisp")
+  (check "the conflict is found in the file" (= 1 (length (cadre-ui::buffer-local (find-buffer "m1.lisp") :conflicts))))
+  (check "with buttons to resolve it" (= 1 (length (gethash (current-view) cadre-ui::*conflict-buttons*))))
+  (check "and its sides colored" (and (has-face-p* 2 :conflict-ours) (has-face-p* 4 :conflict-theirs)))
+  (show-buffer-named "m1.lisp"))
+
+(then 500
+  (screenshot "34-conflict")
+  (set-cursor 2 0)
+  (call-command 'cadre-ui::accept-incoming-change))
+
+(defun has-face-p* (line face)
+  (let ((gtk-buffer (buffer-text (current-buffer))))
+    (gtk:text-iter-has-tag (cadre-ui::line-iter gtk-buffer line 0)
+                           (gtk:text-tag-table-lookup (gtk:text-buffer-get-tag-table gtk-buffer)
+                                                      (format nil "cadre-~(~a~)" face)))))
+
+(then 400
+  (check "Accept Incoming keeps their side"
+         (and (search "(* w h 2)" (m1-text)) (not (search "<<<<<<<" (m1-text))) (not (search "(* w h 3)" (m1-text))))
+         (m1-text))
+  (check "and the buttons go" (null (gethash (current-view) cadre-ui::*conflict-buttons*)))
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((search "(* w h 2)" (m1-disk)) :timeout 10)
+  (call-command 'cadre-ui::git-stage-file))
+
+(then-when ((null (find :conflict cadre-ui::*git-entries* :key (lambda (e) (git-status-kind (first e) (second e))))) :timeout 10)
+  (git-run-continue))
+
+(defun git-run-continue ()
+  (let ((root (cadre-ui::project-git-root)))
+    (cadre-ui::git-run root (lambda () (git-continue root :merge)))))
+
+(then-when ((null cadre-ui::*git-operation*) :timeout 15)
+  (check "after staging, Commit finishes the merge" (search "Merge branch" (git-ok *root* "log" "-1" "--format=%s")))
+  (check "and the banner goes" (null (adw:bin-get-child (cadre-ui::sc-banner cadre-ui::*source-control*)))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
