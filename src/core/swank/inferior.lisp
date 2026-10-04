@@ -37,15 +37,17 @@ compiles Swank, which takes a while."
   (with-output-to-string (s) (write-sexp string s)))
 
 (defun bootstrap-form (port-file)
-  "Lisp source that starts Swank and writes its port to PORT-FILE."
+  "Lisp source that starts Swank and writes its port to PORT-FILE. ASDF is
+loaded first, on the main thread: requests arrive on several threads at once,
+and two of them loading ASDF together leave it half loaded."
   (ecase *swank-source*
     (:bundled
-     (format nil "(progn (load ~a) (setf (symbol-value (find-symbol \"*FASL-DIRECTORY*\" \"SWANK-LOADER\")) ~a) (funcall (find-symbol \"INIT\" \"SWANK-LOADER\")) (funcall (find-symbol \"START-SERVER\" \"SWANK\") ~a :dont-close t))"
+     (format nil "(progn (ignore-errors (require \"ASDF\")) (load ~a) (setf (symbol-value (find-symbol \"*FASL-DIRECTORY*\" \"SWANK-LOADER\")) ~a) (funcall (find-symbol \"INIT\" \"SWANK-LOADER\")) (funcall (find-symbol \"START-SERVER\" \"SWANK\") ~a :dont-close t))"
              (lisp-string (namestring (merge-pathnames "swank-loader.lisp" (swank-directory))))
              (lisp-string (namestring (merge-pathnames "swank-fasl/" (cache-directory))))
              (lisp-string (namestring port-file))))
     (:quicklisp
-     (format nil "(progn (funcall (find-symbol \"QUICKLOAD\" \"QL\") :swank) (funcall (find-symbol \"START-SERVER\" \"SWANK\") ~a :dont-close t))"
+     (format nil "(progn (ignore-errors (require \"ASDF\")) (funcall (find-symbol \"QUICKLOAD\" \"QL\") :swank) (funcall (find-symbol \"START-SERVER\" \"SWANK\") ~a :dont-close t))"
              (lisp-string (namestring port-file))))))
 
 (defstruct (inferior-lisp (:conc-name inferior-))

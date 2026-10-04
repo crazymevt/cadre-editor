@@ -178,6 +178,8 @@
       (item lisp "Load Project" 'load-project)
       (item lisp "Load System…" 'load-system)
       (item lisp "Build Project" 'build-project)
+      (item lisp "Run Tests" 'run-tests)
+      (item lisp "Run Tests in a New Lisp" 'run-tests-in-new-lisp)
       (item lisp "Inspect…" 'inspect-value)
       (item lisp "Find References" 'find-references)
       (item lisp "Macroexpand" 'expand-macro-once)

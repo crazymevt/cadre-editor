@@ -99,6 +99,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
 | Load the folder's ASDF system into the Lisp | `F6` | `C-c L` |
 | Build the project's program | `Ctrl+Shift+B` | `C-x p c` |
+| Run the project's tests in the REPL / in a new Lisp | `Ctrl+; A` / `Ctrl+; N` | `C-x p t` / `C-x p T` |
 | Inspect a value | `Ctrl+K I` | `C-c I` |
 | Find references (all kinds) | `Shift+F12` | `M-?` |
 | Who calls / references / binds / sets | (palette) | `C-c C-w c` / `r` / `b` / `s` |
@@ -369,6 +370,22 @@ the open project's program:
 - **When it ends:** the status bar names the program, its size and how long
   the build took.
 - `M-x stop-build` stops a build.
+
+**Run Tests** (`Ctrl+; A`, Emacs `C-x p t`) runs `(asdf:test-system …)` in the
+connected Lisp's REPL, after saving the project's files:
+- **What it loads first:** with Quicklisp, it loads the system and its
+  `name/…` test systems, so missing dependencies are fetched.
+- **Results:** they print in the REPL, and an error in a test opens the
+  debugger.
+- **Which system:** the project's only main system, or the one you choose,
+  with the last one you tested listed first.
+
+**Run Tests in a New Lisp** (`Ctrl+; N`, `C-x p T`) runs `make test`, or
+`asdf:test-system` in a fresh Lisp:
+- **Why use it:** nothing left over in your session can make the tests pass.
+- **Results:** output goes to the Output page, and the status bar says whether
+  the tests passed. A new project's `make test` exits 1 when a test fails;
+  plain `asdf:test-system` doesn't say whether tests failed.
 
 ### Folding
 

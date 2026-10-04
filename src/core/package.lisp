@@ -109,7 +109,7 @@
    #:lisp-fold-ranges #:markdown-fold-ranges #:fold-range-at
    ;; new projects
    #:valid-project-name-p #:fill-template #:project-files-for #:create-lisp-project #:*license-templates*
-   #:makefile-has-target-p #:asd-build-pathname #:project-build-plan
+   #:makefile-has-target-p #:asd-build-pathname #:project-build-plan #:project-test-plan
    #:trace-call #:make-trace-call #:trace-call-id #:trace-call-parent #:trace-call-name #:trace-call-args
    #:trace-call-results #:trace-call-state #:trace-call-children #:trace-spec-name #:parse-trace-call
    #:trace-tree #:make-trace-tree #:trace-tree-calls #:trace-tree-roots #:trace-tree-key

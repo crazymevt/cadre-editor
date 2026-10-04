@@ -2211,8 +2211,48 @@ d" 0 0)
                                                       (uiop:run-program (list (uiop:native-namestring program) "Cadre")
                                                                         :output :string :ignore-error-status t))))))
   (check "the build's output is on the Output page"
-         (search "Building " (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))))
+         (search "Build in " (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))))
   (screenshot "40-build"))
+
+;;; Run Tests
+
+(defun app-file (path) (merge-pathnames (concatenate 'string "smoke-app/" path) *new-parent*))
+
+(then 300
+  ;; As a usual init file would: Quicklisp, which knows where Parachute is.
+  (with-connection (connection)
+    (cadre-ui::rex connection (swank-call "swank:interactive-eval"
+                                          "(load (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname)))" 3 120)
+                   :on-ok (lambda (v) (declare (ignore v)) (setf (cadre-ui::buffer-local (current-buffer) :ql-loaded) t)))))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :ql-loaded) :timeout 60)
+  (call-command 'cadre-ui::run-tests))
+
+(then-when ((search "Passed:" (repl-text)) :timeout 120)
+  (check "Run Tests runs the project's tests in the REPL" (search "Testing system smoke-app" (repl-text)))
+  (check "and their results show there" (search "Passed:" (repl-text))
+         (let ((level (first cadre-ui::*debug-levels*)))
+           (and level (cadre-ui::dl-condition level))))
+  (check "with no errors along the way"
+         (not (search "Error:" (subseq (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))
+                                       (or (search "Created smoke-app" (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))) 0))))
+         (cadre-ui::panel-output-string (cadre-ui::window-panel *window*)))
+  (call-command 'cadre-ui::run-tests-in-new-lisp))
+
+(then-when ((null cadre-ui::*build*) :timeout 120)
+  (check "Run Tests in a New Lisp passes" (search "Tests passed" (status-text)) (status-text)))
+
+(then 1100                              ; file times are to the second: let ASDF see the change
+  ;; Break a test.
+  (let ((tests (app-file "tests/main.lisp")))
+    (with-open-file (o tests :direction :output :if-exists :supersede)
+      (write-string (cl-ppcre:regex-replace "Hello, Lisp!" (uiop:read-file-string tests) "Hello, Nobody!") o)))
+  (call-command 'cadre-ui::run-tests-in-new-lisp))
+
+(then-when ((null cadre-ui::*build*) :timeout 120)
+  (check "a failing test fails the run" (search "Test run failed" (status-text)) (status-text))
+  (check "and shows the Output page" (equal "output" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (screenshot "41-tests"))
 
 (setf *steps* (reverse *steps*))
 
@@ -2226,6 +2266,6 @@ d" 0 0)
   (sb-posix:setenv "XDG_STATE_HOME" (namestring (merge-pathnames "state/" config)) 1))
 
 (glib:timeout-add glib:+priority-default+ 100 (lambda () (run-steps *steps*) nil))
-(cadre-ui:main :project *root* :init-file nil :quit-after 480)
+(cadre-ui:main :project *root* :init-file nil :quit-after 900)
 (format t "~&Timed out.~%")
 (uiop:quit 1)

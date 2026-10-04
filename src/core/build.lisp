@@ -45,3 +45,18 @@ nothing to build."
                                     "--eval" (format nil "(asdf:make ~s)" system))
                    :description (format nil "(asdf:make ~s) in a new ~a" system lisp)
                    :output output))))))
+
+(defun project-test-plan (root system &key (lisp (first *lisp-command*)))
+  "How to run SYSTEM's tests in a new process in ROOT: `make test` if the
+Makefile has a test target, else asdf:test-system in a new Lisp. A plist like
+PROJECT-BUILD-PLAN's."
+  (let ((root (uiop:ensure-directory-pathname root)))
+    (if (makefile-has-target-p (merge-pathnames "Makefile" root) "test")
+        (list :program "make" :arguments '("test") :description "make test")
+        (list :program lisp
+              :arguments (list "--non-interactive"
+                               "--eval" "(require :asdf)"
+                               "--eval" (format nil "(push ~s asdf:*central-registry*)" (uiop:native-namestring root))
+                               "--eval" (format nil "(when (find-package :ql) (uiop:symbol-call :ql :quickload ~s))" system)
+                               "--eval" (format nil "(asdf:test-system ~s)" system))
+              :description (format nil "(asdf:test-system ~s) in a new ~a" system lisp)))))

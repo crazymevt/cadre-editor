@@ -624,6 +624,7 @@ Over lines.\"
              (is equal '("build") (getf plan :arguments))
              (true (search "bin/app" (getf plan :output))))
            (is eq nil (c:project-build-plan lib))
+           (is equal '("test") (getf (c:project-test-plan lib "lib") :arguments))
            (false (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "build"))
            (true (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "test"))
            ;; Without the Makefile, ASDF's make in a new Lisp.
@@ -631,5 +632,6 @@ Over lines.\"
            (let ((plan (c:project-build-plan app :lisp "sbcl")))
              (is string= "sbcl" (getf plan :program))
              (true (find "(asdf:make \"app\")" (getf plan :arguments) :test #'string=))
+             (true (find "(asdf:test-system \"app\")" (getf (c:project-test-plan app "app" :lisp "sbcl") :arguments) :test #'string=))
              (is string= "bin/app" (c:asd-build-pathname (merge-pathnames "app.asd" app)))))
       (uiop:delete-directory-tree parent :validate t :if-does-not-exist :ignore))))
