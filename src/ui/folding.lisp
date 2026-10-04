@@ -52,6 +52,7 @@
 (defun compute-fold-ranges (buffer)
   (let ((syntax (buffer-syntax buffer)))
     (cond (syntax (lisp-fold-ranges syntax))
+          ((buffer-ts-document buffer) (ts-fold-ranges (fresh-ts-document buffer)))
           ((eq (buffer-major-mode buffer) 'markdown-mode) (markdown-fold-ranges (buffer-string buffer)))
           (t '()))))
 
@@ -245,7 +246,7 @@ something changed."
             t)))))
 
 (defun foldable-buffer-p (buffer)
-  (or (buffer-syntax buffer) (eq (buffer-major-mode buffer) 'markdown-mode)))
+  (or (buffer-syntax buffer) (eq (buffer-major-mode buffer) 'markdown-mode) (buffer-ts-document buffer)))
 
 (defun cursor-line (view)
   (gtk:text-iter-get-line (cursor-iter (view-gtk-buffer view))))

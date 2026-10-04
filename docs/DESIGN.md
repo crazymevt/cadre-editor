@@ -87,7 +87,7 @@ Priority: **P0** = must have for the first usable release, **P1** = 1.0,
 | Extensibility | Editor REPL: a REPL in the editor's own image | P0 |
 | Extensibility | Themes: GTK CSS plus syntax colours; dark and light | P1 |
 | Extensibility | Packages: load extensions through Quicklisp/ASDF | P2 |
-| Other files | JSON mode: highlighting, validation, formatting, folding (7.5) | P2 |
+| Other files | JSON mode: highlighting, validation, formatting, folding (7.5) | P2 (highlighting, folding and outline done, through tree-sitter) |
 | Other files | Markdown mode with a live, rendered preview beside the source (7.5) | P2 |
 
 ## 4. Architecture
@@ -906,6 +906,27 @@ to invoke the debugger inside an ABORT restart that returns from the
 callback, call the entry point, then print a marker that the output watcher
 sees when it returns. While it runs, REPL and editor evaluations go through
 `gtk-thread-source`, which wraps them in `glib:in-main-thread` with `:wait`.
+
+Other languages through tree-sitter (core `tree-sitter/`, UI
+`tree-sitter.lisp`): JavaScript, TypeScript, TSX and JSON so far.
+- **The library and grammars:** libtree-sitter comes from the system
+  (Homebrew). Install Language Grammar clones each grammar's repository at a
+  pinned tag and compiles `parser.c` and `scanner.c` into a shared library.
+  It also concatenates the grammar's highlight queries; TypeScript uses
+  JavaScript's queries plus its own.
+- **The shim:** tree-sitter's API passes nodes and points by value, so
+  `shim.c` (compiled once) exposes parsing, queries as flat integer arrays,
+  and multi-line nodes for folding.
+- **Highlighting:** query captures are mapped to faces (with three new ones:
+  function, type, property). Predicates are checked in Lisp. Inner nodes win
+  over outer ones; on the same node, the last pattern wins for
+  JavaScript's queries and the first for JSON's (`:precedence`).
+- **Positions:** tree-sitter counts UTF-8 bytes. A document keeps
+  byte↔char maps when its text isn't ASCII.
+- **Parsing:** after an edit, the text is parsed again in full on a thread:
+  70 ms for 730 KB of JavaScript, 15 ms for 10,000 lines. A generation
+  counter drops stale results. Only the lines on screen are colored, a run
+  at a time.
 
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 

@@ -2298,6 +2298,90 @@ d" 0 0)
   (check "Stop GTK App quits it, and Cadre notices" (not (cadre-ui::gtk-app-running-p)))
   (check "evaluation is back in the REPL's thread" (string= "(foo)" (cadre-ui::gtk-thread-source "(foo)"))))
 
+;;; Other languages, through tree-sitter (needs the grammars installed)
+
+(defvar *langs* (merge-pathnames "langs/" *new-parent*))
+(defun write-lang-file (name text)
+  (let ((path (merge-pathnames name *langs*)))
+    (ensure-directories-exist path)
+    (with-open-file (o path :direction :output :if-exists :supersede) (write-string text o))
+    path))
+
+(defvar *grammars* (every #'tree-sitter-language-installed-p '("javascript" "typescript" "json")))
+
+(then 300
+  (unless *grammars* (format t "~&(tree-sitter grammars not installed: skipping their checks)~%"))
+  (write-lang-file "app.js" (format nil "// greet~%const MAX = 10;~%function greet(name) {~%  return `hi ${name}`;~%}~%"))
+  (write-lang-file "types.ts" (format nil "interface Shape {~%  area(): number;~%}~%"))
+  (write-lang-file "data.json" (format nil "{~%  \"name\": \"cadre\",~%  \"ok\": true~%}~%"))
+  (open-file-path (merge-pathnames "app.js" *langs*)))
+
+(then-when ((and (find-buffer "app.js") (eq (current-buffer) (find-buffer "app.js"))))
+  (check "a .js file opens in JavaScript mode" (eq 'javascript-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (when *grammars*
+    (check "tree-sitter colors comments" (has-face-p 0 3 :comment))
+    (check "keywords" (has-face-p 2 1 :keyword))
+    (check "function names" (has-face-p 2 10 :code-function))
+    (check "constants" (has-face-p 1 7 :constant))
+    (check "and strings" (has-face-p 3 10 :string))
+    (screenshot "43-javascript")
+    (let ((gtk-buffer (buffer-text (current-buffer))))
+      (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) (format nil "let y = 1;~%") -1))))
+
+(then 500
+  (when *grammars*
+    (check "an edit is colored after it's parsed again" (has-face-p 5 1 :keyword))
+    (check "the outline lists the function" (equal '(("greet" :function 2 0)) (cadre-ui::outline-items (current-buffer)))
+           (cadre-ui::outline-items (current-buffer)))
+    (set-cursor 3 4)
+    (call-command 'cadre-ui::toggle-fold)))
+
+(then 300
+  (when *grammars*
+    (check "the syntax tree folds the function" (equal '(2) (fold-lines-now)) (fold-lines-now))
+    (call-command 'cadre-ui::unfold-all)
+    (set-cursor 1 0)
+    (call-command 'cadre-ui::toggle-comment)))
+
+(then 300
+  (check "Toggle Comment uses //" (string= "// const MAX = 10;" (line-text 1)) (line-text 1))
+  (call-command 'cadre-ui::toggle-comment))
+
+(then 300
+  (check "and takes it away again" (string= "const MAX = 10;" (line-text 1)) (line-text 1))
+  (let ((gtk-buffer (buffer-text (current-buffer))))
+    (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) "if (y) {}" -1)
+    (set-cursor 6 8)
+    (call-command 'cadre-ui::code-newline)))
+
+(then 300
+  (check "Return between braces indents and puts the closing one on its own line"
+         (and (string= "if (y) {" (line-text 6)) (string= "  " (line-text 7)) (string= "}" (line-text 8))
+              (equal '(7 2) (cursor)))
+         (list (line-text 6) (line-text 7) (line-text 8) (cursor)))
+  (open-file-path (merge-pathnames "data.json" *langs*)))
+
+(then-when ((and (find-buffer "data.json") (eq (current-buffer) (find-buffer "data.json"))))
+  (check "a .json file opens in JSON mode" (eq 'json-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (when *grammars*
+    (check "JSON keys are colored as keys" (has-face-p 1 4 :code-property))
+    (check "and values as values" (has-face-p 1 12 :string)))
+  (open-file-path (merge-pathnames "types.ts" *langs*)))
+
+(then-when ((and (find-buffer "types.ts") (eq (current-buffer) (find-buffer "types.ts"))))
+  (check "a .ts file opens in TypeScript mode" (eq 'typescript-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (when *grammars*
+    (check "TypeScript types are colored" (has-face-p 0 12 :code-type))
+    (check "and its outline lists the interface"
+           (equal '(("Shape" :interface 0 0)) (cadre-ui::outline-items (current-buffer)))
+           (cadre-ui::outline-items (current-buffer)))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.

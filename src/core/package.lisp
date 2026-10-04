@@ -110,6 +110,14 @@
    ;; new projects
    #:valid-project-name-p #:fill-template #:project-files-for #:create-lisp-project #:*license-templates*
    #:makefile-has-target-p #:asd-build-pathname #:project-build-plan #:project-test-plan
+   ;; tree-sitter
+   #:*tree-sitter-directory* #:*tree-sitter-prefix* #:*c-compiler* #:tree-sitter-directory #:tree-sitter-prefix
+   #:*tree-sitter-languages* #:tree-sitter-language-spec #:tree-sitter-language-for-file
+   #:tree-sitter-language-installed-p #:install-tree-sitter-language #:load-tree-sitter
+   #:load-ts-language #:ts-language #:ts-language-name #:ts-language-comment #:ts-language-problems
+   #:make-ts-document #:ts-document #:ts-document-language #:ts-parse #:ts-parse-state #:ts-install-state #:ts-has-error-p #:ts-highlight-spans #:ts-fold-ranges #:ts-outline
+   #:*code-faces* #:capture-face #:predicate-holds-p #:compile-query
+   #:javascript-mode #:typescript-mode #:tsx-mode #:json-mode #:*tree-sitter-modes* #:tree-sitter-language-for-mode
    #:trace-call #:make-trace-call #:trace-call-id #:trace-call-parent #:trace-call-name #:trace-call-args
    #:trace-call-results #:trace-call-state #:trace-call-children #:trace-spec-name #:parse-trace-call
    #:trace-tree #:make-trace-tree #:trace-tree-calls #:trace-tree-roots #:trace-tree-key

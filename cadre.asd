@@ -60,6 +60,7 @@
                (:file "git-history")
                (:file "git-merge")
                (:file "folding")
+               (:file "tree-sitter")
                (:file "new-project")
                (:file "build")
                (:file "gtk-app")
@@ -69,7 +70,7 @@
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre" "cffi")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -106,6 +107,7 @@
                              (:file "tools")
                              (:file "image")))
                (:file "build")
+               (:file "tree-sitter" :pathname "tree-sitter/tree-sitter")
                (:module "claude"
                 :serial t
                 :components ((:file "json")

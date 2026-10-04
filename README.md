@@ -388,6 +388,31 @@ connected Lisp's REPL, after saving the project's files:
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
 
+### JavaScript, TypeScript and JSON (tree-sitter)
+
+Files ending in `.js` `.mjs` `.cjs` `.jsx`, `.ts` `.mts` `.cts`, `.tsx`,
+`.json` and `.jsonc` open in their own modes. These modes get several things
+from the language's tree-sitter grammar:
+- syntax colors
+- folding by the syntax tree
+- an Outline: functions, classes and methods; interfaces, types and enums in
+  TypeScript; top-level keys in JSON
+- Toggle Comment with `//`
+- Return keeps the indentation and indents after an opening bracket.
+  Between brackets, it puts the closing one on its own line.
+
+**Setting it up:**
+1. Install the library: `brew install tree-sitter`.
+2. In Cadre, run **Install Language Grammar…** (in the main menu, or
+   `M-x install-language-grammar`) once for each language. It clones the
+   grammar at a pinned version and compiles it with `cc`, into
+   `~/.local/share/cadre/tree-sitter/`.
+
+A file in one of these languages tells you if its grammar isn't installed.
+Parsing happens on a background thread shortly after you stop typing, so
+even very large files don't make typing stall. Only the lines on screen are
+colored.
+
 ### GTK applications
 
 On macOS, GTK must run on a process's first thread, but the REPL runs on
@@ -545,7 +570,7 @@ Cadre writes its own choices (keybindings, layout, last folder) to
 ```sh
 make test     # headless tests of the editor model (src/core)
 make smoke    # drive a real window through the M0 features; screenshots in build/smoke/
-make perf     # measure against the performance budgets; report in build/perf/latest.txt
+make perf     # measure against the performance budgets (and JavaScript, with its grammar); report in build/perf/latest.txt
 ```
 
 `make perf` opens a window on generated files and times what you'd feel:
@@ -566,6 +591,7 @@ SBCL's statistical profile.
 | `src/core/` | The editor model, with no GTK: text protocol, buffers, commands, keymaps, modes, hooks, options, fuzzy matching |
 | `src/core/lisp/` | The Lisp lexer, the per-line syntax cache, s-expression navigation, indentation, faces |
 | `src/core/claude/` | JSON, the Claude Code CLI driver (stream-json), the MCP server, line diffs |
+| `src/core/tree-sitter/` | tree-sitter: a C shim (by-value structs as integers), the FFI, the language list, building grammars, highlight queries (with their predicates), folds and the outline |
 | `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers, inspector/xref/debugger replies, classifying symbols in the image |
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |

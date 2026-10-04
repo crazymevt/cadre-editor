@@ -15,13 +15,14 @@
 
 (defparameter *tag-faces*
   (append '(:current-line)
-          (remove :quote *faces*) *markdown-faces* *image-faces* '(:quote)
+          (remove :quote *faces*) *markdown-faces* *image-faces* *code-faces* '(:quote)
           (loop for i below *paren-face-count* collect (list :paren i))
           '(:search :search-current :paren-match :paren-mismatch))
   "Every face with a tag, in priority order.")
 
 (defun syntax-face-p (face)
-  (or (consp face) (member face *faces*) (member face *image-faces*) (member face *markdown-faces*)))
+  (or (consp face) (member face *faces*) (member face *image-faces*) (member face *markdown-faces*)
+      (member face *code-faces*)))
 
 (defun tag-name (face)
   (if (consp face)
@@ -101,6 +102,7 @@ for instance after the buffer's major mode changes."
              (remove-syntax-tags gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
                                  (gtk:text-buffer-get-end-iter gtk-buffer)))))
     (attach-markdown buffer)
+    (attach-tree-sitter buffer)
     (schedule-highlight buffer)))
 
 ;;; Tagging lines
@@ -162,6 +164,7 @@ faces that come from what the connected Lisp knows."
                                                   (list (repl-view)))))
                          (highlight-view view)
                          (highlight-markdown-view view)
+                         (highlight-tree-sitter-view view)
                          (update-cursor-decorations view)))
                      nil))))
 

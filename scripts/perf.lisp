@@ -5,6 +5,8 @@
 ;;;;  - a key press to its repaint in a 10,000-line Lisp file (budget 16 ms)
 ;;;;  - scrolling that file a page at a time (16 ms a page)
 ;;;;  - opening a 1 MB Lisp file until it is painted (300 ms)
+;;;;  - with the JavaScript grammar installed: opening and typing in 10,000
+;;;;    lines of JavaScript, and the stall after an edit in 45,000 lines
 ;;;;  - a project of 5,000 files: the explorer, a 1,000-file folder, and the
 ;;;;    file list for Quick Open, without stalling (no stall over 100 ms)
 ;;;;
@@ -81,6 +83,17 @@
 (defvar *big* (write-lisp-file (merge-pathnames "big.lisp" *files*) :lines 10000))
 (defvar *mb* (write-lisp-file (merge-pathnames "mb.lisp" *files*) :bytes (* 1024 1024)))
 (defvar *tree* (write-tree (merge-pathnames "tree/" *root*)))
+
+(defun write-js-file (path lines)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (loop for i from 0 while (< (* i 10) lines)
+          do (format out "// Function ~d~%export function fn~d(a, b = 1) {~%  const x = a + b;~%  if (x > ~d) {~%    console.log(`big ${x}`);~%  }~%  return [x, { key: \"value\", n: ~d }];~%}~%~%~%" i i i i i)))
+  path)
+
+(defvar *js* (write-js-file (merge-pathnames "big.js" *files*) 10000))
+(defvar *big-js* (write-js-file (merge-pathnames "huge.js" *files*) 45000))
+(defvar *grammars* (tree-sitter-language-installed-p "javascript"))
 
 ;;; Watching the main loop and the frame clock
 
@@ -266,6 +279,51 @@ and, if Cadre doesn't take it, as the text view would."
                                                         (push (list (- t1 t0) (- end start)) (car samples))
                                                         (pause 50 (lambda () (page (1- n)))))))))))
                    (page count))))))
+
+(step* (next)
+  (if (not *grammars*)
+      (progn (format t "~&(no JavaScript grammar: skipping the JavaScript measurements)~%") (funcall next))
+      (let ((t0 (now-ms)))
+        (open-file-path *js*
+                        :then (lambda (view)
+                                (after-next-paint (view-text-view view)
+                                                  (lambda (start end)
+                                                    (declare (ignore start))
+                                                    (result "Opening a 10,000-line JavaScript file" (- end t0) 300 "ms")
+                                                    (pause 1000 next))))))))
+
+(step* (next)
+  (if (not *grammars*)
+      (funcall next)
+      (progn
+        (goto 5005)
+        (pause 300 (lambda ()
+                     (reset-stalls)
+                     (let ((samples (list '())))
+                       (measure-keys *keys* samples
+                                     (lambda ()
+                                       (key-result "A key press to its repaint, in the middle of 10,000 lines of JavaScript"
+                                                   (car samples) 16)
+                                       (pause 800 (lambda ()
+                                                    (result "Longest stall while typing JavaScript" *stall-max* 100)
+                                                    (funcall next)))))))))))
+
+(step* (next)
+  (if (not *grammars*)
+      (funcall next)
+      (open-file-path *big-js*
+                      :then (lambda (view)
+                              (declare (ignore view))
+                              (pause 1500 (lambda ()
+                                            (goto 22005)
+                                            (pause 300 (lambda ()
+                                                         (reset-stalls)
+                                                         (type-key "x" "x")
+                                                         ;; The parse (about 70 ms here) runs on a thread.
+                                                         (pause 1000 (lambda ()
+                                                                       (result "Longest stall after an edit in 45,000 lines of JavaScript"
+                                                                               *stall-max* 100)
+                                                                       (funcall next)))))))))))
 
 (step* (next)
   (reset-stalls)

@@ -298,6 +298,12 @@
   "TAB" 'markdown-indent
   "S-TAB" 'markdown-outdent)
 
+;;; Languages from tree-sitter grammars (tree-sitter.lisp)
+(dolist (mode (mapcar #'car *tree-sitter-modes*))
+  (bind-keys (major-mode-keymap (find-major-mode mode))
+    "RET" 'code-newline
+    "TAB" 'code-indent))
+
 ;;; Markdown. Emacs keys follow markdown-mode's; Standard ones VS Code's.
 (bind-keys (mode-profile-keymap 'markdown-mode :standard)
   "C-k v" 'markdown-preview

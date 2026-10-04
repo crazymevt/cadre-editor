@@ -181,6 +181,7 @@
       (item lisp "Run Tests" 'run-tests)
       (item lisp "Run Tests in a New Lisp" 'run-tests-in-new-lisp)
       (item lisp "Run GTK App" 'run-gtk-app)
+      (item app "Install Language Grammar…" 'install-language-grammar)
       (item lisp "Stop GTK App" 'stop-gtk-app)
       (item lisp "Inspect…" 'inspect-value)
       (item lisp "Find References" 'find-references)

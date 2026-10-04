@@ -25,7 +25,9 @@ headings for Markdown, nil for other files."
              (buffer-definitions buffer)))
     (markdown-mode
      (mapcar (lambda (h) (list (second h) :heading (third h) (1- (first h))))
-             (markdown-headings (buffer-string buffer))))))
+             (markdown-headings (buffer-string buffer))))
+    (t (let ((document (and (buffer-ts-document buffer) (fresh-ts-document buffer))))
+         (and document (ts-outline document))))))
 
 (defun outline-kind-label (kind)
   (case kind (:heading "") (t (kind-name kind))))
@@ -74,7 +76,8 @@ headings for Markdown, nil for other files."
     (setf (ol-buffer ol) buffer (ol-items ol) items)
     (gtk:label-set-text (ol-title ol)
                         (cond ((null buffer) "No file")
-                              ((member (buffer-major-mode buffer) '(lisp-mode markdown-mode))
+                              ((or (member (buffer-major-mode buffer) '(lisp-mode markdown-mode))
+                                   (buffer-ts-document buffer))
                                (if items (buffer-display-name buffer) (format nil "~a defines nothing" (buffer-display-name buffer))))
                               (t (format nil "No outline for ~a" (buffer-display-name buffer)))))
     (gtk:list-box-remove-all (ol-list ol))

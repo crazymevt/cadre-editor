@@ -123,7 +123,7 @@ editor, wrap the selection in the pair and keep it selected. Returns t if so."
           (gio:menu-append-submenu menu "Debug" debug))))
     (when (eq (buffer-major-mode buffer) 'markdown-mode)
       (markdown-context-menu menu))
-    (when (or (eq (buffer-major-mode buffer) 'lisp-mode) (eq (buffer-major-mode buffer) 'markdown-mode))
+    (when (or (member (buffer-major-mode buffer) '(lisp-mode markdown-mode)) (tree-sitter-buffer-p buffer))
       (let ((fold (gio:menu-new)))
         (command-item fold "Toggle Fold" 'toggle-fold)
         (command-item fold "Fold All" 'fold-all)

@@ -424,30 +424,49 @@ choose an entry of the kill ring to insert."
 
 ;;; Comments
 
-(defun line-comment-p (string)
+(defun line-comment-p (string &optional (prefix ";;"))
+  "True if STRING is a comment line: for Lisp (PREFIX ;;) any number of
+semicolons, otherwise PREFIX itself."
   (let ((trimmed (string-left-trim '(#\Space #\Tab) string)))
-    (and (plusp (length trimmed)) (char= (char trimmed 0) #\;))))
+    (if (string= prefix ";;")
+        (and (plusp (length trimmed)) (char= (char trimmed 0) #\;))
+        (and (>= (length trimmed) (length prefix)) (string= prefix trimmed :end2 (length prefix))))))
 
-(defun comment-lines (gtk-buffer first last)
-  "Comment out lines FIRST to LAST with ;; at their common indentation, or
-uncomment them if they are all comments already."
+(defun buffer-comment-prefix (buffer)
+  "What starts a line comment in BUFFER."
+  (let ((document (buffer-ts-document buffer)))
+    (cond (document (or (ts-language-comment (ts-document-language document))
+                        (editor-error "This language has no line comments")))
+          ((tree-sitter-buffer-p buffer)
+           (or (getf (tree-sitter-language-spec (tree-sitter-language-for-mode (buffer-major-mode buffer))) :comment)
+               (editor-error "This language has no line comments")))
+          (t ";;"))))
+
+(defun comment-lines (gtk-buffer first last &optional (prefix ";;"))
+  "Comment out lines FIRST to LAST with PREFIX at their common indentation,
+or uncomment them if they are all comments already."
   (let* ((lines (loop for l from first to last collect (text-line-string gtk-buffer l)))
          (nonblank (remove-if (lambda (s) (string= (string-trim " 	" s) "")) lines)))
     (with-user-action (gtk-buffer)
-      (if (and nonblank (every #'line-comment-p nonblank))
+      (if (and nonblank (every (lambda (s) (line-comment-p s prefix)) nonblank))
           (loop for l from first to last
                 for s in lines
-                when (line-comment-p s)
+                when (line-comment-p s prefix)
                   do (let* ((i (leading-space-count s))
-                            (semis (or (position #\; s :start i :test-not #'char=) (length s)))
-                            (end (if (and (< semis (length s)) (char= (char s semis) #\Space)) (1+ semis) semis)))
+                            (marker-end (if (string= prefix ";;")
+                                            (or (position #\; s :start i :test-not #'char=) (length s))
+                                            (+ i (length prefix))))
+                            (end (if (and (< marker-end (length s)) (char= (char s marker-end) #\Space))
+                                     (1+ marker-end)
+                                     marker-end)))
                        (delete-text-between gtk-buffer (text-line-position gtk-buffer l i)
                                             (text-line-position gtk-buffer l end))))
           (let ((indent (reduce #'min (mapcar #'leading-space-count nonblank) :initial-value 1000)))
             (loop for l from first to last
                   for s in lines
                   unless (string= (string-trim " 	" s) "")
-                    do (insert-text-at gtk-buffer (text-line-position gtk-buffer l (min indent (length s))) ";; ")))))))
+                    do (insert-text-at gtk-buffer (text-line-position gtk-buffer l (min indent (length s)))
+                                       (concatenate 'string prefix " "))))))))
 
 (define-command toggle-comment ()
   "Comment out the selected lines (or this line), or uncomment them."
@@ -459,9 +478,9 @@ uncomment them if they are all comments already."
             ;; A selection ending at the start of a line doesn't include that line.
             (when (and (gtk:text-iter-starts-line end) (> last (gtk:text-iter-get-line start)))
               (decf last))
-            (comment-lines gtk-buffer (gtk:text-iter-get-line start) last))
+            (comment-lines gtk-buffer (gtk:text-iter-get-line start) last (buffer-comment-prefix (view-buffer view))))
           (let ((line (gtk:text-iter-get-line (cursor-iter gtk-buffer))))
-            (comment-lines gtk-buffer line line))))))
+            (comment-lines gtk-buffer line line (buffer-comment-prefix (view-buffer view))))))))
 
 (define-command comment-dwim ()
   "Comment or uncomment the region; with no region, add a comment at the
