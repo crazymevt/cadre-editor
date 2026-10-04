@@ -841,6 +841,16 @@ on. Options carry a category, and their type decides the editing widget;
 the page saves to `settings.sexp` under `:options`. Themes are data
 (`define-theme`), may inherit faces, and every color in the UI comes from
 them.
+
+**Since M6 (2026-10-03):** the remaining P0/P1 items are built: file
+management in the explorer (new file and folder, rename carrying open
+buffers along, move to Trash), pinned tabs, REPL presentations
+(swank-presentations: click to inspect, copy into the input as the object),
+the Outline page with Go to Symbol, and Claude edit on a selection (the
+request goes through the chat; the answer is a `propose_edit` diff). Also
+completion as you type and arglist hints from the source, and Markdown mode
+with a live preview (7.5).
+
 | **Later** | Claude Code in a terminal panel, Slynk, multiple cursors, undo tree, stepper, JSON mode, Markdown mode with live preview (7.5), LSP for other languages | — |
 
 M0–M2 make it **usable**. Once M2 is done, Cadre should be used to develop
