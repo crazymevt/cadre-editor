@@ -168,6 +168,7 @@
 ;;; The status bar
 
 (defun update-connection-status ()
+  (update-run-button)
   (when *window*
     (let ((label (window-status-connection *window*)))
       (gtk:button-set-label

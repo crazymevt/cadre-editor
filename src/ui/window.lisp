@@ -182,6 +182,8 @@
       (item lisp "Build Project" 'build-project)
       (item lisp "Run Tests" 'run-tests)
       (item lisp "Run Tests in a New Lisp" 'run-tests-in-new-lisp)
+      (item lisp "Run App" 'run-app)
+      (item lisp "Stop App" 'stop-app)
       (item lisp "Run GTK App" 'run-gtk-app)
       (item app "Install Language Grammar…" 'install-language-grammar)
       (item lisp "Stop GTK App" 'stop-gtk-app)
@@ -224,6 +226,15 @@ and, if given, LABEL."
     (when id (setf (gethash id *named-widgets*) button))
     button))
 
+(defun run-button ()
+  "The ▶ button: Run App, or Stop App while the app runs (run-app.lisp shows
+it when the project has an :entry-point)."
+  (let ((button (make-instance 'gtk:button :icon-name "media-playback-start-symbolic" :visible nil)))
+    (gobject:connect button :clicked (lambda (b) (declare (ignore b))
+                                       (call-command (if (app-running-p) 'stop-app 'run-app))))
+    (setf (gethash :run-button *named-widgets*) button)
+    button))
+
 (defun make-empty-page ()
   (gtk:build
     (adw:status-page :icon-name "text-x-generic-symbolic" :title "No file open"
@@ -260,6 +271,7 @@ and, if given, LABEL."
                                    :on-clicked (lambda (b) (declare (ignore b))
                                                  (call-command 'toggle-sidebar)))
                 (gtk:box :child-type "end" :spacing 6
+                  (run-button)
                   (command-button "document-save-symbolic" "Save" 'save-buffer)
                   (command-button "cadre-layout-horizontal-symbolic"
                                   "Switch between the panel below and beside the editor"
@@ -390,6 +402,7 @@ and, if given, LABEL."
     (adw:bin-set-child (window-explorer-holder win)
                        (make-explorer directory :on-open-file #'open-file-path))
     (refresh-systems)
+    (update-run-button)
     (let ((name (car (last (pathname-directory directory)))))
       (adw:window-title-set-title (window-title win) name)
       (adw:window-title-set-subtitle (window-title win)

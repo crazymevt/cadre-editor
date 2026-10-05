@@ -2311,6 +2311,46 @@ d" 0 0)
   (check "Stop GTK App quits it, and Cadre notices" (not (cadre-ui::gtk-app-running-p)))
   (check "evaluation is back in the REPL's thread" (string= "(foo)" (cadre-ui::gtk-thread-source "(foo)"))))
 
+;;; Run App: the ▶ button, for a GTK app and for one that reads its input in the REPL
+
+(defun run-button () (gethash :run-button cadre-ui::*named-widgets*))
+
+(then 300
+  (check "▶ is shown for a project with an :entry-point" (gtk:widget-get-visible (run-button)))
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((cadre-ui::gtk-app-running-p) :timeout 30)
+  (check "▶ runs a gtk4 app as Run GTK App does" (cadre-ui::gtk-app-running-p))
+  (check "and becomes a stop button" (equal "Stop the app" (gtk:widget-get-tooltip-text (run-button))))
+  (call-command 'cadre-ui::stop-app))
+
+(then-when ((not (cadre-ui::gtk-app-running-p)) :timeout 30)
+  (check "Stop App quits it" (not (cadre-ui::gtk-app-running-p)))
+  (cadre-ui::make-new-project *new-parent* "smoke-cli" :kind :application :tests :parachute :license nil))
+
+(then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-cli/" *new-parent*))))
+  (with-open-file (out (merge-pathnames "smoke-cli/src/main.lisp" *new-parent*) :direction :output :if-exists :supersede)
+    (format out "(in-package #:smoke-cli)~%(defun hello (&optional (who \"World\")) (format nil \"Hello, ~~a!\" who))~%(defun main ()~%  (format t \"Your name? \") (finish-output)~%  (write-line (hello (read-line))))~%"))
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and cadre-ui::*console-app* (cadre-ui::repl-reading cadre-ui::*repl*)) :timeout 120)
+  (check "▶ runs a console app in the REPL, which asks for its input" (search "Your name?" (repl-text)) (repl-text))
+  (cadre-ui::set-repl-input "Pat")
+  (call-command 'cadre-ui::repl-return))
+
+(then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (check "RET sends the line, and the app's output follows" (search "Hello, Pat!" (repl-text)) (repl-text))
+  (check "▶ is back" (equal "Run smoke-cli:main (in the REPL)" (gtk:widget-get-tooltip-text (run-button)))
+         (gtk:widget-get-tooltip-text (run-button)))
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and cadre-ui::*console-app* (cadre-ui::repl-reading cadre-ui::*repl*)) :timeout 30)
+  (call-command 'cadre-ui::stop-app))
+
+(then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (check "Stop App aborts a console app waiting for input" (null cadre-ui::*console-app*))
+  (check "and the REPL takes forms again" (not (cadre-ui::repl-busy cadre-ui::*repl*))))
+
 ;;; Other languages, through tree-sitter (needs the grammars installed)
 
 (defvar *langs* (merge-pathnames "langs/" *new-parent*))

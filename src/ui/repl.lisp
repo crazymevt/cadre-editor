@@ -157,8 +157,9 @@ editor REPL) bind it to that buffer's REPL.")
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-input-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))))
 
-(defun repl-eval (string)
-  "Evaluate STRING in the REPL, as if typed."
+(defun repl-eval (string &key on-done)
+  "Evaluate STRING in the REPL, as if typed. ON-DONE is called once it
+returns or is aborted."
   (when (repl-evaluator *repl*)
     (return-from repl-eval (funcall (repl-evaluator *repl*) string)))
   (with-connection (connection)
@@ -169,12 +170,14 @@ editor REPL) bind it to that buffer's REPL.")
                   (declare (ignore value))
                   (setf (repl-busy *repl*) nil)
                   (repl-show-prompt)
-                  (image-changed))
+                  (image-changed)
+                  (when on-done (funcall on-done)))
          :on-abort (lambda (reason)
                      (setf (repl-busy *repl*) nil)
                      (repl-fresh-line)
                      (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
-                     (repl-show-prompt)))))
+                     (repl-show-prompt)
+                     (when on-done (funcall on-done))))))
 
 ;;; Following the code's package: evaluating or compiling code from a file
 ;;; switches the REPL to that code's package, so what was just defined can be

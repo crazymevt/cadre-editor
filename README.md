@@ -585,11 +585,28 @@ colors. Settings, under Terminal: the shell (`*terminal-shell*`, default
 `$SHELL`), scrollback lines, Option as Meta, and the keys that stay
 Cadre's. Without VTE, the Terminal tab tells you how to install it.
 
+### Running the project's program
+
+When a project's `.asd` has an `:entry-point` (as New Lisp Project's
+application kinds write), a **▶** button appears in the header bar. **Run
+App** (the button, `Ctrl+F5`, Emacs `C-x p r`, or the main menu) saves the
+project's files, loads its system in the connected Lisp (recompiling what
+changed), and calls the entry point:
+- **A GTK app** (its system depends on `gtk4`) runs as Run GTK App runs it,
+  below.
+- **Any other program** runs in the REPL, and its output appears there. When
+  it reads standard input (`read-line`, `read`), the REPL waits for a line:
+  type it and press RET.
+
+While the app runs, the button turns into **■**: **Stop App**
+(`Ctrl+Shift+F5`, `C-x p k`) quits a GTK app, or aborts the REPL's
+evaluation, even while it waits for input.
+
 ### GTK applications
 
 On macOS, GTK must run on a process's first thread, but the REPL runs on
-another one. **Run GTK App** (`Ctrl+F5`, Emacs `C-x p r`, or the main menu)
-handles this:
+another one. **Run GTK App** (the ▶ button for a gtk4 project, or the main
+menu) handles this:
 - **Starting:** it has the first thread of the Lisp Cadre started (it reads
   that Lisp's standard input) load the project's system and call its entry
   point. That's the `:entry-point` in the `.asd`, or a function you name once
@@ -604,7 +621,7 @@ handles this:
   running.
 - **Changing it:** handlers connected by symbol pick up redefinitions at once.
 - **Stopping:** when the last window closes, Cadre notices, and Run GTK App
-  starts it again. **Stop GTK App** (`Ctrl+Shift+F5`, `C-x p k`) quits it.
+  starts it again. **Stop GTK App** (■, `Ctrl+Shift+F5`, `C-x p k`) quits it.
 
 It needs a Lisp that Cadre started (`M-x lisp`), not one it connected to.
 New Lisp Project's **GTK application** kind starts a project ready for this:

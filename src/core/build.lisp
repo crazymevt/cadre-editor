@@ -23,6 +23,24 @@
       (multiple-value-bind (match groups) (ppcre:scan-to-strings ":build-pathname\\s+\"([^\"]+)\"" text)
         (if match (aref groups 0) t)))))
 
+(defun asd-entry-point (text)
+  "The :entry-point in an .asd file's TEXT (\"pkg:main\"), or nil."
+  (multiple-value-bind (match groups) (ppcre:scan-to-strings ":entry-point\\s+\"([^\"]+)\"" text)
+    (and match (aref groups 0))))
+
+(defun asd-uses-gtk4-p (text)
+  "True if an .asd file's TEXT depends on the gtk4 library (\"gtk4\", :gtk4 or #:gtk4)."
+  (and (ppcre:scan "(?i):depends-on\\s*\\([^)]*(\"gtk4\"|#?:gtk4[\\s)])" text) t))
+
+(defun project-app (root)
+  "The program in ROOT that Run App starts, as a plist (:system :entry :gtk),
+from the first .asd file with an :entry-point; or nil."
+  (loop for asd in (uiop:directory-files (uiop:ensure-directory-pathname root) "*.asd")
+        for text = (read-text-file asd)
+        for entry = (and text (asd-entry-point text))
+        when entry return (list :system (string-downcase (pathname-name asd)) :entry entry
+                                :gtk (asd-uses-gtk4-p text))))
+
 (defun project-build-plan (root &key (lisp (first *lisp-command*)))
   "How to build the project in ROOT, as a plist: :program and :arguments to
 run there, a :description, and the :output file if known; or nil if it has

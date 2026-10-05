@@ -45,8 +45,7 @@ given before for this project."
   (or (let* ((asd (find-if (lambda (f) (string-equal (pathname-name f) system))
                            (uiop:directory-files root "*.asd")))
              (text (and asd (read-text-file asd))))
-        (and text (multiple-value-bind (match groups) (cl-ppcre:scan-to-strings ":entry-point\\s+\"([^\"]+)\"" text)
-                    (and match (aref groups 0)))))
+        (and text (asd-entry-point text)))
       (cdr (assoc (uiop:native-namestring root) (setting :gtk-entry-points) :test #'string=))))
 
 (defun remember-gtk-entry-point (root entry)
@@ -83,7 +82,7 @@ next run's new window would get them."
     (when *window*
       (gtk:window-present (window-gtk-window *window*))
       (activate-this-app))
-    (message "The GTK app ended; Run GTK App starts it again")))
+    (message "The GTK app ended; ▶ starts it again")))
 
 (defun activate-this-app ()
   "Make Cadre the active application (GTK's present only raises the window)."
@@ -154,4 +153,4 @@ debugger."
   (message "Evaluating ~:[in the REPL's thread~;on the GTK thread~]" (getf *gtk-app* :gtk-thread)))
 
 (defun gtk-app-disconnected ()
-  (setf *gtk-app* nil))
+  (setf *gtk-app* nil *console-app* nil))

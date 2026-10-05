@@ -915,6 +915,14 @@ callback, call the entry point, then print a marker that the output watcher
 sees when it returns. While it runs, REPL and editor evaluations go through
 `gtk-thread-source`, which wraps them in `glib:in-main-thread` with `:wait`.
 
+Run App (UI `run-app.lisp`, core `project-app`): the header bar's ▶ button
+shows when an `.asd` has an `:entry-point`. A system depending on `gtk4`
+goes through Run GTK App; any other is evaluated in the REPL with
+`repl-eval`, so reads from `*standard-input*` arrive as Swank `:read-string`
+requests that the REPL answers. The form stores its thread in
+`cl-user::*cadre-app-thread*`; Stop App interrupts that thread with
+`(abort)`, which unwinds the read and the evaluation without the debugger.
+
 Other languages through tree-sitter (core `tree-sitter/`, UI
 `tree-sitter.lisp`): JavaScript, TypeScript, TSX and JSON so far.
 - **The library and grammars:** libtree-sitter comes from the system

@@ -624,6 +624,9 @@ Over lines.\"
              (is equal '("build") (getf plan :arguments))
              (true (search "bin/app" (getf plan :output))))
            (is eq nil (c:project-build-plan lib))
+           ;; Run App: an application's entry point; a library has none.
+           (is equal '(:system "app" :entry "app:main" :gtk nil) (c:project-app app))
+           (is eq nil (c:project-app lib))
            (is equal '("test") (getf (c:project-test-plan lib "lib") :arguments))
            (false (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "build"))
            (true (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "test"))
@@ -643,12 +646,17 @@ Over lines.\"
           (makefile (cdr (assoc "Makefile" files :test #'string=))))
       (true (search ":depends-on (\"gtk4\")" asd))
       (true (search ":entry-point \"my-gui:main\"" asd))
+      (is string= "my-gui:main" (c:asd-entry-point asd))
+      (true (c:asd-uses-gtk4-p asd))
       (false (search ":build-operation" asd))
       (true (search "org.example.my_gui" main))
       (true (search "gio:application-run" main))
       (true (search "gtk4:save-executable" makefile))
       (true (search (format nil "~%dev:~%") makefile))
       (true (search "Run GTK App" (cdr (assoc "README.md" files :test #'string=))))))
+  (true (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on (:alexandria #:gtk4))"))
+  (false (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on (\"gtk4-extras\" \"alexandria\"))"))
+  (false (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on ())"))
   ;; Plain projects have no dependencies.
   (true (search ":depends-on ()" (cdr (assoc "lib.asd" (c:project-files-for "lib") :test #'string=)))))
 
