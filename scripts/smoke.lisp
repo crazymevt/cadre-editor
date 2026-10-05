@@ -1358,6 +1358,16 @@ d" 0 0)
   (press "TAB")
   (check "Tab inserts the completion" (string= "(scale-shape" (line-text 1)) (line-text 1))
   (check "and closes the popup" (not (cadre-ui::completion-open-p)))
+  (let ((items '(("gtk:window") ("gtk:widget") ("gdk:window") ("gtk:window-new") ("getf"))))
+    (check "a package prefix keeps only that package's names"
+           (null (set-exclusive-or '("gtk:window" "gtk:window-new" "gtk:widget")
+                                   (mapcar #'first (cadre-ui::rank-completions "gtk:wi" items))
+                                   :test #'string=))
+           (mapcar #'first (cadre-ui::rank-completions "gtk:wi" items)))
+    (check "and leaves out what's already typed"
+           (equal '("gtk:window-new") (mapcar #'first (cadre-ui::rank-completions "gtk:window" items))))
+    (check "gtk: and gtk:: are the same package"
+           (cadre-ui::same-qualifier-p (cadre-ui::prefix-qualifier "gtk::wi") (cadre-ui::prefix-qualifier "gtk:wi"))))
   (insert-at-cursor " 'square ")
   (cadre-ui::request-autodoc (current-view)))
 
@@ -2550,6 +2560,26 @@ d" 0 0)
   (check "a shell that exits cleanly closes its terminal" (null cadre-ui::*terminals*))
   (check "and the page offers a new one"
          (string= "empty" (gtk:stack-get-visible-child-name cadre-ui::*terminal-stack*))))
+
+;;; Themes: no paren color may look like a token's, or a ) next to a string
+;;; or keyword seems part of it.
+(defun rgb-distance (a b)
+  (flet ((rgb (hex) (loop for i from 1 below 7 by 2 collect (parse-integer hex :start i :end (+ i 2) :radix 16))))
+    (sqrt (reduce #'+ (mapcar (lambda (x y) (expt (- x y) 2)) (rgb a) (rgb b))))))
+
+(then 100
+  (dolist (theme (cadre-ui::list-themes))
+    (let ((collisions
+            (loop for depth below cadre::*paren-face-count*
+                  for paren = (getf (cadre-ui::theme-face (list :paren depth) theme) :foreground)
+                  append (loop for face in '(:string :keyword :number :character :builtin :macro :definer
+                                             :definition-name :special-variable :constant :lambda-keyword
+                                             :quote :comment)
+                               for color = (getf (cadre-ui::theme-face face theme) :foreground)
+                               when (and paren color (< (rgb-distance paren color) 30))
+                                 collect (list depth face)))))
+      (check (format nil "~a: paren colors differ from token colors" (cadre-ui::theme-title theme))
+             (null collisions) collisions))))
 
 (setf *steps* (reverse *steps*))
 

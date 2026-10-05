@@ -448,11 +448,11 @@ choose an entry of the kill ring to insert."
                    (scroll-to-cursor view))
             (set-point view target))))))
 
-(define-command beginning-of-line ()
+(define-command beginning-of-code-or-line ()
   "Move to where the line's code starts; there, to the line's start."
   (move-to-line-start))
 
-(define-command select-to-beginning-of-line ()
+(define-command select-to-beginning-of-code-or-line ()
   "Extend the selection to where the line's code starts; there, to the line's start."
   (move-to-line-start :extend t))
 

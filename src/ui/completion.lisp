@@ -9,7 +9,8 @@
 (in-package #:cadre-ui)
 
 (defstruct (completion-popup (:conc-name cp-))
-  popover list-view store selection view start items detail)
+  popover list-view store selection view start items detail
+  qualifier)                            ; the package part (gtk:) ITEMS were found for
 
 (defvar *completion* nil "The open completion popup, or nil.")
 (defvar *typed-key* nil
@@ -36,7 +37,11 @@ change it makes can start completion.")
   (gio:list-store-remove-all (cp-store popup))
   (dolist (item items) (gio:list-store-append (cp-store popup) (gobject:make-lisp-object item)))
   (when items (gtk:single-selection-set-selected (cp-selection popup) 0))
-  (update-completion-detail))
+  (update-completion-detail)
+  ;; GTK can hide the popover while its size changes (as when the window
+  ;; isn't active); with new items, it shows again.
+  (when (and items (not (gtk:widget-get-visible (cp-popover popup))))
+    (gtk:popover-popup (cp-popover popup))))
 
 (defun selected-completion ()
   (let* ((popup *completion*)
@@ -89,9 +94,23 @@ change it makes can start completion.")
     (gtk:popover-set-pointing-to popover (cursor-rectangle view))
     (setf *completion* (make-completion-popup :popover popover :list-view list-view :store store
                                               :selection selection :view view :start start
-                                              :items completions :detail detail))
+                                              :items completions :detail detail
+                                              :qualifier (prefix-qualifier (prefix-before-cursor view))))
     (gobject:connect selection "notify::selected" (lambda (&rest args) (declare (ignore args))
                                                     (update-completion-detail)))
+    ;; GTK may hide the popover itself while resizing it; if this popup is
+    ;; still wanted, show it again.
+    (gobject:connect popover :closed
+                     (lambda (p)
+                       (glib:idle-add glib:+priority-default-idle+
+                                      (lambda ()
+                                        (let ((popup *completion*))
+                                          (when (and popup (eq (cp-popover popup) p)
+                                                     (not (gtk:widget-get-visible p))
+                                                     (plusp (gio:list-model-get-n-items (cp-store popup)))
+                                                     (gtk:window-is-active (window-gtk-window *window*)))
+                                            (gtk:popover-popup p)))
+                                        nil))))
     (gobject:connect list-view :activate (lambda (lv position) (declare (ignore lv))
                                            (gtk:single-selection-set-selected selection position)
                                            (accept-completion)))
@@ -141,13 +160,24 @@ chord (⌘↩, C-s …) closes the popup and goes on to its command."
   "After an edit in VIEW: narrow the popup's list, or close it."
   (when (and *completion* (eq view (cp-view *completion*)))
     (multiple-value-bind (prefix start) (prefix-before-cursor view)
-      (if (or (/= start (cp-start *completion*)) (string= prefix ""))
-          (close-completion)
-          (let ((items (rank-completions prefix (cp-items *completion*))))
-            (if items
-                (progn (fill-completions *completion* items)
-                       (gtk:popover-set-pointing-to (cp-popover *completion*) (cursor-rectangle view)))
-                (close-completion)))))))
+      (cond ((or (/= start (cp-start *completion*)) (string= prefix ""))
+             (close-completion))
+            ;; A package prefix typed or changed (gt → gtk:): the list was
+            ;; for other symbols; find them again.
+            ((not (same-qualifier-p (prefix-qualifier prefix) (cp-qualifier *completion*)))
+             (close-completion)
+             (when (auto-complete-p view) (start-completion view :auto t)))
+            (t
+             (let ((items (rank-completions prefix (cp-items *completion*))))
+               (cond (items
+                      (fill-completions *completion* items)
+                      (gtk:popover-set-pointing-to (cp-popover *completion*) (cursor-rectangle view))
+                      (schedule-completion-refresh view))
+                     (t
+                      ;; Nothing left here, but the connected Lisp may know more.
+                      (close-completion)
+                      (when (and (connected-p) (auto-complete-p view))
+                        (start-completion view :auto t))))))))))
 
 (defun completion-buffer-changed (buffer)
   "After BUFFER changes: narrow the open popup, or, if the change was a

@@ -56,8 +56,17 @@ given before for this project."
 
 (defun gtk-app-launch-form (root system entry)
   "Source for the Lisp's first thread: load SYSTEM, have GTK callback errors
-open the debugger, call ENTRY, then print the marker."
-  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (if (find-package \"QL\") (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a)) (let ((handler (find-symbol \"*CALLBACK-ERROR-HANDLER*\" \"GTK4.RUNTIME\"))) (when handler (setf (symbol-value handler) (lambda (condition where) (with-simple-restart (abort \"Return from the GTK callback (~~a)\" where) (invoke-debugger condition)))))) (unwind-protect (funcall (read-from-string ~a)) (format t \"~~&~a~~%\") (finish-output)))"
+open the debugger, call ENTRY, then print the marker. The application that
+ended stops being GIO's default, or it would stay so through every later
+run (GLib makes the first one created the default), and Stop GTK App and
+(gio:application-get-default) would find it instead of the running one.
+
+Between runs this thread reads standard input and handles no window-system
+events, so events pending when the app ends (clicks on a window that just
+closed) are handled before it stops, and any that arrive meanwhile are
+handled, with no windows to reach, before the next run starts: else the
+next run's new window would get them."
+  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (if (find-package \"QL\") (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a)) (let ((handler (find-symbol \"*CALLBACK-ERROR-HANDLER*\" \"GTK4.RUNTIME\"))) (when handler (setf (symbol-value handler) (lambda (condition where) (with-simple-restart (abort \"Return from the GTK callback (~~a)\" where) (invoke-debugger condition)))))) (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\"))) (when drain (ignore-errors (funcall drain))) (unwind-protect (funcall (read-from-string ~a)) (let ((clear (find-symbol \"APPLICATION-SET-DEFAULT\" \"GIO\"))) (when clear (ignore-errors (funcall clear nil)))) (when drain (loop repeat 15 do (ignore-errors (funcall drain)) (sleep 0.02))) (format t \"~~&~a~~%\") (finish-output))))"
           (cadre::lisp-string (uiop:native-namestring root))
           (cadre::lisp-string system) (cadre::lisp-string system)
           (cadre::lisp-string entry)
@@ -68,7 +77,25 @@ open the debugger, call ENTRY, then print the marker."
   (when (and (gtk-app-running-p) (search *gtk-app-ended-marker* line))
     (setf (getf *gtk-app* :running) nil)
     (update-connection-status)
+    ;; Its Lisp handles no window events until the next run, so it mustn't
+    ;; stay the front app (macOS would show it busy, and keep its clicks for
+    ;; the next run): bring Cadre back.
+    (when *window*
+      (gtk:window-present (window-gtk-window *window*))
+      (activate-this-app))
     (message "The GTK app ended; Run GTK App starts it again")))
+
+(defun activate-this-app ()
+  "Make Cadre the active application (GTK's present only raises the window)."
+  #+darwin
+  (ignore-errors
+   (flet ((sel (name) (cffi:foreign-funcall "sel_registerName" :string name :pointer)))
+     (let ((app (cffi:foreign-funcall "objc_msgSend"
+                                      :pointer (cffi:foreign-funcall "objc_getClass" :string "NSApplication" :pointer)
+                                      :pointer (sel "sharedApplication") :pointer)))
+       (unless (cffi:null-pointer-p app)
+         (cffi:foreign-funcall "objc_msgSend" :pointer app :pointer (sel "activateIgnoringOtherApps:")
+                                              :boolean t :void))))))
 
 (defun send-to-first-thread (source)
   "Have the started Lisp's first thread evaluate SOURCE, through its standard input."

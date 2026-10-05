@@ -300,14 +300,30 @@ come in order, the first at the start of a word."
     (when (and score (or (null positions) (cadre::word-start-p name (first positions))))
       (+ score (if (and (<= (length pattern) (length name)) (string-equal pattern name :end2 (length pattern))) 20 0)))))
 
+(defun prefix-qualifier (prefix)
+  "PREFIX's package part, up to and including its last colon (\"gtk:\",
+\"gtk::\", \":\" for a keyword), or \"\"."
+  (let ((colon (position #\: prefix :from-end t)))
+    (if colon (subseq prefix 0 (1+ colon)) "")))
+
+(defun same-qualifier-p (a b)
+  "True if qualifiers A and B name the same package (\"gtk:\" and \"gtk::\" do)."
+  (string-equal (string-right-trim ":" a) (string-right-trim ":" b)))
+
 (defun rank-completions (prefix items &key (limit 200))
-  "ITEMS (completion lists, name first) that complete PREFIX, best first."
+  "ITEMS (completion lists, name first) that complete PREFIX, best first.
+With a package (gtk:wi), only names in that package; PREFIX itself is left
+out, as there is nothing to complete."
   (let* ((colon (position #\: prefix :from-end t))
-         (pattern (if (and colon (plusp colon)) (subseq prefix (1+ colon)) prefix))
+         (qualified (and colon (plusp colon)))
+         (qualifier (prefix-qualifier prefix))
+         (pattern (if qualified (subseq prefix (1+ colon)) prefix))
          (scored (loop for item in items
                        for name = (first item)
-                       for part = (if (and colon (plusp colon)) (subseq name (min (length name) (1+ (or (position #\: name :from-end t) -1)))) name)
-                       for score = (if (string= pattern "") 0 (completion-score pattern part))
+                       for part = (if qualified (subseq name (min (length name) (1+ (or (position #\: name :from-end t) -1)))) name)
+                       for score = (and (not (string-equal name prefix))
+                                        (or (not qualified) (same-qualifier-p qualifier (prefix-qualifier name)))
+                                        (if (string= pattern "") 0 (completion-score pattern part)))
                        when score collect (cons score item)))
          (sorted (stable-sort scored #'> :key #'car)))
     (mapcar #'cdr (if (> (length sorted) limit) (subseq sorted 0 limit) sorted))))
@@ -360,6 +376,32 @@ swank:fuzzy-completions) added, best first."
 (defvar *auto-complete-timer* nil)
 (defvar *completion-generation* 0)
 
+(defun fetch-remote-completions (view prefix start local &key on-none)
+  "Ask the connected Lisp for completions of PREFIX (at START in VIEW); when
+they come, if PREFIX is still what's typed there, merge them with LOCAL and
+show them: in the open popup, or a new one. ON-NONE is called if there are
+none."
+  (let ((generation (incf *completion-generation*))
+        (package (view-package view)))
+    (rex *connection* (swank-call "swank:fuzzy-completions" prefix package
+                                  :limit 100 :time-limit-in-msec 500)
+         :package package
+         :on-ok (lambda (result)
+                  (multiple-value-bind (now-prefix now-start) (prefix-before-cursor view)
+                    (when (and (= generation *completion-generation*) (= now-start start)
+                               (string= now-prefix prefix))
+                      (let ((items (merge-completions prefix local (first result))))
+                        (cond ((and *completion* (eq (cp-view *completion*) view))
+                               (setf (cp-items *completion*) items
+                                     (cp-qualifier *completion*) (prefix-qualifier prefix))
+                               (if items
+                                   (fill-completions *completion* items)
+                                   (close-completion)))
+                              (items (show-completions view start items))
+                              (on-none (funcall on-none)))))))
+         :on-abort (lambda (reason) (declare (ignore reason))
+                     (when (and on-none (null local)) (funcall on-none))))))
+
 (defun start-completion (view &key auto)
   "Show completions for the symbol before VIEW's cursor. AUTO (while typing)
 shows nothing for a single exact match, and stays quiet when there are none."
@@ -368,30 +410,38 @@ shows nothing for a single exact match, and stays quiet when there are none."
       ((string= prefix "") (unless auto (editor-error "Nothing to complete")))
       (t
        (let* ((buffer (view-buffer view))
-              (local (local-completions prefix buffer))
-              (generation (incf *completion-generation*)))
+              (local (local-completions prefix buffer)))
          (flet ((show (items)
                   (cond ((null items) (unless auto (message "No completions for ~a" prefix)))
                         ((and (not auto) (null (rest items))) (replace-prefix view start (first (first items))))
                         (t (show-completions view start items)))))
            (if (connected-p)
-               (let ((package (view-package view)))
+               (progn
                  (when local (show local))
-                 (rex *connection* (swank-call "swank:fuzzy-completions" prefix package
-                                               :limit 100 :time-limit-in-msec 500)
-                      :package package
-                      :on-ok (lambda (result)
-                               (multiple-value-bind (now-prefix now-start) (prefix-before-cursor view)
-                                 (when (and (= generation *completion-generation*) (= now-start start)
-                                            (string= now-prefix prefix))
-                                   (let ((items (merge-completions prefix local (first result))))
-                                     (if (and *completion* (eq (cp-view *completion*) view))
-                                         (progn (setf (cp-items *completion*) items)
-                                                (fill-completions *completion* items))
-                                         (unless local (show items)))))))
-                      :on-abort (lambda (reason) (declare (ignore reason))
-                                  (unless (or local auto) (message "No completions for ~a" prefix)))))
+                 (fetch-remote-completions view prefix start local
+                                           :on-none (lambda () (unless auto (message "No completions for ~a" prefix)))))
                (show local))))))))
+
+;;; While the popup is open, what's typed narrows its list at once; the
+;;; connected Lisp is asked again shortly after, since its list for the
+;;; first characters was cut short and a package prefix (gtk:) changes
+;;; which symbols there are.
+
+(defvar *completion-refresh-timer* nil)
+
+(defun schedule-completion-refresh (view)
+  (when *completion-refresh-timer* (glib:source-remove *completion-refresh-timer*))
+  (setf *completion-refresh-timer*
+        (glib:timeout-add glib:+priority-default+ 150
+                          (lambda ()
+                            (setf *completion-refresh-timer* nil)
+                            (when (and (connected-p) *completion* (eq (cp-view *completion*) view))
+                              (multiple-value-bind (prefix start) (prefix-before-cursor view)
+                                (when (and (= start (cp-start *completion*)) (string/= prefix ""))
+                                  (ignore-errors
+                                   (fetch-remote-completions view prefix start
+                                                             (local-completions prefix (view-buffer view)))))))
+                            nil))))
 
 (defun auto-complete-p (view)
   "Whether completions should appear now, after typing in VIEW."

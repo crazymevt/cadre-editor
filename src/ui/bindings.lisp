@@ -86,13 +86,13 @@
   "C-q" 'quit)
 
 (bind-keys *standard-editing-keymap*
-  "Home" 'beginning-of-line
-  "S-Home" 'select-to-beginning-of-line)
+  "Home" 'beginning-of-code-or-line
+  "S-Home" 'select-to-beginning-of-code-or-line)
 
 (when (macos-p)
   (bind-keys *standard-editing-keymap*
-    "C-Left" 'beginning-of-line           ; Cmd-Left
-    "C-S-Left" 'select-to-beginning-of-line))
+    "C-Left" 'beginning-of-code-or-line           ; Cmd-Left
+    "C-S-Left" 'select-to-beginning-of-code-or-line))
 
 (bind-keys *standard-editing-keymap*
   "C-/" 'toggle-comment

@@ -267,6 +267,7 @@ keyboard macro being defined, and the selection."
 (define-command previous-line () "Move up one line." (:repeat t) (move :display-lines -1))
 (define-command forward-word () "Move forward one word." (:repeat t) (move :words 1))
 (define-command backward-word () "Move back one word." (:repeat t) (move :words -1))
+(define-command beginning-of-line () "Move to the start of the line." (move :paragraph-ends -1))
 (define-command end-of-line () "Move to the end of the line." (move :paragraph-ends 1))
 (define-command scroll-down-page () "Move down one screen." (:repeat t) (move :pages 1))
 (define-command scroll-up-page () "Move up one screen." (:repeat t) (move :pages -1))

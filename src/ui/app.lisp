@@ -92,7 +92,11 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
                             (lambda (app) (activate app :project project :files files))
                             :flags '(:non-unique)
                             :quit-after quit-after)
-    (stop-claude-session)))
+    (stop-claude-session)
+    ;; The Lisp Cadre started goes with it. It would exit when its standard
+    ;; input closes, but not while a GTK app holds its first thread.
+    (when (and *inferior* (inferior-alive-p *inferior*))
+      (ignore-errors (kill-inferior-lisp *inferior*)))))
 
 ;;; The macOS app (scripts/build-app.lisp saves an image that starts here)
 

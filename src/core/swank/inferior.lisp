@@ -105,9 +105,20 @@ ON-EXIT with a message if it exits first or takes too long."
 (defun inferior-alive-p (inferior)
   (and inferior (sb-ext:process-alive-p (inferior-process inferior))))
 
+(defparameter *inferior-stop-seconds* 2
+  "How long a Lisp has to stop after SIGTERM before it gets SIGKILL.")
+
 (defun kill-inferior-lisp (inferior)
-  "Stop the inferior Lisp."
+  "Stop the inferior Lisp, without waiting long. A Lisp whose first thread is
+in a GTK main loop (Run GTK App) can't act on SIGTERM there, so after
+*INFERIOR-STOP-SECONDS* it gets SIGKILL."
   (when (inferior-alive-p inferior)
-    (ignore-errors (close (sb-ext:process-input (inferior-process inferior))))
-    (sb-ext:process-kill (inferior-process inferior) 15)
-    (sb-ext:process-wait (inferior-process inferior) t)))
+    (let ((process (inferior-process inferior)))
+      (ignore-errors (close (sb-ext:process-input process)))
+      (ignore-errors (sb-ext:process-kill process 15))
+      (loop repeat (* 20 *inferior-stop-seconds*)
+            while (sb-ext:process-alive-p process)
+            do (sleep 0.05))
+      (when (sb-ext:process-alive-p process)
+        (ignore-errors (sb-ext:process-kill process 9))
+        (loop repeat 20 while (sb-ext:process-alive-p process) do (sleep 0.05))))))
