@@ -87,7 +87,9 @@ project's settings and Cadre's tools."
                    (output (uiop:run-program (list program "auth" "status") :output :string
                                                                             :error-output :output
                                                                             :ignore-error-status t))
-                   (auth (ignore-errors (parse-json output)))
+                   ;; From the first brace: stderr notices can come first.
+                   (auth (let ((start (position #\{ output)))
+                           (and start (ignore-errors (parse-json (subseq output start))))))
                    (logged-in (jtrue-p (jget auth "loggedIn"))))
               (make-claude-status :program program :version version
                                   :logged-in logged-in

@@ -149,6 +149,10 @@ shell's environment when started from the Finder or the Dock (which give
 none), and a folder or files from the command line."
   (setf *random-state* (make-random-state t))
   (setf *resource-directory* (bundle-resource-directory))
+  ;; Started with macOS malloc debugging (to find a crash), it is already on
+  ;; for Cadre; the programs it runs needn't log too, and the CLI's notices
+  ;; about it would garble the output Cadre reads.
+  (sb-posix:unsetenv "MallocStackLogging")
   (unless (uiop:getenv "TERM")
     (redirect-output-to-log)
     (adopt-login-shell-environment))
