@@ -104,6 +104,12 @@ Cadre starts."
         (progn
           (open-session-log)
           (session-log ";; Cadre started, pid ~d" (sb-posix:getpid))
+          ;; gtk4 catches an object freed under Lisp's reference (the crash
+          ;; this log is for) and puts its backtrace in cadre.log.
+          (setf gtk4.runtime::*lost-reference-hook*
+                (lambda (type address)
+                  (session-log "!! gtk4: a ~a at #x~x was freed under Lisp's reference (backtrace in cadre.log)"
+                               type address)))
           (mapc #'log-calls *session-log-functions*))
       (error (e) (format *error-output* "~&;; No session log: ~a~%" e)))))
 
