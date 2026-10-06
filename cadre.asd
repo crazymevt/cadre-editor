@@ -69,6 +69,7 @@
                (:file "gtk-app")
                (:file "run-app")
                (:file "bindings")
+               (:file "session-log")
                (:file "app"))
   :in-order-to ((test-op (test-op "cadre/tests"))))
 

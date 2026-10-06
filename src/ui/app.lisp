@@ -87,12 +87,14 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
   (load-settings)
   (when init-file (load-init-file))
   (apply-saved-options)
+  (start-session-log)
   (unwind-protect
        (adw:run-application *application-id*
                             (lambda (app) (activate app :project project :files files))
                             :flags '(:non-unique)
                             :quit-after quit-after)
     (stop-claude-session)
+    (stop-session-log)
     ;; The Lisp Cadre started goes with it. It would exit when its standard
     ;; input closes, but not while a GTK app holds its first thread.
     (when (and *inferior* (inferior-alive-p *inferior*))
