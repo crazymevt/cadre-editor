@@ -930,6 +930,9 @@ smoke test starts it without one), and wait for it."
 (then-when ((chat-button "Allow Once"))
   (check "Claude Code's permission prompts ask in the chat" (chat-says "Claude wants to use Bash"))
   (screenshot "18-approval")
+  (let ((width (gtk:widget-measure (cadre-ui::chat-scroller cadre-ui::*chat*) :horizontal -1)))
+    (check "tool rows and approval buttons don't make the chat wider than a narrow panel"
+           (< width 320) width))
   (gtk:widget-activate (chat-button "Allow Once")))
 
 (then-when ((chat-says "Permission:"))

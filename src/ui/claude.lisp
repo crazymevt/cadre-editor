@@ -527,11 +527,16 @@ the next message restarts Claude Code with that mode's tools and model."
     (return-from chat-tool-row nil))
   (let ((entry (gethash id (chat-tools *chat*))))
     (if entry
-        (gtk:expander-set-label (car entry) (format nil "⚙ ~a" (tool-summary name input)))
+        (set-tool-row-label (car entry) (format nil "⚙ ~a" (tool-summary name input)))
         (let* ((result (make-instance 'gtk:label :xalign 0.0 :wrap t :selectable t :wrap-mode :char
                                                  :css-classes '("monospace" "dim-label")))
-               (expander (make-instance 'gtk:expander :label (format nil "⚙ ~a" (tool-summary name input))
-                                                      :child result :css-classes '("cadre-chat-tool"))))
+               ;; Ellipsized, so a long path doesn't make the panel wider
+               ;; than the window.
+               (title (make-instance 'gtk:label :label (format nil "⚙ ~a" (tool-summary name input))
+                                                :xalign 0.0 :ellipsize :end :hexpand t))
+               (expander (make-instance 'gtk:expander :label-widget title
+                                                      :child result :css-classes '("cadre-chat-tool")
+                                                      :tooltip-text (gtk:label-get-text title))))
           (setf (chat-stream-box *chat*) nil)
           (setf (gethash id (chat-tools *chat*)) (cons expander result))
           (chat-append expander)))))
@@ -541,7 +546,11 @@ the next message restarts Claude Code with that mode's tools and model."
     (when entry
       (gtk:label-set-text (cdr entry) (if (> (length text) 4000) (concatenate 'string (subseq text 0 4000) "…") text))
       (when error
-        (gtk:expander-set-label (car entry) (format nil "~a — failed" (gtk:expander-get-label (car entry))))))))
+        (set-tool-row-label (car entry) (format nil "~a — failed" (gtk:expander-get-label (car entry))))))))
+
+(defun set-tool-row-label (expander text)
+  (gtk:label-set-text (gtk:expander-get-label-widget expander) text)
+  (gtk:widget-set-tooltip-text expander text))
 
 (defun handle-claude-event (event)
   (unless (event-subagent event)
@@ -650,7 +659,10 @@ started in the other mode is replaced, resuming the same conversation."
   (set-panel-visible *window* t)
   (panel-show (window-panel *window*) "claude")
   (let* ((card (make-instance 'gtk:box :orientation :vertical :spacing 6 :css-classes '("cadre-chat-approval")))
-         (buttons (make-instance 'gtk:box :spacing 6 :halign :end))
+         ;; A flow box, so the buttons go onto two lines in a narrow panel
+         ;; rather than widening it past the window's edge.
+         (buttons (make-instance 'gtk:flow-box :selection-mode :none :halign :end :homogeneous nil
+                                               :column-spacing 6 :row-spacing 6 :max-children-per-line 3))
          (answered nil)
          (deny nil))
     (labels ((answer (value label)
@@ -662,13 +674,13 @@ started in the other mode is replaced, resuming the same conversation."
                  (funcall done value))))
       (setf deny (lambda () (answer :deny "Denied")))
       (push deny (chat-pending-approvals *chat*))
-      (gtk:box-append card (make-instance 'gtk:label :label title :xalign 0.0 :css-classes '("heading")))
+      (gtk:box-append card (make-instance 'gtk:label :label title :xalign 0.0 :wrap t :css-classes '("heading")))
       (gtk:box-append card (make-instance 'gtk:label :label detail :xalign 0.0 :wrap t :selectable t
                                                      :wrap-mode :char :css-classes '("monospace")))
       (flet ((button (label value note &optional classes)
                (let ((b (make-instance 'gtk:button :label label :css-classes classes)))
                  (gobject:connect b :clicked (lambda (x) (declare (ignore x)) (answer value note)))
-                 (gtk:box-append buttons b))))
+                 (gtk:flow-box-append buttons b))))
         (button "Deny" :deny "Denied")
         (button "Allow for This Conversation" :session "Allowed for this conversation")
         (button "Allow Once" :once "Allowed" '("suggested-action")))
