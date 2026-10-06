@@ -109,7 +109,8 @@ Cadre starts."
           (setf gtk4.runtime::*lost-reference-hook*
                 (lambda (type address)
                   (session-log "!! gtk4: a ~a at #x~x was freed under Lisp's reference (backtrace in cadre.log)"
-                               type address)))
+                               type address)
+                  (announce-lost-reference type address)))
           (mapc #'log-calls *session-log-functions*))
       (error (e) (format *error-output* "~&;; No session log: ~a~%" e)))))
 
@@ -120,3 +121,37 @@ Cadre starts."
     (session-log ";; Cadre exited normally")
     (close *session-log-stream*)
     (setf *session-log-stream* nil)))
+
+;;; TEMPORARY, while finding the crash: say so at once when gtk4 catches an
+;;; object freed under Lisp's reference. Remove this section, and the call
+;;; to ANNOUNCE-LOST-REFERENCE above, once the cause is fixed.
+
+(defvar *lost-reference-dialog* nil "The open dialog, so a burst of catches shows one.")
+
+(defun announce-lost-reference (type address)
+  ;; Called while GTK is freeing the object: show the dialog once it's done.
+  (glib:idle-add glib:+priority-default-idle+
+                 (lambda ()
+                   (ignore-errors (show-lost-reference-dialog type address))
+                   nil)))
+
+(defun show-lost-reference-dialog (type address)
+  (message "gtk4 caught a ~a freed under Lisp's reference: the crash, avoided" type)
+  (when (and *window* (null *lost-reference-dialog*))
+    (let ((dialog (adw:alert-dialog-new
+                   "Caught the crash"
+                   (format nil "A ~a (#x~x) was freed while Lisp still held it. Before, this crashed Cadre; ~
+                                this time it was caught.~%~%cadre.log has the backtrace of what freed it, ~
+                                and session.log what you were doing. Cadre carries on, but save your work."
+                           type address))))
+      (setf *lost-reference-dialog* dialog)
+      (adw:alert-dialog-add-response dialog "ok" "_OK")
+      (adw:alert-dialog-add-response dialog "log" "_Open the Log")
+      (adw:alert-dialog-set-response-appearance dialog "log" :suggested)
+      (adw:alert-dialog-set-default-response dialog "log")
+      (adw:alert-dialog-set-close-response dialog "ok")
+      (gio:async (adw:alert-dialog-choose dialog (window-gtk-window *window*))
+                 (lambda (response)
+                   (setf *lost-reference-dialog* nil)
+                   (when (string= response "log")
+                     (open-file-path (merge-pathnames "cadre.log" (state-directory)))))))))
