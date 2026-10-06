@@ -396,7 +396,10 @@ it when the project has an :entry-point)."
   (let ((view (selected-view win)))
     (if view
         (multiple-value-bind (line column) (view-cursor-line-column view)
-          (gtk:label-set-text (window-status-position win) (format nil "Ln ~d, Col ~d" line column))
+          (gtk:label-set-text (window-status-position win)
+                              (if (image-buffer-p (view-buffer view))
+                                  (image-status-text (view-buffer view))
+                                  (format nil "Ln ~d, Col ~d" line column)))
           (gtk:label-set-text (window-status-mode win)
                               (major-mode-title (find-major-mode (buffer-major-mode (view-buffer view))))))
         (progn

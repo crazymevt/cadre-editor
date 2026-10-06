@@ -320,7 +320,9 @@
   "+" 'image-zoom-in
   "=" 'image-zoom-in
   "-" 'image-zoom-out
-  "0" 'image-actual-size)
+  "0" 'image-actual-size
+  "g" 'image-toggle-grid
+  "S-g" 'image-set-grid)
 
 ;;; Languages from tree-sitter grammars (tree-sitter.lisp)
 (dolist (mode (mapcar #'car *tree-sitter-modes*))

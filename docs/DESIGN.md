@@ -487,6 +487,11 @@ band leave it alone. It holds one paintable, the picture scaled with
 `gdk_pixbuf_composite_color_simple` (nearest-neighbour when enlarging, over
 a checkerboard), and a line giving its size and zoom. A file monitor shows
 it again when the file changes; the session restores it as `(:image path)`.
+The grid is drawn into the scaled pixbuf (filling one-pixel subpixbufs), and
+skipped where cells would be under 3 screen pixels. The pointer's pixel
+comes from the paintable's iter location, and its color from the pixbuf's
+pixels, kept when the picture loads; both show in the status bar's position
+label, which shows the picture's size otherwise.
 
 **Markdown mode with preview** (`.md`, `.markdown`) — *built 2026-10-03*
 (`src/core/markdown.lisp`, `src/ui/markdown.lisp`). As built: the line

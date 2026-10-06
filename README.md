@@ -391,6 +391,12 @@ size. `+` and `-` (or `Ctrl+=` and `Ctrl+-`) zoom, and `0` (`Ctrl+0`) shows
 it at its own size. When the file changes, say from saving it in a drawing
 program, the tab shows the new picture.
 
+For measuring out sprites, the status bar gives the pixel under the pointer
+and its color (`x 3, y 5 · #c04040ff`), and `g` shows a grid over the
+picture. `Shift+G` sets its cells: `16` for 16 × 16, `16x28`, or
+`16x28+128+100` to start them at x 128, y 100. The last grid set is used
+for the next picture too.
+
 ### Everyday editing
 
 | Action | Standard (⌘ on macOS) | Emacs |

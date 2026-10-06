@@ -2514,6 +2514,43 @@ d" 0 0)
 
 (then 200
   (check "C-= zooms in" (search "· 200%" (image-text)) (image-text))
+  (press "S-g"))
+
+(then 200
+  (let ((text (gtk:editable-get-text (cadre-ui::picker-entry (picker)))))
+    (check "Shift+G asks for the grid's cells" (equal "16x16" text) text))
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "8x14")
+  (cadre-ui::choose (picker)))
+
+(then 200
+  (check "the grid is drawn, and the line says so" (search "grid 8x14" (image-text)) (image-text))
+  (press "+") (press "+"))
+
+(then 300
+  (screenshot "image-grid")
+  (press "-") (press "-")
+  (check "grids parse" (equal '((16 16 0 0) (16 28 128 100) nil)
+                              (mapcar #'cadre-ui::parse-image-grid '("16" "16x28+128+100" "x"))))
+  (press "g"))
+
+(then 200
+  (check "g hides it" (not (search "grid" (image-text))) (image-text))
+  (check "the status bar gives a pixel's place and color"
+         (equal "x 3, y 5 · #c0404080" (cadre-ui::image-status-text (current-buffer) '(3 5)))
+         (cadre-ui::image-status-text (current-buffer) '(3 5)))
+  (check "and the picture's size otherwise"
+         (equal "16 × 28" (gtk:label-get-text (cadre-ui::window-status-position *window*)))
+         (gtk:label-get-text (cadre-ui::window-status-position *window*)))
+  (let* ((view (current-view))
+         (text-view (cadre-ui::view-text-view view))
+         (rect (gtk:text-view-get-iter-location text-view (gtk:text-buffer-get-start-iter (cadre-ui::view-gtk-buffer view)))))
+    ;; Pixel 3, 5 at 200%: 7, 11 into the picture, in widget coordinates.
+    (multiple-value-bind (wx wy) (gtk:text-view-buffer-to-window-coords text-view :widget
+                                                                        (+ (gdk:rectangle-x rect) 7)
+                                                                        (+ (gdk:rectangle-y rect) 11))
+      (check "the pointer's place maps to the picture's pixel"
+             (equal '(3 5) (cadre-ui::image-pixel-at view wx wy))
+             (cadre-ui::image-pixel-at view wx wy))))
   (let ((count (length (buffer-list))))
     (open-file-path *test-png*)
     (check "opening it again selects its tab" (= count (length (buffer-list)))))
