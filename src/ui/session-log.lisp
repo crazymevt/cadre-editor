@@ -23,8 +23,11 @@ Cadre starts."
     panel-show git-changed refresh-source-control
     background-parse-done cadre::ts-install-state
     open-file-path show-buffer write-buffer render-image
-    send-to-claude handle-claude-event chat-show-approval)
+    send-to-claude handle-claude-event chat-show-approval cadre::call-mcp-tool)
   "The functions whose calls the session log records.")
+
+(defparameter *session-log-returns* '(cadre::call-mcp-tool)
+  "Of those, the functions whose returns are logged too: slow ones, to see if they finished.")
 
 (defparameter *session-log-limit* (* 50 1024 1024)
   "Bytes the session log grows to before it starts again (keeping the old one as session.log.1).")
@@ -50,6 +53,10 @@ Cadre starts."
 
 (defun log-argument-1 (x)
   (typecase x
+    (cadre::claude-event
+     (format nil "#<claude-event ~(~a~)~@[ ~a~]~@[ ~s~]>" (cadre::event-kind x) (cadre::event-name x)
+             (let ((text (cadre::event-text x)))
+               (and (stringp text) (if (> (length text) 40) (concatenate 'string (subseq text 0 40) "…") text)))))
     (string (prin1-to-string (if (> (length x) 60) (concatenate 'string (subseq x 0 60) "…") x)))
     ((or number symbol character) (prin1-to-string x))
     (cons (let ((*print-length* 4) (*print-level* 2))
@@ -84,7 +91,11 @@ Cadre starts."
                         (lambda (function &rest arguments)
                           (session-log "~(~a~)~{ ~a~}" name (mapcar #'log-argument arguments))
                           (let ((*session-log-depth* (1+ *session-log-depth*)))
-                            (apply function arguments))))))
+                            (if (member name *session-log-returns*)
+                                (let ((values (multiple-value-list (apply function arguments))))
+                                  (session-log "~(~a~) returned~{ ~a~}" name (mapcar #'log-argument values))
+                                  (values-list values))
+                                (apply function arguments)))))))
 
 (defun start-session-log ()
   "Open the session log and start recording, if *session-log* is on."
