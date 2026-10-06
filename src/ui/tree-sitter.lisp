@@ -170,13 +170,14 @@ then show the new tree. Edits meanwhile mean another parse after."
 (defparameter *void-elements*
   '("area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "source" "track" "wbr"))
 
-(defun html-opening-tag-before (before)
+(defun html-opening-tag-before (before &key (void-elements *void-elements*))
   "True if BEFORE (a line up to the cursor) ends with an opening tag that
-takes content, such as <div class=\"x\">."
-  (multiple-value-bind (match groups) (cl-ppcre:scan-to-strings "<([A-Za-z][\\w-]*)[^<>]*>$" before)
+takes content, such as <div class=\"x\">. VOID-ELEMENTS never do (HTML's
+<br>; none in XML)."
+  (multiple-value-bind (match groups) (cl-ppcre:scan-to-strings "<([A-Za-z_][\\w.:-]*)[^<>]*>$" before)
     (and match
          (not (cl-ppcre:scan "/>$" before))
-         (not (member (string-downcase (aref groups 0)) *void-elements* :test #'string=)))))
+         (not (member (string-downcase (aref groups 0)) void-elements :test #'string=)))))
 
 (define-command code-newline ()
   "Start a new line with this one's indentation, one level more after an
@@ -190,7 +191,9 @@ opening bracket; between brackets, put the closing one on its own line."
                (indent (leading-space-count string))
                (before (string-right-trim " " (subseq string 0 column)))
                (after (string-left-trim " " (subseq string column)))
-               (tag (and (eq (buffer-major-mode (view-buffer view)) 'html-mode) (html-opening-tag-before before)))
+               (tag (case (buffer-major-mode (view-buffer view))
+                      (html-mode (html-opening-tag-before before))
+                      (xml-mode (html-opening-tag-before before :void-elements '()))))
                (opens (or tag (and (plusp (length before)) (assoc (char before (1- (length before))) (bracket-pairs)))))
                (closes (if tag
                            (and (>= (length after) 2) (string= "</" after :end2 2))

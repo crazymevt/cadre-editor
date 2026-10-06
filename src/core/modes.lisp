@@ -35,6 +35,21 @@ keymap, MAJOR-MODE-KEYMAP, is kept when the mode is redefined."
                      return (major-mode-name mode)))
         'fundamental-mode)))
 
+(defun major-mode-for-text (text)
+  "A guess at the major mode for TEXT that has no file (a value from the
+Lisp, say), from how it starts: XML or HTML at <, JSON at { or [, Lisp at (."
+  (let* ((start (or (position-if-not (lambda (c) (member c '(#\Space #\Tab #\Newline #\Return))) text)
+                    (length text)))
+         (head (string-downcase (subseq text start (min (length text) (+ start 15))))))
+    (flet ((starts (prefix) (and (>= (length head) (length prefix)) (string= prefix head :end2 (length prefix)))))
+      (cond ((or (starts "<!doctype html") (starts "<html")) 'html-mode)
+            ((and (starts "<") (> (length head) 1)
+                  (or (alpha-char-p (char head 1)) (member (char head 1) '(#\? #\!))))
+             'xml-mode)
+            ((or (starts "{") (starts "[")) 'json-mode)
+            ((starts "(") 'lisp-mode)
+            (t 'fundamental-mode)))))
+
 (define-major-mode fundamental-mode (:title "Text")
   "Plain text, with no special behaviour.")
 

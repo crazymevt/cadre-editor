@@ -3,7 +3,9 @@
 ;;;; With swank-presentations, the Lisp marks each REPL result with an id
 ;;;; (:presentation-start id, the text, :presentation-end id) and keeps the
 ;;;; object. Cadre tags the text so it can be clicked: a click inspects the
-;;;; object; right-click offers Inspect, Copy to Input and Copy Text. A
+;;;; object; right-click offers Inspect, Copy Value, Copy to Input and Open
+;;;; in New Tab (the value's text: a string's own characters, anything else
+;;;; printed in full, fetched from the Lisp; in a tab whose mode suits it). A
 ;;;; result copied into the input keeps its identity: when the input is
 ;;;; sent, it is read as #.(swank:lookup-presented-object-or-lose id), the
 ;;;; object itself rather than its printed text.
@@ -118,6 +120,43 @@
                      (progn (write-string (gtk:text-buffer-get-text gtk-buffer iter (iter-at gtk-buffer (1+ i)) t) out)
                             (incf i))))))))
 
+;;; A value's text, for copying or a new tab
+
+(defun value-text-form (expression)
+  "Source that writes the value of EXPRESSION (source) as text: a string's
+characters, or anything else printed in full."
+  (format nil "(let ((o ~a)) (write-string (if (stringp o) o (let ((*print-length* nil) (*print-level* nil) (*print-lines* nil) (*print-circle* t)) (prin1-to-string o)))) (values))"
+          expression))
+
+(defun fetch-value-text (expression on-text &key (thread t))
+  "Ask the Lisp for the text of EXPRESSION's value (value-text-form), then
+call ON-TEXT with it."
+  (with-connection (connection)
+    (rex connection (swank-call "swank:eval-and-grab-output" (value-text-form expression)) :thread thread
+         :on-ok (lambda (reply) (funcall on-text (first reply)))
+         :on-abort (lambda (reason) (declare (ignore reason))
+                     (message "That value is gone (the REPL's results were cleared, or the Lisp restarted)")))))
+
+(defun copy-value-text (expression &key (thread t))
+  (fetch-value-text expression
+                    (lambda (text)
+                      (gdk:clipboard-set-text (gdk:display-get-clipboard (gdk:display-get-default)) text)
+                      (message "Copied ~:d character~:p" (length text)))
+                    :thread thread))
+
+(defun open-text-in-new-tab (text &key (name "value"))
+  "Show TEXT in a new, unsaved tab, in the mode its start suggests (XML, JSON, Lisp…)."
+  (let ((buffer (make-buffer :name name :text (make-gtk-text) :major-mode (major-mode-for-text text))))
+    (text-replace-contents (buffer-text buffer) text)
+    (show-buffer *window* buffer)
+    buffer))
+
+(defun open-value-in-new-tab (expression &key (thread t))
+  (fetch-value-text expression (lambda (text) (open-text-in-new-tab text)) :thread thread))
+
+(defun presentation-expression (presentation)
+  (format nil "(swank:lookup-presented-object-or-lose ~d)" (first presentation)))
+
 ;;; Clicking
 
 (defun repl-offset-at (view x y)
@@ -126,28 +165,37 @@
       (multiple-value-bind (ok iter) (gtk:text-view-get-iter-at-location text-view bx by)
         (and ok (gtk:text-iter-get-offset iter))))))
 
-(defun show-presentation-menu (view presentation x y)
-  (let* ((text-view (view-text-view view))
-         (box (make-instance 'gtk:box :orientation :vertical))
+(defun show-popover-menu (widget x y items)
+  "A menu at (X, Y) in WIDGET of ITEMS, (label . function) each."
+  (let* ((box (make-instance 'gtk:box :orientation :vertical))
          (popover (make-instance 'gtk:popover :child box :has-arrow nil :css-classes '("menu"))))
-    (flet ((item (label action)
-             (let ((button (make-instance 'gtk:button :label label :css-classes '("flat"))))
+    (loop for (label . action) in items
+          do (let ((button (make-instance 'gtk:button :label label :css-classes '("flat")))
+                   (action action))
                (gtk:widget-set-halign (gtk:button-get-child button) :start)
                (gobject:connect button :clicked (lambda (b) (declare (ignore b))
                                                   (gtk:popover-popdown popover)
-                                                  (let ((*repl* (buffer-local (view-buffer view) :repl)))
-                                                    (funcall action))))
-               (gtk:box-append box button))))
-      (item "Inspect" (lambda () (inspect-presentation presentation)))
-      (item "Copy to Input" (lambda () (copy-presentation-to-input presentation)))
-      (item "Copy Text" (lambda () (gdk:clipboard-set-text (gtk:widget-get-clipboard text-view)
-                                                           (presentation-text presentation)))))
-    (gtk:widget-set-parent popover text-view)
+                                                  (handler-case (funcall action)
+                                                    (editor-error (e) (message "~a" (editor-error-message e))))))
+               (gtk:box-append box button)))
+    (gtk:widget-set-parent popover widget)
     (gtk:popover-set-pointing-to popover (gdk:make-rectangle :x (round x) :y (round y) :width 1 :height 1))
     (gobject:connect popover :closed (lambda (p)
                                        (glib:idle-add glib:+priority-default-idle+
                                                       (lambda () (gtk:widget-unparent p) nil))))
-    (gtk:popover-popup popover)))
+    (gtk:popover-popup popover)
+    popover))
+
+(defun presentation-menu-items (view presentation)
+  (flet ((in-repl (function)
+           (lambda () (let ((*repl* (buffer-local (view-buffer view) :repl))) (funcall function)))))
+    (list (cons "Inspect" (in-repl (lambda () (inspect-presentation presentation))))
+          (cons "Copy Value" (in-repl (lambda () (copy-value-text (presentation-expression presentation)))))
+          (cons "Copy to Input" (in-repl (lambda () (copy-presentation-to-input presentation))))
+          (cons "Open in New Tab" (in-repl (lambda () (open-value-in-new-tab (presentation-expression presentation))))))))
+
+(defun show-presentation-menu (view presentation x y)
+  (show-popover-menu (view-text-view view) x y (presentation-menu-items view presentation)))
 
 (defun setup-presentation-clicks (view)
   "In VIEW (a REPL's), clicking a result inspects it; right-clicking offers a menu."

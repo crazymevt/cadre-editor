@@ -674,6 +674,26 @@ Over lines.\"
   (is string= (format nil "{~%  // the name~%  \"a\": 1, // one~%  \"b\": 2~%}~%")
       (c:format-json (format nil "{ // the name~%\"a\": 1, // one~%\"b\": 2}"))))
 
+(define-test format-xml :parent cadre-tests
+  (is string= (format nil "<?xml version=\"1.0\"?>~%<a x=\"1>2\">~%  <b>text</b>~%  <c/>~%  <d></d>~%  <e>~%    <!-- note -->~%    <f>1</f>~%  </e>~%</a>~%")
+      (c:format-xml "<?xml version=\"1.0\"?><a x=\"1>2\"><b> text </b><c/><d></d><e><!-- note --><f>1</f></e></a>"))
+  ;; CDATA and the doctype come out as they went in; laid out stays the same.
+  (let ((text (format nil "<!DOCTYPE note [<!ELEMENT note (#PCDATA)>]>~%<note>~%  <![CDATA[<raw> & ]]>~%</note>~%")))
+    (is string= text (c:format-xml text))
+    (is string= text (c:format-xml (remove #\Newline text))))
+  (is string= (format nil "<a>~%  one~%  <b/>~%  two~%</a>~%") (c:format-xml "<a>one<b/>two</a>")
+      "mixed content: text on its own lines")
+  (is string= (format nil "<a>~%    <b/>~%</a>~%") (c:format-xml "<a><b/></a>" :indent 4)))
+
+(define-test mode-for-text :parent cadre-tests
+  (is eq 'c:xml-mode (c:major-mode-for-text (format nil "  ~%<?xml version=\"1.0\"?><a/>")))
+  (is eq 'c:xml-mode (c:major-mode-for-text "<root><x/></root>"))
+  (is eq 'c:html-mode (c:major-mode-for-text "<!DOCTYPE html><html></html>"))
+  (is eq 'c:json-mode (c:major-mode-for-text "{\"a\": 1}"))
+  (is eq 'c:lisp-mode (c:major-mode-for-text "(a b)"))
+  (is eq 'c:fundamental-mode (c:major-mode-for-text "a < b"))
+  (is eq 'c:fundamental-mode (c:major-mode-for-text "")))
+
 (define-test format-css :parent cadre-tests
   (is string= (format nil "a, b > c {~%  color: red;~%  margin: 0 auto;~%}~%~%p {~%  font: 12px \"A  B\";~%}~%")
       (c:format-css "a,b > c{color:red;margin:0   auto}p{font:12px \"A  B\"}"))

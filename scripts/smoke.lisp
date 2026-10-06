@@ -14,7 +14,7 @@
 (in-package #:cadre-smoke)
 
 (defvar *out* (merge-pathnames "build/smoke/" (truename ".")))
-(defvar *root* (merge-pathnames (format nil "cadre-smoke-~d/" (get-universal-time))
+(defvar *root* (merge-pathnames (format nil "cadre-smoke-~d-~d/" (get-universal-time) (sb-posix:getpid))
                                 (uiop:temporary-directory)))
 (defvar *results* '())
 (defvar *steps* '())
@@ -112,8 +112,41 @@
   (let ((stack (cadre-ui::panel-stack (cadre-ui::window-panel *window*))))
     (gtk:stack-page-get-title (gtk:stack-get-page stack (gtk:stack-get-child-by-name stack name)))))
 
+;;; Sections: `make smoke ONLY=run-app` runs that section, and the ones it
+;;; needs, instead of everything (`make smoke-list` names them). Each
+;;; section starts with (section "name" :needs (...)); its steps are tagged
+;;; with it.
+
+(defvar *sections* '() "(name . needs), in order.")
+(defvar *current-section* nil)
+
+(defmacro section (name &key needs)
+  `(progn (setf *current-section* ,name)
+          (setf *sections* (append *sections* (list (cons ,name ',needs))))))
+
+(defun push-step (step)
+  (push (cons *current-section* step) *steps*))
+
+(defun selected-sections (only)
+  "The sections to run for ONLY (names separated by commas or spaces), with
+everything they need, in file order; all of them if ONLY is empty."
+  (let ((names (remove "" (uiop:split-string only :separator ", ") :test #'string=))
+        (chosen '()))
+    (labels ((add (name)
+               (let ((entry (or (assoc name *sections* :test #'string=)
+                                (progn (format t "~&No smoke section ~s. Sections: ~{~a~^ ~}~%"
+                                               name (mapcar #'car *sections*))
+                                       (uiop:quit 2)))))
+                 (unless (member name chosen :test #'string=)
+                   (push name chosen)
+                   (mapc #'add (cdr entry))))))
+      (if names
+          (progn (mapc #'add names)
+                 (remove-if-not (lambda (s) (member s chosen :test #'string=)) (mapcar #'car *sections*)))
+          (mapcar #'car *sections*)))))
+
 (defmacro then (delay &body body)
-  `(push (cons ,delay (lambda () ,@body)) *steps*))
+  `(push-step (cons ,delay (lambda () ,@body))))
 
 (defun finish ()
   (format t "~&--- Output panel ---~%~a~%---~%" (cadre-ui::panel-output-string (cadre-ui::window-panel *window*)))
@@ -124,7 +157,35 @@
 
 (defmacro then-when ((condition &key (timeout 30)) &body body)
   "A step that runs once CONDITION is true (checked every 100 ms), or after TIMEOUT seconds."
-  `(push (list :wait (lambda () ,condition) ,timeout (lambda () ,@body)) *steps*))
+  `(push-step (list :wait (lambda () ,condition) ,timeout (lambda () ,@body))))
+
+(defun open-files (&rest files)
+  "Steps that open FILES (relative to *root*) unless they are open, and show
+the first: so a section can run without the ones before it."
+  (then 50
+    (dolist (file files)
+      (unless (find-buffer (file-namestring file))
+        (open-file-path (merge-pathnames file *root*)))))
+  (then-when ((every (lambda (file) (find-buffer (file-namestring file))) files) :timeout 10)
+    (show-buffer-named (file-namestring (first files)))))
+
+(defvar *quicklisp-loaded* nil)
+
+(defun load-quicklisp ()
+  "Steps that load Quicklisp into the Lisp, as a usual init file would (the
+smoke test starts it without one), and wait for it."
+  (then 50
+    (with-connection (connection)
+      (cadre-ui::rex connection (swank-call "swank:interactive-eval"
+                                            "(load (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname)))" 3 120)
+                     :on-ok (lambda (v) (declare (ignore v)) (setf *quicklisp-loaded* t)))))
+  (then-when (*quicklisp-loaded* :timeout 120)))
+
+(defun connect-lisp ()
+  "Steps that start a Lisp unless one is connected, and wait for it."
+  (then 50
+    (unless (or (cadre-ui::connected-p) cadre-ui::*connecting*) (call-command 'lisp)))
+  (then-when ((cadre-ui::connected-p) :timeout 120)))
 
 (defun run-step (fn)
   (handler-case (funcall fn)
@@ -185,6 +246,7 @@
   (format o "hidden"))
 
 ;;; The steps
+(section "basics")
 (then 1500
   (check "window is the frontend" (eq *frontend* *window*))
   (check "project is open" (equal (truename (cadre-ui::window-project *window*)) (truename *root*)))
@@ -291,6 +353,8 @@
   (open-file-path (merge-pathnames "src/m1.lisp" *root*)))
 
 ;;; M1: Lisp editing
+(section "lisp-editing")
+(open-files "src/m1.lisp")
 (then 800
   (check "m1.lisp is open" (string= "m1.lisp" (buffer-name (current-buffer))))
   (check "defun is highlighted as a definer" (has-face-p 0 1 :definer))
@@ -395,6 +459,9 @@
   (call-command 'lisp))
 
 ;;; M2: the connected Lisp
+(section "connected-lisp")
+(open-files "src/m2.lisp")
+(then 50 (unless (or (cadre-ui::connected-p) cadre-ui::*connecting*) (call-command 'lisp)))
 (then-when ((cadre-ui::connected-p) :timeout 120)
   (check "M-x lisp starts a Lisp and connects" (cadre-ui::connected-p))
   (check "the status bar shows the connection"
@@ -532,6 +599,7 @@
   (check "the loaded system's code runs" (search ":LOADED" (repl-text)) (subseq (repl-text) (max 0 (- (length (repl-text)) 300)))))
 
 ;;; M3: debugger and tools
+(section "debugger")
 (then 300
   (open-file-path (merge-pathnames "src/m3.lisp" *root*)
                   :then (lambda (view) (declare (ignore view)) (call-command 'compile-and-load-file))))
@@ -637,6 +705,7 @@
   (cadre-ui::toggle-trace-of "deep" "COMMON-LISP-USER"))
 
 ;;; Lisp tools: tracing and stepping
+(section "tracing" :needs ("debugger"))
 
 (defun trace-page () cadre-ui::*trace-page*)
 (defun trace-calls () (cadre-ui::tp-tree (trace-page)))
@@ -763,6 +832,7 @@
   (check "the explorer comes back" (equal "explorer" (cadre-ui::sidebar-page *window*))))
 
 ;;; M4: Claude (a stand-in CLI, scripts/fake-claude, plays Claude's part)
+(section "claude" :needs ("connected-lisp"))
 (defun chat-texts () (label-texts (cadre-ui::chat-messages cadre-ui::*chat*)))
 (defun chat-says (text) (some (lambda (s) (search text s)) (chat-texts)))
 (defun chat-type (text)
@@ -771,7 +841,7 @@
 
 (defvar *signed-out* (merge-pathnames "fake-claude-signed-out" *root*))
 
-(then 300
+(then-when ((and cadre-ui::*claude-status* (cadre-ui::claude-ready-p)) :timeout 20)
   (check "Cadre checked Claude Code at startup"
          (and cadre-ui::*claude-status* (cadre-ui::claude-ready-p)))
   (with-open-file (o *signed-out* :direction :output :if-exists :supersede) (write-line "out" o))
@@ -906,6 +976,7 @@
 
 
 ;;; M5: Emacs depth
+(section "emacs")
 (defun type-keys (keys)
   "Type KEYS (\"C-u 3 x\") as if pressed, letting Cadre type the keys GTK would."
   (dolist (key (parse-keys keys))
@@ -1141,6 +1212,11 @@ d" 0 0)
   (setf *keybinding-profile* :standard))
 
 ;;; M6: themes, settings, files changed on disk
+(section "settings")
+(open-files "src/m1.lisp" "src/m5.lisp")
+(then 50
+  (unless (buffer-modified-p (find-buffer "m5.lisp"))
+    (buffer-insert (find-buffer "m5.lisp") (format nil ";; mine~%") 0)))
 (defun tag-color (buffer face)
   (let ((tag (cadre-ui::face-tag (buffer-text buffer) face)))
     (and (gobject:property tag :foreground-set)
@@ -1210,6 +1286,8 @@ d" 0 0)
   (check "and hides the bar" (not (gtk:revealer-get-reveal-child cadre-ui::*conflict-bar*))))
 
 ;;; Editing tools: find options, wrapping, project search, rename, extract
+(section "editing-tools")
+(open-files "src/m5.lisp" "src/m1.lisp")
 (defun find-bar () (cadre-ui::window-find-bar *window*))
 (defun match-count () (length (cadre-ui::find-bar-matches (find-bar))))
 
@@ -1326,6 +1404,8 @@ d" 0 0)
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
 ;;; Completion as you type, and hints from the source
+(section "completion")
+(open-files "src/m1.lisp")
 (defun arglist-markup () (gtk:label-get-label (cadre-ui::window-status-arglist *window*)))
 
 (then 100
@@ -1407,6 +1487,7 @@ d" 0 0)
            (mapcar #'buffer-name asked))))
 
 ;;; Markdown
+(section "markdown")
 (defun preview-buffer () (find-buffer "Preview guide.md"))
 (defun preview-text () (buffer-string (preview-buffer)))
 
@@ -1508,6 +1589,7 @@ d" 0 0)
   (check "closing that preview lets the file go too" (and (null (preview-buffer)) (null (find-buffer "guide.md")))))
 
 ;;; Files from the explorer
+(section "explorer")
 (defun choose-name (text)
   (gtk:editable-set-text (cadre-ui::picker-entry (picker)) text)
   (cadre-ui::choose (picker)))
@@ -1554,6 +1636,7 @@ d" 0 0)
       (check "and closes the unmodified buffers of files in it" (null (find-file-buffer new))))))
 
 ;;; Pinned tabs
+(section "pinned-tabs")
 (defun group-titles (group) (mapcar #'adw:tab-page-get-title (cadre-ui::group-pages group)))
 
 (then 100
@@ -1593,6 +1676,7 @@ d" 0 0)
          (not (adw:tab-page-get-pinned (cadre-ui::view-page *window* (current-view))))))
 
 ;;; Outline
+(section "outline")
 (defun outline-labels ()
   (mapcar #'first (cadre-ui::ol-items cadre-ui::*outline*)))
 
@@ -1625,6 +1709,8 @@ d" 0 0)
   (check "for Markdown, the headings" (member "Usage" (outline-labels) :test #'string=) (outline-labels)))
 
 ;;; Claude edit
+(section "claude-edit")
+(open-files "src/m1.lisp")
 (then 100
   (show-buffer-named "m1.lisp")
   (set-cursor 1 3)                      ; in (defun area …)
@@ -1644,6 +1730,8 @@ d" 0 0)
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
 ;;; Everyday things
+(section "everyday")
+(open-files "src/m1.lisp")
 (defun m1-text () (buffer-string (find-buffer "m1.lisp")))
 (defmacro with-current-buffer-repl (&body body)
   "Run BODY as if typed in the REPL (its buffer current)."
@@ -1705,6 +1793,11 @@ d" 0 0)
   ;; The REPL's history, at the prompt
   (let ((cadre-ui::*repl* cadre-ui::*repl*))
     (cadre-ui::show-repl-page :focus t)
+    ;; Run alone, nothing has been typed at the prompt yet.
+    (cadre-ui::ensure-repl-history-loaded)
+    (when (zerop (length (cadre-ui::repl-history cadre-ui::*repl*)))
+      (vector-push-extend "(list :a 42)" (cadre-ui::repl-history cadre-ui::*repl*))
+      (cadre-ui::save-repl-history))
     (cadre-ui::set-repl-input "draft")
     (let ((cadre-ui::*this-command* nil))
       (with-current-buffer-repl
@@ -1720,7 +1813,11 @@ d" 0 0)
            (search "(list :a" (uiop:read-file-string (cadre-ui::repl-history-file))))
     (cadre-ui::set-repl-input "")))
 
-(then 200
+(then 50
+  (setf cadre-ui::*project-definitions-time* 0)
+  (cadre-ui::refresh-project-definitions))
+
+(then-when ((gethash "scale-shape" cadre-ui::*project-definitions*) :timeout 10)
   (if (cadre-ui::connected-p)
       (check "Go to Definition without a Lisp (skipped: one is running)" t)
       (progn
@@ -1746,6 +1843,8 @@ d" 0 0)
                 (string= "scale-shape" (gtk:editable-get-text (cadre-ui::ps-entry cadre-ui::*project-search*)))))))
 
 ;;; Git
+(section "git")
+(open-files "src/m1.lisp")
 (defun m1-git () (cadre-ui::buffer-git (find-buffer "m1.lisp")))
 
 (then 100
@@ -1832,6 +1931,7 @@ d" 0 0)
   (check "after the commit, the gutter has nothing to mark" (null (cadre-ui::gf-hunks (m1-git)))))
 
 ;;; Branches, push and pull, with a remote on disk
+(section "git-remote" :needs ("git"))
 (defvar *remote* (merge-pathnames "cadre-smoke-remote.git/" (uiop:temporary-directory)))
 (defvar *other* (merge-pathnames "cadre-smoke-other/" (uiop:temporary-directory)))
 
@@ -1905,6 +2005,7 @@ d" 0 0)
   (uiop:delete-directory-tree *other* :validate t :if-does-not-exist :ignore))
 
 ;;; History, blame, stashes
+(section "git-history" :needs ("git-remote"))
 (defun history-subjects () (mapcar (lambda (c) (getf c :subject)) (cadre-ui::hist-commits cadre-ui::*history*)))
 
 (then 100
@@ -1977,6 +2078,7 @@ d" 0 0)
          (list (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)) (gtk:label-get-text (cadre-ui::window-status-message *window*)))))
 
 ;;; Staging single changes, and merge conflicts
+(section "git-staging" :needs ("git-history"))
 (defun staged-diff () (git *root* "diff" "--cached" "--no-color" "-U0"))
 (defun m1-disk () (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
 (defun set-m1 (text)
@@ -2083,6 +2185,7 @@ d" 0 0)
   (check "and the banner goes" (null (adw:bin-get-child (cadre-ui::sc-banner cadre-ui::*source-control*)))))
 
 ;;; Folding
+(section "folding")
 
 (defun folds () (cadre-ui::buffer-folds (current-buffer)))
 (defun fold-lines-now () (sort (mapcar (lambda (f) (cadre-ui::fold-first-line (buffer-text (current-buffer)) f)) (folds)) #'<))
@@ -2152,6 +2255,7 @@ d" 0 0)
   (check "Unfold All shows everything" (and (null (folds)) (not (line-hidden-p 13)))))
 
 ;;; A new Lisp project
+(section "new-project")
 
 (defun np (key) (getf cadre-ui::*new-project-dialog* key))
 (defvar *new-parent* (merge-pathnames "new-projects/" *root*))
@@ -2199,6 +2303,7 @@ d" 0 0)
   (screenshot "39-new-project-open"))
 
 ;;; Build Project
+(section "build" :needs ("new-project"))
 
 (defun status-text () (gtk:label-get-text (cadre-ui::window-status-message *window*)))
 
@@ -2228,17 +2333,14 @@ d" 0 0)
   (screenshot "40-build"))
 
 ;;; Run Tests
+(section "run-tests" :needs ("build"))
 
 (defun app-file (path) (merge-pathnames (concatenate 'string "smoke-app/" path) *new-parent*))
 
-(then 300
-  ;; As a usual init file would: Quicklisp, which knows where Parachute is.
-  (with-connection (connection)
-    (cadre-ui::rex connection (swank-call "swank:interactive-eval"
-                                          "(load (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname)))" 3 120)
-                   :on-ok (lambda (v) (declare (ignore v)) (setf (cadre-ui::buffer-local (current-buffer) :ql-loaded) t)))))
+;; Quicklisp knows where Parachute is.
+(load-quicklisp)
 
-(then-when ((cadre-ui::buffer-local (current-buffer) :ql-loaded) :timeout 60)
+(then 300
   (call-command 'cadre-ui::run-tests))
 
 (then-when ((search "Passed:" (repl-text)) :timeout 120)
@@ -2268,6 +2370,9 @@ d" 0 0)
   (screenshot "41-tests"))
 
 ;;; Run GTK App
+(section "gtk-app")
+(load-quicklisp)
+(then 50 (ensure-directories-exist *new-parent*))
 
 (then 300
   (cadre-ui::make-new-project *new-parent* "smoke-gtk" :kind :gtk-application :tests :parachute :license nil))
@@ -2312,6 +2417,7 @@ d" 0 0)
   (check "evaluation is back in the REPL's thread" (string= "(foo)" (cadre-ui::gtk-thread-source "(foo)"))))
 
 ;;; Run App: the ▶ button, for a GTK app and for one that reads its input in the REPL
+(section "run-app" :needs ("gtk-app"))
 
 (defun run-button () (gethash :run-button cadre-ui::*named-widgets*))
 
@@ -2351,7 +2457,68 @@ d" 0 0)
   (check "Stop App aborts a console app waiting for input" (null cadre-ui::*console-app*))
   (check "and the REPL takes forms again" (not (cadre-ui::repl-busy cadre-ui::*repl*))))
 
+(then-when ((search "Stopped" (status-text)) :timeout 10)
+  (check "the status bar names what stopped" (search "Stopped smoke-cli:main" (status-text)) (status-text)))
+
+;;; The main menu: a short list of submenus, each item a command
+(section "main-menu")
+
+(defun menu-entries (model)
+  "(label . target) for each item under MODEL, through its sections and submenus,
+and the number of items MODEL itself shows."
+  (let ((entries '()) (shown 0))
+    (labels ((walk (model top)
+               (dotimes (i (gio:menu-model-get-n-items model))
+                 (let ((section (gio:menu-model-get-item-link model i "section"))
+                       (submenu (gio:menu-model-get-item-link model i "submenu")))
+                   (cond (section (walk section top))
+                         (t (when top (incf shown))
+                            (if submenu
+                                (walk submenu nil)
+                                (let ((label (gio:menu-model-get-item-attribute-value model i "label" nil))
+                                      (target (gio:menu-model-get-item-attribute-value model i "target" nil)))
+                                  (push (cons (glib:variant-get-string label)
+                                              (glib:variant-get-string target))
+                                        entries)))))))))
+      (walk model t))
+    (values (nreverse entries) shown)))
+
+(then 100
+  (let ((button (gethash :main-menu cadre-ui::*named-widgets*)))
+    (multiple-value-bind (entries shown) (menu-entries (gtk:menu-button-get-menu-model button))
+      (check "the main menu shows a dozen entries, not every command" (<= shown 12) shown)
+      (check "every menu item is a command"
+             (every (lambda (e) (cadre:find-command (find-symbol (string-upcase (cdr e)) :cadre-ui))) entries)
+             (remove-if (lambda (e) (cadre:find-command (find-symbol (string-upcase (cdr e)) :cadre-ui))) entries))
+      (check "and Run App is in it" (find "run-app" entries :key #'cdr :test #'string=)))
+    (gtk:menu-button-popup button)))
+
+(then 400
+  (screenshot "44-main-menu" (gtk:menu-button-get-popover (gethash :main-menu cadre-ui::*named-widgets*))))
+
+(then 100
+  (gtk:menu-button-popdown (gethash :main-menu cadre-ui::*named-widgets*)))
+
+;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
+(section "indentation")
+(connect-lisp)
+
+(then 300
+  (cadre-ui::repl-eval "(defmacro smoke-around (thing &body body) `(progn ,thing ,@body))"))
+
+(then-when ((cadre:indentation-spec "smoke-around") :timeout 20)
+  (check "a macro's &body position comes from the Lisp" (eql 1 (cadre:indentation-spec "smoke-around"))
+         (cadre:indentation-spec "smoke-around")))
+
+(then 100
+  (let ((key (cadre-ui::event-key (gdk:keyval-from-name "Return") '(:super-mask :alt-mask) :super-as-control t)))
+    (check "Cmd+Option+Return compiles and loads a Lisp file (Standard keys)"
+           (eq 'cadre-ui::compile-and-load-file
+               (cadre:keymap-lookup (cadre-ui::mode-profile-keymap 'cadre:lisp-mode :standard) (list key)))
+           key)))
+
 ;;; Other languages, through tree-sitter (needs the grammars installed)
+(section "tree-sitter")
 
 (defvar *langs* (merge-pathnames "langs/" *new-parent*))
 (defun write-lang-file (name text)
@@ -2436,6 +2603,7 @@ d" 0 0)
            (cadre-ui::outline-items (current-buffer)))))
 
 ;;; HTML, CSS and Format Document
+(section "html-css" :needs ("tree-sitter"))
 
 (defvar *web-grammars* (every #'tree-sitter-language-installed-p '("html" "css" "javascript")))
 
@@ -2521,7 +2689,86 @@ d" 0 0)
          (string= (format nil "(defun f ()~%  (+ 1~%     2))~%") (buffer-string (current-buffer)))
          (buffer-string (current-buffer))))
 
+;;; XML: colors, outline, Return between tags, Format Document
+(section "xml")
+
+(defvar *xml-grammar* (tree-sitter-language-installed-p "xml"))
+
+(then 300
+  (unless *xml-grammar* (format t "~&(the XML grammar isn't installed: skipping its colors)~%"))
+  (write-lang-file "feed.xml" (format nil "<?xml version=\"1.0\"?>~%<!-- items -->~%<feed lang=\"en\"><item id=\"1\">One</item><entry/></feed>~%"))
+  (open-file-path (merge-pathnames "feed.xml" *langs*)))
+
+(then-when ((and (find-buffer "feed.xml") (eq (current-buffer) (find-buffer "feed.xml"))))
+  (check "a .xml file opens in XML mode" (eq 'xml-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (when *xml-grammar*
+    (check "XML comments are colored" (has-face-p 1 6 :comment))
+    (check "tag names" (has-face-p 2 2 :code-type))
+    (check "attribute names" (has-face-p 2 7 :code-property))
+    (check "and attribute values" (has-face-p 2 13 :string))
+    (check "the outline lists the root's elements"
+           (equal '("item" "entry") (mapcar #'first (cadre-ui::outline-items (current-buffer))))
+           (cadre-ui::outline-items (current-buffer))))
+  (call-command 'cadre-ui::format-document))
+
+(then 300
+  (check "Format Document lays XML out"
+         (string= (format nil "<?xml version=\"1.0\"?>~%<!-- items -->~%<feed lang=\"en\">~%  <item id=\"1\">One</item>~%  <entry/>~%</feed>~%")
+                  (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (screenshot "45-xml")
+  (set-cursor 3 2)
+  (insert-at-cursor "<br>")
+  (call-command 'cadre-ui::code-newline))
+
+(then 300
+  (check "Return after an opening tag indents, even <br> (not HTML's empty element)"
+         (string= "    <item id=\"1\">One</item>" (line-text 4)) (list (line-text 3) (line-text 4)))
+  (setf (buffer-modified-p (current-buffer)) nil))
+
+;;; A value from the REPL or the Inspector: copy it, or open it in a tab
+
+(section "repl-values")
+(connect-lisp)
+
+(then 100
+  (cadre-ui::show-repl-page)
+  (cadre-ui::repl-eval "(format nil \"<a><b>~a</b></a>\" \"x \\\"q\\\"\")"))
+
+(then-when ((cadre-ui::repl-presentations) :timeout 20)
+  (let* ((presentation (first (cadre-ui::repl-presentations)))
+         (items (cadre-ui::presentation-menu-items (cadre-ui::repl-view) presentation)))
+    (check "right-clicking a result offers Copy Value and Open in New Tab"
+           (equal '("Inspect" "Copy Value" "Copy to Input" "Open in New Tab") (mapcar #'car items))
+           (mapcar #'car items))
+    (cadre-ui::show-presentation-menu (cadre-ui::repl-view) presentation 40 40)
+    (funcall (cdr (assoc "Copy Value" items :test #'string=)))
+    (funcall (cdr (assoc "Open in New Tab" items :test #'string=)))))
+
+(then-when ((find-buffer "value") :timeout 20)
+  (let ((buffer (find-buffer "value")))
+    (check "Open in New Tab shows the string itself, without quotes or escapes"
+           (string= "<a><b>x \"q\"</b></a>" (buffer-string buffer)) (buffer-string buffer))
+    (check "in the mode it looks like" (eq 'xml-mode (buffer-major-mode buffer)))
+    (check "Copy Value says what it copied" (search "Copied 19 characters" (status-text)) (status-text)))
+  (cadre-ui::inspect-string "(list 1 \"two\")" "COMMON-LISP-USER"))
+
+(then-when ((search "two" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))) :timeout 20)
+  (let ((items (cadre-ui::inspector-menu-items nil)))
+    (check "the Inspector offers the inspected value too"
+           (equal '("Copy the Inspected Value" "Open in New Tab") (mapcar #'car items)) (mapcar #'car items))
+    (funcall (cdr (assoc "Open in New Tab" items :test #'string=)))))
+
+(then-when ((find-buffer "value<2>") :timeout 20)
+  (check "and opens it, printed in full" (string= "(1 \"two\")" (buffer-string (find-buffer "value<2>")))
+         (buffer-string (find-buffer "value<2>")))
+  (dolist (name '("value" "value<2>"))
+    (setf (buffer-modified-p (find-buffer name)) nil)))
+
 ;;; The Terminal page (VTE)
+(section "terminal")
 
 (defun term () cadre-ui::*current-terminal*)
 (defun term-text () (if (term) (or (cadre-ui::terminal-text (term)) "") ""))
@@ -2603,6 +2850,7 @@ d" 0 0)
 
 ;;; Themes: no paren color may look like a token's, or a ) next to a string
 ;;; or keyword seems part of it.
+(section "theme-colors")
 (defun rgb-distance (a b)
   (flet ((rgb (hex) (loop for i from 1 below 7 by 2 collect (parse-integer hex :start i :end (+ i 2) :radix 16))))
     (sqrt (reduce #'+ (mapcar (lambda (x y) (expt (- x y) 2)) (rgb a) (rgb b))))))
@@ -2621,10 +2869,19 @@ d" 0 0)
       (check (format nil "~a: paren colors differ from token colors" (cadre-ui::theme-title theme))
              (null collisions) collisions))))
 
-(setf *steps* (reverse *steps*))
+(let* ((only (or (uiop:getenv "ONLY") ""))
+       (sections (selected-sections only)))
+  (when (uiop:getenv "SMOKE_LIST")
+    (loop for (name . needs) in *sections*
+          do (format t "~&~a~@[  (needs ~{~a~^, ~})~]~%" name needs))
+    (uiop:quit 0))
+  (unless (string= only "")
+    (format t "~&Smoke sections: ~{~a~^ ~}~%" sections))
+  (setf *steps* (mapcar #'cdr (remove-if-not (lambda (step) (member (car step) sections :test #'string=))
+                                             (reverse *steps*)))))
 
 ;;; Run, with a fresh config directory so first-run questions are skipped.
-(let ((config (merge-pathnames (format nil "cadre-smoke-config-~d/" (get-universal-time))
+(let ((config (merge-pathnames (format nil "cadre-smoke-config-~d-~d/" (get-universal-time) (sb-posix:getpid))
                                 (uiop:temporary-directory))))
   (ensure-directories-exist (merge-pathnames "cadre/" config))
   (with-open-file (o (merge-pathnames "cadre/settings.sexp" config) :direction :output)

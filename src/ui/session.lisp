@@ -159,12 +159,6 @@
                (lambda (response)
                  (swank-send connection (list :emacs-return thread tag (string= response "yes")))))))
 
-(defun learn-indentation (updates)
-  "Use the indentation the Lisp reports for macros with &body (swank-indentation)."
-  (dolist (update updates)
-    (when (and (consp update) (stringp (car update)) (integerp (cdr update)))
-      (setf (gethash (string-downcase (car update)) cadre::*indentation-specs*) (cdr update)))))
-
 ;;; The status bar
 
 (defun update-connection-status ()

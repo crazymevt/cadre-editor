@@ -108,8 +108,8 @@ you what's missing when you use a feature that needs it.
 | Feature | Needs | Install (macOS) |
 | --- | --- | --- |
 | Git: the gutter, the Source Control page, history, merges | `git` | Comes with the Xcode Command Line Tools: `xcode-select --install` |
-| JavaScript, TypeScript, JSON, HTML and CSS modes ([below](#javascript-typescript-json-html-and-css-tree-sitter)) | The tree-sitter library, a C compiler, and `git` | `brew install tree-sitter`, and `xcode-select --install` for `cc`. Then run **Install Language Grammar…** in Cadre once for each language. |
-| Format Document for JavaScript, TypeScript and HTML ([below](#format-document)) | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS and Lisp need nothing. |
+| JavaScript, TypeScript, JSON, HTML, CSS and XML modes ([below](#javascript-typescript-json-html-css-and-xml-tree-sitter)) | The tree-sitter library, a C compiler, and `git` | `brew install tree-sitter`, and `xcode-select --install` for `cc`. Then run **Install Language Grammar…** in Cadre once for each language. |
+| Format Document for JavaScript, TypeScript and HTML ([below](#format-document)) | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS, XML and Lisp need nothing. |
 | The Terminal page ([below](#terminal)) | VTE, GNOME's terminal widget, for GTK 4 | `brew install vte3`. On Debian or Ubuntu: `sudo apt install libvte-2.91-gtk4-0` |
 | Claude ([below](#claude)) | The [Claude Code](https://claude.com/claude-code) CLI, signed in | Install it from its site, then `claude auth login` |
 | Run GTK App, and GTK projects from New Lisp Project | The gtk4 bindings, which you already have from setup | — |
@@ -202,7 +202,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Compile top-level form | (palette) | `C-c C-c` |
 | Evaluate top-level form | (palette) | `C-M-x` |
 | Evaluate expression before cursor / selection | `Ctrl+Shift+Return` | `C-x C-e` / `C-c C-r` |
-| Compile and load file | `F5` | `C-c C-k` |
+| Compile and load file | `Ctrl+Alt+Return` | `C-c C-k` |
 | Go to definition / back | `F12` / `Ctrl+Alt+-` | `M-.` / `M-,` |
 | Describe symbol | `Ctrl+K Ctrl+I` | `C-c C-d d` |
 | Complete symbol | `Ctrl+Space` | `C-M-i` |
@@ -502,20 +502,23 @@ connected Lisp's REPL, after saving the project's files:
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
 
-### JavaScript, TypeScript, JSON, HTML and CSS (tree-sitter)
+### JavaScript, TypeScript, JSON, HTML, CSS and XML (tree-sitter)
 
 Files ending in `.js` `.mjs` `.cjs` `.jsx`, `.ts` `.mts` `.cts`, `.tsx`,
-`.json` `.jsonc`, `.html` `.htm` and `.css` open in their own modes. These
+`.json` `.jsonc`, `.html` `.htm`, `.css` and `.xml` open in their own modes.
+So do other XML formats: `.xsd` `.xsl` `.xslt` `.svg` `.plist` `.rss`
+`.atom` `.xaml` `.csproj` `.props` `.targets` `.wsdl` `.xliff` `.xlf` `.gpx`
+`.kml`. These
 modes get several things from the language's tree-sitter grammar:
 - syntax colors
 - folding by the syntax tree
 - an Outline: functions, classes and methods; interfaces, types and enums in
   TypeScript; top-level keys in JSON; headings in HTML; rules and keyframes
-  in CSS
+  in CSS; the root element's children in XML
 - in HTML, `<script>` and `<style>` contents colored as JavaScript and CSS
-- Toggle Comment with `//`, or by wrapping lines in `<!-- -->` (HTML) or
-  `/* */` (CSS)
-- Return keeps the indentation and indents after an opening bracket or HTML
+- Toggle Comment with `//`, or by wrapping lines in `<!-- -->` (HTML and
+  XML) or `/* */` (CSS)
+- Return keeps the indentation and indents after an opening bracket or a
   tag. Between brackets or tags, it puts the closing one on its own line.
 
 **Setting it up:**
@@ -535,10 +538,14 @@ colored.
 **Format Document** (`Shift+Alt+F`, Emacs `C-c f`, or the right-click menu)
 lays out the whole file again. It's one undo step, and the cursor stays on
 its line.
-- **JSON and CSS** use Cadre's own formatters. They work on tokens, so
+- **JSON, CSS and XML** use Cadre's own formatters. They work on tokens, so
   strings, numbers, comments and key order stay exactly as written, and a
   file on one line comes out readable. JSON puts each value on its own line;
-  CSS puts each declaration on its own line, as `property: value;`.
+  CSS puts each declaration on its own line, as `property: value;`. XML puts
+  each element on its own line, indented, and keeps an element holding only
+  text on one line (`<a>text</a>`). Tags, comments and CDATA stay as
+  written. Text is trimmed, so the spaces around text mixed with elements
+  can change.
 - **Lisp** indents every line.
 - **JavaScript, TypeScript and HTML** use an external formatter, Prettier by
   default (`npm install -g prettier`). The `*formatter-commands*` setting
@@ -728,9 +735,16 @@ In the REPL, `↑` and `↓` on the input's first or last line step through
 earlier inputs (going past the newest brings back what you were typing), as
 do `M-p`/`M-n`; the history is kept per project between sessions.
 
-REPL results are live objects: click one to inspect it, or right-click to
-copy it into the input, where it stands for the object itself (not its
-printed text) when you send the form.
+REPL results are live objects: click one to inspect it, or right-click it:
+- **Copy to Input** puts it in the input, where it stands for the object
+  itself (not its printed text) when you send the form.
+- **Copy Value** copies its text: a string's own characters, without the
+  quotes and backslashes the REPL shows, or anything else printed in full.
+- **Open in New Tab** puts that text in a new, unsaved tab, in the mode it
+  looks like (XML, HTML, JSON or Lisp), ready for Format Document.
+
+In the Inspector, right-click a value for the same Copy Value and Open in
+New Tab, or right-click elsewhere for the object being inspected.
 
 In the REPL: `Return` sends a complete form, `M-p`/`M-n` (or `Ctrl+↑`/`Ctrl+↓`)
 walk the history, `Tab` completes. `M-x connect` connects to a Swank server
@@ -758,9 +772,17 @@ Cadre writes its own choices (keybindings, layout, last folder) to
 
 ```sh
 make test     # headless tests of the editor model (src/core)
-make smoke    # drive a real window through the M0 features; screenshots in build/smoke/
+make smoke    # drive a real window through every feature; screenshots in build/smoke/
+make smoke ONLY=run-app   # one section, and the ones it needs (several: ONLY="git folding")
+make smoke-list           # the sections, and what each needs
 make perf     # measure against the performance budgets (and JavaScript, with its grammar); report in build/perf/latest.txt
 ```
+
+The smoke test is a chain of sections (`(section "name" :needs (...))` in
+`scripts/smoke.lisp`). Each one passes run alone: it opens the files it
+uses, and starts a Lisp or loads Quicklisp if it needs one; one that builds
+on another's work names it in `:needs`. Run a section while fixing
+something, and the whole test when the work is done.
 
 `make perf` opens a window on generated files and times what you'd feel:
 - **Keys and scrolling:** a key press to its repaint at three places in a

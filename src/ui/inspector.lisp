@@ -3,6 +3,8 @@
 ;;;; Shows an object from the Lisp as swank's inspector describes it: a
 ;;;; title and text in which values and actions are links. Clicking a value
 ;;;; inspects it; clicking an action runs it and shows the object again.
+;;;; Right-clicking offers Copy Value and Open in New Tab, for the value
+;;;; under the pointer or else the object inspected.
 ;;;; Back and Forward walk the objects inspected.
 
 (in-package #:cadre-ui)
@@ -54,6 +56,15 @@
                          (gtk:widget-set-cursor-from-name text-view (if (inspector-link-at x y) "pointer" "text"))))
       (gtk:widget-add-controller text-view click)
       (gtk:widget-add-controller text-view motion))
+    (let ((menu (gtk:gesture-click-new)))
+      (gtk:gesture-single-set-button menu 3)
+      (gtk:event-controller-set-propagation-phase menu :capture)
+      (gobject:connect menu :pressed
+                       (lambda (gesture n x y)
+                         (declare (ignore n))
+                         (gtk:gesture-set-state gesture :claimed)
+                         (show-inspector-menu x y)))
+      (gtk:widget-add-controller text-view menu))
     (inspector-show-empty)
     (gtk:build
       (gtk:box :orientation :vertical
@@ -61,6 +72,24 @@
           back forward refresh title)
         (gtk:separator)
         (gtk:scrolled-window :vexpand t :child text-view)))))
+
+(defun inspector-value-expression (link)
+  "Source for the value under LINK (a :value link), or else the object inspected."
+  (if (and link (eq (third link) :value))
+      (format nil "(swank:inspector-nth-part ~d)" (fourth link))
+      "(swank::istate.object swank::*istate*)"))
+
+(defun inspector-menu-items (link)
+  (let ((expression (inspector-value-expression link))
+        (thread (ins-thread *inspector*)))
+    (list (cons (if (and link (eq (third link) :value)) "Copy Value" "Copy the Inspected Value")
+                (lambda () (copy-value-text expression :thread thread)))
+          (cons "Open in New Tab" (lambda () (open-value-in-new-tab expression :thread thread))))))
+
+(defun show-inspector-menu (x y)
+  (if (string= (gtk:label-get-text (ins-title *inspector*)) "Nothing inspected")
+      (message "Nothing is being inspected")
+      (show-popover-menu (ins-text-view *inspector*) x y (inspector-menu-items (inspector-link-at x y)))))
 
 (defun inspector-show-empty ()
   (gtk:label-set-text (ins-title *inspector*) "Nothing inspected")

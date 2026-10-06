@@ -149,6 +149,19 @@
                                                                 (search "42" (second e))))
                                                *events*))))
            (true (find-if (lambda (e) (and (eq (first e) :write-string) (search "hi" (second e)))) *events*))
+           ;; A macro defined in the REPL: Swank reports where its &body is.
+           (c:swank-eval-sync conn (c:swank-call "swank-repl:listener-eval"
+                                                 "(defmacro cadre-test-around (x &body body) `(progn ,x ,@body))")
+                              :thread :repl-thread)
+           (true (wait-for (lambda () (find-if (lambda (e) (and (eq (first e) :indentation-update)
+                                                                (assoc "cadre-test-around" (second e) :test #'equal)))
+                                               *events*))))
+           (unwind-protect
+                (progn
+                  (dolist (e *events*)
+                    (when (eq (first e) :indentation-update) (c:learn-indentation (second e))))
+                  (is eql 1 (c:indentation-spec "cadre-test-around")))
+             (c:learn-indentation '(("cadre-test-around" nil ()))))
            ;; An error enters the debugger: a :debug event with restarts.
            (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
            (c:swank-rex conn (list (c:remote-symbol "swank:interactive-eval") "(error \"boom\")" 3 120)

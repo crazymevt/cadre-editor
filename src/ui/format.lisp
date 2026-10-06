@@ -1,7 +1,7 @@
 ;;;; format.lisp — Format Document
 ;;;;
 ;;;; Lays out the whole buffer again, as one undo step, keeping the cursor on
-;;;; its line: JSON and CSS with Cadre's own formatters (core format.lisp),
+;;;; its line: JSON, CSS and XML with Cadre's own formatters (core format.lisp),
 ;;;; Lisp by indenting every line, and other languages with an external
 ;;;; formatter (*formatter-commands*: Prettier for JavaScript, TypeScript and
 ;;;; HTML), which reads the text on standard input and writes the result.
@@ -72,7 +72,7 @@ uses its program even if Cadre has a formatter of its own (JSON, CSS)."
      :name "cadre format")))
 
 (define-command format-document ()
-  "Lay out the whole file again: JSON and CSS with Cadre's formatters, Lisp
+  "Lay out the whole file again: JSON, CSS and XML with Cadre's formatters, Lisp
 by indenting every line, other languages with *formatter-commands* (Prettier
 for JavaScript, TypeScript and HTML)."
   (let* ((view (current-view))
@@ -84,6 +84,8 @@ for JavaScript, TypeScript and HTML)."
            (replace-with-formatted view (format-json (buffer-string buffer) :indent *code-indent-width*)))
           ((eq mode 'css-mode)
            (replace-with-formatted view (format-css (buffer-string buffer) :indent *code-indent-width*)))
+          ((eq mode 'xml-mode)
+           (replace-with-formatted view (format-xml (buffer-string buffer) :indent *code-indent-width*)))
           ((eq mode 'lisp-mode)
            (let ((before (buffer-string buffer)))
              (indent-lines view 0 (1- (gtk:text-buffer-get-line-count (view-gtk-buffer view))))

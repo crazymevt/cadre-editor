@@ -259,7 +259,7 @@
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
   "C-RET" 'compile-or-eval-defun
   "C-S-RET" 'eval-expression-or-region
-  "F5" 'compile-and-load-file
+  "C-M-RET" 'compile-and-load-file
   "F12" 'edit-definition
   "C-M--" 'pop-definition
   "C-k C-i" 'describe-symbol

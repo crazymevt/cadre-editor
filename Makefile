@@ -2,7 +2,7 @@ SBCL ?= sbcl
 LISP = $(SBCL) --dynamic-space-size 4096 --non-interactive
 DIR ?= .
 
-.PHONY: run test smoke perf app install-app
+.PHONY: run test smoke smoke-list perf app install-app
 
 # Start Cadre on a folder: make run DIR=~/projects/foo
 run:
@@ -12,9 +12,14 @@ run:
 test:
 	$(LISP) --load scripts/test.lisp
 
-# Open a window, drive it through the M0 features, and quit
+# Open a window, drive it through every feature, and quit. While fixing
+# something, run one section and what it needs: make smoke ONLY=run-app
+# (several: ONLY="git folding"); make smoke-list names the sections.
 smoke:
-	$(LISP) --load scripts/smoke.lisp
+	ONLY="$(ONLY)" $(LISP) --load scripts/smoke.lisp
+
+smoke-list:
+	@SMOKE_LIST=1 $(SBCL) --noinform --non-interactive --load scripts/smoke.lisp 2>/dev/null | grep -v '^;' | grep -v '^$$'
 
 # Measure against the performance budgets (docs/DESIGN.md, section 11)
 perf:

@@ -163,7 +163,23 @@ Second line of the docstring.\"
   (is = 1 (c:indentation-spec "when"))
   (is = 2 (c:indentation-spec "cadre:define-command"))
   (is = 1 (c:indentation-spec "with-foo"))
-  (is eq nil (c:indentation-spec "list")))
+  (is eq nil (c:indentation-spec "list"))
+  ;; Swank's :indentation-update: (name indent packages) for macros with &body.
+  (unwind-protect
+       (progn
+         (c:learn-indentation (list '("then-when" (4 "&body") ("CADRE-SMOKE"))
+                                    (list "frob-two" (list 4 4 (c:remote-symbol "&body")) '("CL-USER"))
+                                    '("my-progn" 0 ("CL-USER"))))
+         (is = 1 (c:indentation-spec "then-when"))
+         (is = 2 (c:indentation-spec "frob-two"))
+         (is = 0 (c:indentation-spec "foo:my-progn"))
+         (let ((s (c:make-lisp-syntax (c:make-string-text (format nil "(then-when ((ready) :timeout 3)~%x)")))))
+           (is = 2 (c:lisp-indentation s 1) "the body of a learned macro"))
+         ;; Redefined without &body: back to a call. Built-in specs stay.
+         (c:learn-indentation '(("then-when" nil ("CADRE-SMOKE")) ("when" nil ("CL"))))
+         (is eq nil (c:indentation-spec "then-when"))
+         (is = 1 (c:indentation-spec "when")))
+    (c:learn-indentation '(("then-when" nil ()) ("frob-two" nil ()) ("my-progn" nil ())))))
 
 (define-test fuzzy :parent cadre-tests
   (true (c:fuzzy-match "sb" "save-buffer"))

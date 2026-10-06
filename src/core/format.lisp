@@ -1,4 +1,4 @@
-;;;; format.lisp — laying out JSON and CSS
+;;;; format.lisp — laying out JSON, CSS and XML
 ;;;;
 ;;;; Both work on tokens, never on values: strings, numbers and comments come
 ;;;; out exactly as they went in, keys keep their order, and text that isn't
@@ -184,4 +184,85 @@ text) ending in ; or before a }, (:close) for }, and (:comment text)."
            (when (and (zerop level) previous (not (eq previous :comment))) (push "" lines))
            (line (second item))))
         (setf previous (first item))))
+    (format nil "~{~a~%~}" (nreverse lines))))
+
+;;; XML: each element on its own line, indented by its depth. An element
+;;; holding only text stays on one line (<a>text</a>), and so does an empty
+;;; one. Tags are kept as written, attributes and all; comments, CDATA,
+;;; processing instructions and the doctype come out as they went in. Text
+;;; is trimmed, so white space between elements in mixed content may change.
+
+(defun xml-tokens (text)
+  "TEXT's parts, as (kind string): :open, :close and :empty tags, :text,
+and :other (comments, CDATA, processing instructions, the doctype)."
+  (let ((tokens '()) (i 0) (n (length text)))
+    (flet ((upto (end) (min n end))
+           (tag-end (start)
+             ;; The > closing the tag at START, outside quoted attribute values.
+             (loop with quote = nil
+                   for j from (1+ start) below n
+                   for c = (char text j)
+                   do (cond (quote (when (char= c quote) (setf quote nil)))
+                            ((member c '(#\" #\'))  (setf quote c))
+                            ((char= c #\>) (return (1+ j))))
+                   finally (return n)))
+           (doctype-end (start)
+             ;; The doctype's >, after any internal subset in [ ].
+             (loop with depth = 0
+                   for j from start below n
+                   for c = (char text j)
+                   do (case c
+                        (#\[ (incf depth))
+                        (#\] (decf depth))
+                        (#\> (when (<= depth 0) (return (1+ j)))))
+                   finally (return n))))
+      (loop while (< i n)
+            do (let ((c (char text i)))
+                 (if (char/= c #\<)
+                     (let ((end (or (position #\< text :start i) n)))
+                       (push (list :text (subseq text i end)) tokens)
+                       (setf i end))
+                     (multiple-value-bind (kind end)
+                         (cond ((string= "<!--" text :start2 i :end2 (upto (+ i 4)))
+                                (values :other (let ((e (search "-->" text :start2 (+ i 4)))) (if e (+ e 3) n))))
+                               ((string= "<![CDATA[" text :start2 i :end2 (upto (+ i 9)))
+                                (values :other (let ((e (search "]]>" text :start2 (+ i 9)))) (if e (+ e 3) n))))
+                               ((string= "<?" text :start2 i :end2 (upto (+ i 2)))
+                                (values :other (let ((e (search "?>" text :start2 (+ i 2)))) (if e (+ e 2) n))))
+                               ((string= "<!" text :start2 i :end2 (upto (+ i 2)))
+                                (values :other (doctype-end i)))
+                               ((string= "</" text :start2 i :end2 (upto (+ i 2)))
+                                (values :close (tag-end i)))
+                               (t (let ((end (tag-end i)))
+                                    (values (if (and (>= (- end i) 2) (char= #\/ (char text (- end 2)))) :empty :open)
+                                            end))))
+                       (push (list kind (subseq text i end)) tokens)
+                       (setf i end))))))
+    (nreverse tokens)))
+
+(defun format-xml (text &key (indent 2))
+  "TEXT, XML, laid out with INDENT spaces a level."
+  (let* ((space '(#\Space #\Tab #\Newline #\Return))
+         (tokens (remove-if (lambda (token) (and (eq (first token) :text)
+                                                 (every (lambda (c) (member c space)) (second token))))
+                            (xml-tokens text)))
+         (level 0)
+         (lines '()))
+    (flet ((line (string) (push (concatenate 'string (indentation level indent) string) lines)))
+      (loop while tokens
+            do (destructuring-bind (kind string) (pop tokens)
+                 (case kind
+                   (:open
+                    (let ((next (first tokens)) (after (second tokens)))
+                      (cond ((eq (first next) :close)
+                             ;; <a></a>
+                             (line (concatenate 'string string (second (pop tokens)))))
+                            ((and (eq (first next) :text) (eq (first after) :close))
+                             ;; <a>text</a>
+                             (pop tokens) (pop tokens)
+                             (line (concatenate 'string string (string-trim space (second next)) (second after))))
+                            (t (line string) (incf level)))))
+                   (:close (setf level (max 0 (1- level))) (line string))
+                   (:text (line (string-trim space string)))
+                   (t (line string))))))
     (format nil "~{~a~%~}" (nreverse lines))))

@@ -38,6 +38,36 @@ arguments: they get 4 extra columns, the body after them 2."
         (pprint-logical-block 1) (in-package 0))
       do (setf (gethash (string-downcase (symbol-name name)) *indentation-specs*) spec))
 
+(defvar *learned-indentation* (make-hash-table :test 'equal)
+  "Names whose spec came from the Lisp (learn-indentation), not the table above.")
+
+(defun body-position (indent)
+  "The number of arguments before &body, from INDENT as Swank reports it:
+a number, or (with its indentation contrib) an Emacs spec such as (4 4 &body).
+Nil for anything else."
+  (cond ((integerp indent) indent)
+        ((consp indent)
+         (position-if (lambda (x)
+                        (let ((name (cond ((stringp x) x)
+                                          ((remote-symbol-p x) (remote-symbol-name x)))))
+                          (and name (string= "&body" (symbol-base-name name)))))
+                      indent))))
+
+(defun learn-indentation (updates)
+  "Use the indentation the Lisp reports for macros with &body: Swank's
+:indentation-update sends (name indent packages) for each, where indent
+gives the position of &body, or is nil when a macro no longer has one."
+  (dolist (update updates)
+    (when (and (consp update) (stringp (first update)) (consp (rest update)))
+      (let ((name (string-downcase (first update)))
+            (indent (body-position (second update))))
+        (cond ((integerp indent)
+               (setf (gethash name *indentation-specs*) indent
+                     (gethash name *learned-indentation*) t))
+              ((and (null indent) (gethash name *learned-indentation*))
+               (remhash name *indentation-specs*)
+               (remhash name *learned-indentation*)))))))
+
 (defun symbol-base-name (string)
   "STRING without any package prefix, in lower case."
   (string-downcase (subseq string (1+ (or (position #\: string :from-end t) -1)))))

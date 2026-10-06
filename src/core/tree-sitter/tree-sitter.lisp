@@ -75,10 +75,13 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
   "HTML, highlighted by its tree-sitter grammar (and its scripts and styles by theirs).")
 (define-major-mode css-mode (:title "CSS" :extensions ("css"))
   "CSS, highlighted by its tree-sitter grammar.")
+(define-major-mode xml-mode (:title "XML" :extensions ("xml" "xsd" "xsl" "xslt" "svg" "plist" "rss" "atom" "xaml"
+                                                       "csproj" "props" "targets" "wsdl" "xliff" "xlf" "gpx" "kml"))
+  "XML, highlighted by its tree-sitter grammar.")
 
 (defparameter *tree-sitter-modes*
   '((javascript-mode . "javascript") (typescript-mode . "typescript") (tsx-mode . "tsx") (json-mode . "json")
-    (html-mode . "html") (css-mode . "css"))
+    (html-mode . "html") (css-mode . "css") (xml-mode . "xml"))
   "Major mode → its tree-sitter language.")
 
 (defun tree-sitter-language-for-mode (mode)
@@ -89,7 +92,8 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
     ("typescript" :url "https://github.com/tree-sitter/tree-sitter-typescript" :tag "v0.23.2")
     ("json" :url "https://github.com/tree-sitter/tree-sitter-json" :tag "v0.24.8")
     ("html" :url "https://github.com/tree-sitter/tree-sitter-html" :tag "v0.23.2")
-    ("css" :url "https://github.com/tree-sitter/tree-sitter-css" :tag "v0.23.2"))
+    ("css" :url "https://github.com/tree-sitter/tree-sitter-css" :tag "v0.23.2")
+    ("xml" :url "https://github.com/tree-sitter-grammars/tree-sitter-xml" :tag "v0.7.0"))
   "Grammar repositories, by name, at the versions Cadre builds.")
 
 (defparameter *ecma-outline*
@@ -138,7 +142,14 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
      ;; Custom properties (--x) come before plain ones: the first pattern wins.
      :highlights (("css" "queries/highlights.scm")) :precedence :first
      :outline "(rule_set (selectors) @name) @definition.rule
-(keyframes_statement (keyframes_name) @name) @definition.keyframes"))
+(keyframes_statement (keyframes_name) @name) @definition.keyframes")
+    (:name "xml" :title "XML" :repos ("xml") :source "xml/xml/src/"
+     :symbol "tree_sitter_xml" :extensions ("xml" "xsd" "xsl" "xslt" "svg" "plist" "rss" "atom" "xaml"
+                                            "csproj" "props" "targets" "wsdl" "xliff" "xlf" "gpx" "kml")
+     :block-comment ("<!--" "-->")
+     :highlights (("xml" "queries/xml/highlights.scm"))
+     ;; The root's children: a whole document's elements would be too many.
+     :outline "(document root: (element (content (element [(STag (Name) @name) (EmptyElemTag (Name) @name)]) @definition.element)))"))
   "The languages Cadre knows: their grammar (repositories, source folder in
 the first, the function returning it), file types, :comment (a line comment)
 or :block-comment (start and end), highlight query files (and :precedence,
@@ -539,7 +550,8 @@ parse at a time per document)."
     ("constant.builtin" . :builtin) ("constant" . :constant) ("function.builtin" . :builtin)
     ("function" . :code-function) ("constructor" . :code-type) ("type" . :code-type)
     ("variable.builtin" . :builtin) ("property" . :code-property) ("attribute" . :code-property)
-    ("tag" . :code-type) ("label" . :code-property) ("module" . :code-type) ("embedded" . nil))
+    ("tag" . :code-type) ("label" . :code-property) ("module" . :code-type) ("embedded" . nil)
+    ("boolean" . :constant))
   "Capture name → face. A name without an entry uses its prefix's (function.method uses function's).")
 
 (defun capture-face (name)

@@ -58,12 +58,13 @@ which takes the input it reads."
   "Stop the program started with Run App."
   (cond ((gtk-app-running-p) (stop-gtk-app))
         (*console-app*
-         (with-connection (connection)
-           (rex connection
-                (swank-call "swank:interactive-eval"
-                            "(let ((thread (symbol-value (find-symbol \"*CADRE-APP-THREAD*\" \"CL-USER\")))) (funcall (find-symbol \"INTERRUPT-THREAD\" \"SWANK/BACKEND\") thread (lambda () (abort))) nil)"
-                            3 120)
-                :on-ok (lambda (v) (declare (ignore v)) (message "Stopped ~a" (getf *console-app* :entry))))))
+         (let ((entry (getf *console-app* :entry)))
+           (with-connection (connection)
+             (rex connection
+                  (swank-call "swank:interactive-eval"
+                              "(let ((thread (symbol-value (find-symbol \"*CADRE-APP-THREAD*\" \"CL-USER\")))) (funcall (find-symbol \"INTERRUPT-THREAD\" \"SWANK/BACKEND\") thread (lambda () (abort))) nil)"
+                              3 120)
+                  :on-ok (lambda (v) (declare (ignore v)) (message "Stopped ~a" entry))))))
         (t (editor-error "No app is running"))))
 
 (defun update-run-button ()
