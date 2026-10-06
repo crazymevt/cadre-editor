@@ -2472,6 +2472,41 @@ d" 0 0)
 (then-when ((search "Stopped" (status-text)) :timeout 10)
   (check "the status bar names what stopped" (search "Stopped smoke-cli:main" (status-text)) (status-text)))
 
+;;; Run App for a raylib game: rl:run returns at once, so the app runs until
+;;; rl:running-p says the game ended, and Stop App calls rl:stop.
+(section "run-raylib-app")
+
+(defvar *raylib-installed* (and (ql:where-is-system "raylib") t))
+
+(defun raylib-stop-tooltip-p () (equal "Stop the app" (gtk:widget-get-tooltip-text (run-button))))
+
+(if (not *raylib-installed*)
+    (then 50 (format t "~&(raylib isn't installed: skipping Run App for a raylib game)~%"))
+    (progn
+      (load-quicklisp)
+      (then 50
+        (ensure-directories-exist *new-parent*)
+        (cadre-ui::make-new-project *new-parent* "smoke-raylib" :kind :application :tests :parachute :license nil))
+      (then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-raylib/" *new-parent*))))
+        (let* ((asd (merge-pathnames "smoke-raylib/smoke-raylib.asd" *new-parent*))
+               (text (uiop:read-file-string asd)))
+          (with-open-file (out asd :direction :output :if-exists :supersede)
+            (write-string (ppcre:regex-replace ":depends-on \\(\\)" text ":depends-on (:raylib)") out)))
+        (with-open-file (out (merge-pathnames "smoke-raylib/src/main.lisp" *new-parent*) :direction :output :if-exists :supersede)
+          (format out "(in-package #:smoke-raylib)~%(defun game () (rl:with-window (200 100 \"smoke\") (rl:game-loop () (rl:with-drawing (:black)))))~%(defun main () (rl:run 'game))~%"))
+        (check "an app depending on raylib is one" (getf (cadre::project-app (cadre-ui::window-project *window*)) :raylib))
+        (call-command 'cadre-ui::run-app))
+      (then-when ((getf cadre-ui::*console-app* :game) :timeout 180)
+        (check "▶ runs a raylib game, and the entry point returns" (getf cadre-ui::*console-app* :game)))
+      (then 1500
+        (check "the app runs on after the entry point returned" (getf cadre-ui::*console-app* :game))
+        (check "■ stays while the game runs" (raylib-stop-tooltip-p) (gtk:widget-get-tooltip-text (run-button)))
+        (check "and the REPL is free" (not (cadre-ui::repl-busy cadre-ui::*repl*)))
+        (call-command 'cadre-ui::stop-app))
+      (then-when ((null cadre-ui::*console-app*) :timeout 30)
+        (check "Stop App ends the game with rl:stop, and Cadre notices" (null cadre-ui::*console-app*))
+        (check "▶ is back" (not (raylib-stop-tooltip-p)) (gtk:widget-get-tooltip-text (run-button))))))
+
 ;;; The main menu: a short list of submenus, each item a command
 (section "main-menu")
 

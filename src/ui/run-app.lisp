@@ -9,11 +9,20 @@
 ;;;;  - Any other runs in the REPL, as if typed: its output goes there, and
 ;;;;    when it reads *standard-input* (read-line), the REPL asks for a line
 ;;;;    and RET sends it. Stopping it aborts the REPL's evaluation.
+;;;;  - One that depends on raylib starts its game with rl:run, which hands
+;;;;    it to the Lisp's first thread and returns at once, leaving the REPL
+;;;;    free. The app runs until rl:running-p says the game ended, and
+;;;;    stopping it calls rl:stop.
 
 (in-package #:cadre-ui)
 
 (defvar *console-app* nil
-  "The program started in the REPL with Run App, as a plist (:system :entry), or nil.")
+  "The program started in the REPL with Run App, as a plist (:system :entry
+:raylib :game), or nil. :game is true once a raylib app's entry point has
+returned and its game runs on.")
+
+(defparameter *raylib-poll-ms* 500
+  "How often Cadre asks whether a raylib game still runs.")
 
 (defun app-running-p () (or (gtk-app-running-p) (and *console-app* t)))
 
@@ -28,7 +37,34 @@ abort it), and calls ENTRY."
   (setf *console-app* nil)
   (update-run-button))
 
-(defun run-console-app (root system entry)
+(defun console-app-returned ()
+  "The entry point returned: the app ended, unless it started a raylib game."
+  (if (getf *console-app* :raylib)
+      (progn (setf (getf *console-app* :game) t)
+             (watch-raylib-game *console-app*))
+      (console-app-ended)))
+
+(defun watch-raylib-game (app)
+  "Ask the Lisp, every *RAYLIB-POLL-MS*, whether APP's game still runs; when it
+doesn't, the app has ended."
+  (glib:timeout-add glib:+priority-default+ *raylib-poll-ms*
+                    (lambda ()
+                      (when (and (eq app *console-app*) *connection*)
+                        (rex *connection*
+                             (swank-call "swank:eval-and-grab-output"
+                                         "(let ((running-p (find-symbol \"RUNNING-P\" \"RAYLIB\"))) (and running-p (funcall running-p) t))")
+                             :on-ok (lambda (result)
+                                      (when (eq app *console-app*)
+                                        (if (string-equal "NIL" (second result))
+                                            (progn (console-app-ended)
+                                                   (message "The game ended; ▶ starts it again"))
+                                            (watch-raylib-game app))))
+                             :on-abort (lambda (reason)
+                                         (declare (ignore reason))
+                                         (when (eq app *console-app*) (console-app-ended)))))
+                      nil)))
+
+(defun run-console-app (root system entry &key raylib)
   (with-connection (connection)
     (declare (ignore connection))
     (when (repl-busy *repl*) (editor-error "The REPL is busy"))
@@ -37,9 +73,9 @@ abort it), and calls ENTRY."
     (repl-insert (format nil "; Running ~a (input it reads is typed here, then RET)~%" entry) "cadre-repl-note")
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
                                (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
-    (setf *console-app* (list :system system :entry entry))
+    (setf *console-app* (list :system system :entry entry :raylib raylib))
     (update-run-button)
-    (repl-eval (console-app-form root system entry) :on-done #'console-app-ended)))
+    (repl-eval (console-app-form root system entry) :on-done #'console-app-returned)))
 
 (define-command run-app ()
   "Run the project's program, the :entry-point in its .asd, after saving the
@@ -52,11 +88,19 @@ which takes the input it reads."
                        (lambda ()
                          (if (getf app :gtk)
                              (launch-gtk-app root (getf app :system) (getf app :entry))
-                             (run-console-app root (getf app :system) (getf app :entry)))))))
+                             (run-console-app root (getf app :system) (getf app :entry)
+                                              :raylib (getf app :raylib)))))))
 
 (define-command stop-app ()
   "Stop the program started with Run App."
   (cond ((gtk-app-running-p) (stop-gtk-app))
+        ((getf *console-app* :game)
+         (with-connection (connection)
+           (rex connection
+                (swank-call "swank:interactive-eval"
+                            "(let ((stop (find-symbol \"STOP\" \"RAYLIB\"))) (when stop (funcall stop)) nil)"
+                            3 120)
+                :on-ok (lambda (v) (declare (ignore v)) (message "Stopping the game…")))))
         (*console-app*
          (let ((entry (getf *console-app* :entry)))
            (with-connection (connection)

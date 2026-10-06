@@ -112,7 +112,7 @@
    ;; new projects
    #:valid-project-name-p #:fill-template #:project-files-for #:create-lisp-project #:*license-templates*
    #:makefile-has-target-p #:asd-build-pathname #:project-build-plan #:project-test-plan
-   #:asd-entry-point #:asd-uses-gtk4-p #:project-app
+   #:asd-entry-point #:asd-depends-on-p #:asd-uses-gtk4-p #:project-app
    ;; tree-sitter
    #:*tree-sitter-directory* #:*tree-sitter-prefix* #:*c-compiler* #:tree-sitter-directory #:tree-sitter-prefix
    #:*tree-sitter-languages* #:tree-sitter-language-spec #:tree-sitter-language-for-file

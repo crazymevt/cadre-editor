@@ -921,7 +921,11 @@ goes through Run GTK App; any other is evaluated in the REPL with
 `repl-eval`, so reads from `*standard-input*` arrive as Swank `:read-string`
 requests that the REPL answers. The form stores its thread in
 `cl-user::*cadre-app-thread*`; Stop App interrupts that thread with
-`(abort)`, which unwinds the read and the evaluation without the debugger.
+`(abort)`, which unwinds the read and the evaluation without the debugger. A
+system depending on `raylib` runs the same way, but `rl:run` returns once
+it has handed the game to the first thread, so when the evaluation ends
+the app goes on (`:game` in `*console-app*`): Cadre asks `rl:running-p`
+every half second until it is false, and Stop App calls `rl:stop`.
 
 Other languages through tree-sitter (core `tree-sitter/`, UI
 `tree-sitter.lisp`): JavaScript, TypeScript, TSX and JSON so far.

@@ -605,10 +605,14 @@ changed), and calls the entry point:
 - **Any other program** runs in the REPL, and its output appears there. When
   it reads standard input (`read-line`, `read`), the REPL waits for a line:
   type it and press RET.
+- **A raylib game** (its system depends on `raylib`, and its entry point
+  starts the game with `rl:run`) runs on the Lisp's first thread while the
+  REPL stays free for redefining its functions. The app runs until the
+  game's window closes.
 
 While the app runs, the button turns into **■**: **Stop App**
-(`Ctrl+Shift+F5`, `C-x p k`) quits a GTK app, or aborts the REPL's
-evaluation, even while it waits for input.
+(`Ctrl+Shift+F5`, `C-x p k`) quits a GTK app, ends a raylib game
+(`rl:stop`), or aborts the REPL's evaluation, even while it waits for input.
 
 ### GTK applications
 

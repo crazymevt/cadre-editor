@@ -625,7 +625,7 @@ Over lines.\"
              (true (search "bin/app" (getf plan :output))))
            (is eq nil (c:project-build-plan lib))
            ;; Run App: an application's entry point; a library has none.
-           (is equal '(:system "app" :entry "app:main" :gtk nil) (c:project-app app))
+           (is equal '(:system "app" :entry "app:main" :gtk nil :raylib nil) (c:project-app app))
            (is eq nil (c:project-app lib))
            (is equal '("test") (getf (c:project-test-plan lib "lib") :arguments))
            (false (c:makefile-has-target-p (merge-pathnames "Makefile" lib) "build"))
@@ -657,6 +657,8 @@ Over lines.\"
   (true (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on (:alexandria #:gtk4))"))
   (false (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on (\"gtk4-extras\" \"alexandria\"))"))
   (false (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on ())"))
+  (true (c:asd-depends-on-p "(defsystem \"game\" :depends-on (:raylib))" "raylib"))
+  (false (c:asd-depends-on-p "(defsystem \"x\" :depends-on (\"raylib-generator\"))" "raylib"))
   ;; Plain projects have no dependencies.
   (true (search ":depends-on ()" (cdr (assoc "lib.asd" (c:project-files-for "lib") :test #'string=)))))
 
