@@ -171,7 +171,8 @@ faces that come from what the connected Lisp knows."
 ;;; The current line and matching parens
 
 (defun update-cursor-decorations (view)
-  (unless (buffer-local (view-buffer view) :preview-of)  ; a page, not text being edited
+  (unless (or (buffer-local (view-buffer view) :preview-of)  ; a page, not text being edited
+              (image-buffer-p (view-buffer view)))         ; a picture
     (update-cursor-decorations-1 view)))
 
 (defun update-cursor-decorations-1 (view)

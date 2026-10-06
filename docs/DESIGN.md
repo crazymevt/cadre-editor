@@ -480,6 +480,14 @@ the first step; Lisp mode is then one client of it.
   the path of the value at the cursor (`$.dependencies.foo`) on the
   clipboard.
 
+**Pictures** (`src/ui/image-view.lisp`, `image-mode` in core): an image
+file opens in a read-only buffer with no file of its own (`:image-file`
+instead), so saving, reloading as text, the gutter and the current-line
+band leave it alone. It holds one paintable, the picture scaled with
+`gdk_pixbuf_composite_color_simple` (nearest-neighbour when enlarging, over
+a checkerboard), and a line giving its size and zoom. A file monitor shows
+it again when the file changes; the session restores it as `(:image path)`.
+
 **Markdown mode with preview** (`.md`, `.markdown`) — *built 2026-10-03*
 (`src/core/markdown.lisp`, `src/ui/markdown.lisp`). As built: the line
 lexer keeps its own per-line state vector rather than sharing a generalised

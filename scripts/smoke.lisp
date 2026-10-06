@@ -48,10 +48,12 @@
   (dolist (key (parse-keys keys))
     (let* ((mods (cadre-ui::key-modifiers key))
            (name (subseq key (* 2 (length mods))))
-           (keyval (gdk:keyval-from-name (cond ((string= name "TAB") "Tab")
-                                               ((string= name "RET") "Return")
-                                               ((string= name "ESC") "Escape")
-                                               (t name))))
+           (keyval (if (and (= 1 (length name)) (not (alphanumericp (char name 0))))
+                       (gdk:unicode-to-keyval (char-code (char name 0))) ; punctuation: - = + …
+                       (gdk:keyval-from-name (cond ((string= name "TAB") "Tab")
+                                                   ((string= name "RET") "Return")
+                                                   ((string= name "ESC") "Escape")
+                                                   (t name)))))
            (state (loop for m in mods
                         collect (ecase m (#\C :control-mask) (#\M :alt-mask)
                                   (#\s :super-mask) (#\S :shift-mask)))))
@@ -2471,6 +2473,58 @@ d" 0 0)
 
 (then-when ((search "Stopped" (status-text)) :timeout 10)
   (check "the status bar names what stopped" (search "Stopped smoke-cli:main" (status-text)) (status-text)))
+
+;;; Pictures open in a tab, to be looked at
+(section "image-view")
+
+(defun write-test-png (path width height rgba)
+  (let ((pixbuf (gdk-pixbuf:pixbuf-new :rgb t 8 width height)))
+    (gdk-pixbuf:pixbuf-fill pixbuf rgba)
+    (gdk-pixbuf:pixbuf-savev pixbuf (uiop:native-namestring path) "png" nil nil)))
+
+(defvar *test-png* (merge-pathnames "knight.png" *root*))
+(defun image-text () (buffer-string (current-buffer)))
+
+(then 100
+  (write-test-png *test-png* 16 28 #xc0404080)
+  (open-file-path *test-png*))
+
+(then 500
+  (let ((buffer (current-buffer)))
+    (check "a .png opens in Image mode" (eq 'image-mode (buffer-major-mode buffer)) (buffer-major-mode buffer))
+    (check "with no file to save" (null (buffer-file buffer)))
+    (check "showing the picture"
+           (gtk:text-iter-get-paintable (gtk:text-buffer-get-start-iter (buffer-text buffer))))
+    (check "a small one scaled up, with its size" (search "16 × 28 pixels · 900%" (image-text)) (image-text))
+    (check "read-only" (not (gtk:text-view-get-editable (cadre-ui::view-text-view (current-view)))))
+    (check "and not modified" (not (cadre-ui::buffer-needs-saving-p buffer)))
+    (check "the session remembers it"
+           (equal (list :image (uiop:native-namestring *test-png*)) (cadre-ui::view-state (current-view)))
+           (cadre-ui::view-state (current-view))))
+  (screenshot "image-view")
+  (press "-"))
+
+(then 200
+  (check "- zooms out" (search "· 800%" (image-text)) (image-text))
+  (press "C-0"))
+
+(then 200
+  (check "C-0 shows it at its own size" (search "· 100%" (image-text)) (image-text))
+  (press "C-="))
+
+(then 200
+  (check "C-= zooms in" (search "· 200%" (image-text)) (image-text))
+  (let ((count (length (buffer-list))))
+    (open-file-path *test-png*)
+    (check "opening it again selects its tab" (= count (length (buffer-list)))))
+  (write-test-png *test-png* 32 32 #x40c040ff))
+
+(then-when ((search "32 × 32" (image-text)) :timeout 10)
+  (check "it is shown again when the file changes" (search "32 × 32" (image-text)) (image-text))
+  (call-command 'cadre-ui::close-tab))
+
+(then 300
+  (check "closing the tab lets the picture go" (null (cadre-ui::find-image-buffer *test-png*))))
 
 ;;; Run App for a raylib game: rl:run returns at once, so the app runs until
 ;;; rl:running-p says the game ended, and Stop App calls rl:stop.

@@ -659,6 +659,11 @@ Over lines.\"
   (false (c:asd-uses-gtk4-p "(defsystem \"x\" :depends-on ())"))
   (true (c:asd-depends-on-p "(defsystem \"game\" :depends-on (:raylib))" "raylib"))
   (false (c:asd-depends-on-p "(defsystem \"x\" :depends-on (\"raylib-generator\"))" "raylib"))
+  ;; Pictures open to be looked at; SVG is text, and stays editable.
+  (true (c:image-file-p #p"assets/knight_f0.png"))
+  (true (c:image-file-p #p"photo.JPG"))
+  (false (c:image-file-p #p"icon.svg"))
+  (false (c:image-file-p #p"main.lisp"))
   ;; Plain projects have no dependencies.
   (true (search ":depends-on ()" (cdr (assoc "lib.asd" (c:project-files-for "lib") :test #'string=)))))
 

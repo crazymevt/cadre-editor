@@ -31,7 +31,10 @@ tab's. Signals an editor-error if there is none."
 
 (defun open-file-path (pathname &key then)
   "Open the file at PATHNAME in a tab, or select its tab if it is open.
-THEN, if given, is called with the view once the file is showing."
+THEN, if given, is called with the view once the file is showing. A
+picture opens to be looked at (image-view.lisp)."
+  (when (image-file-p pathname)
+    (return-from open-file-path (open-image-path pathname :then then)))
   (let ((existing (find-file-buffer pathname)))
     (if existing
         (let ((view (show-buffer *window* existing)))

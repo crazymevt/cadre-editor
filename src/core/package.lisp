@@ -19,7 +19,7 @@
    ;; modes
    #:define-major-mode #:find-major-mode #:major-mode-for-file
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
-   #:fundamental-mode #:lisp-mode #:markdown-mode
+   #:fundamental-mode #:lisp-mode #:markdown-mode #:image-mode #:image-file-p
    ;; buffers
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local

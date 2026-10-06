@@ -52,11 +52,13 @@
 
 (defun view-state (view)
   "What to remember about VIEW: its file and cursor, (:preview file) for a
-Markdown preview, or nil if it has no file."
+Markdown preview, (:image file) for a picture, or nil if it has no file."
   (let* ((buffer (view-buffer view))
          (file (buffer-file buffer))
-         (source (buffer-local buffer :preview-of)))
-    (cond (file
+         (source (buffer-local buffer :preview-of))
+         (image (buffer-local buffer :image-file)))
+    (cond (image (list :image (uiop:native-namestring image)))
+          (file
            (multiple-value-bind (line column) (view-cursor-line-column view)
              (list (uiop:native-namestring file) (1- line) (1- column))))
           ((and source (buffer-file source))
@@ -131,9 +133,14 @@ Markdown preview, or nil if it has no file."
   (destructuring-bind (&key files selected pinned &allow-other-keys) (rest state)
     (let ((views (loop for (path line column) in files
                        for preview = (eq path :preview)
-                       for file = (if preview line path)
-                       for buffer = (and (stringp file) (probe-file file) (load-file-buffer file))
+                       for image = (eq path :image)
+                       for file = (if (or preview image) line path)
+                       for buffer = (and (stringp file) (probe-file file)
+                                         (if image
+                                             (or (find-image-buffer file) (make-image-buffer file))
+                                             (load-file-buffer file)))
                        collect (cond ((null buffer) nil)
+                                     (image (add-view win buffer group))
                                      (preview
                                       (add-view win (or (let ((p (buffer-local buffer :preview)))
                                                           (and p (member p (buffer-list)) p))
@@ -149,7 +156,8 @@ Markdown preview, or nil if it has no file."
       (let ((view (or (and selected (nth selected views)) (find-if #'identity views))))
         (when view
           (adw:tab-view-set-selected-page (group-tab-view group) (view-page win view))))
-      (dolist (view (remove-if (lambda (v) (or (null v) (buffer-local (view-buffer v) :preview-of))) views))
+      (dolist (view (remove-if (lambda (v) (or (null v) (buffer-local (view-buffer v) :preview-of)
+                                                   (image-buffer-p (view-buffer v)))) views))
         (let ((view view))
           (glib:idle-add glib:+priority-default-idle+ (lambda () (scroll-to-cursor view) nil)))))))
 

@@ -53,6 +53,7 @@
                (:file "project-search")
                (:file "refactor")
                (:file "markdown")
+               (:file "image-view")
                (:file "file-ops")
                (:file "outline")
                (:file "everyday")

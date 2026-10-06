@@ -382,6 +382,15 @@ the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.
 
+### Pictures
+
+PNG, JPEG, GIF, BMP, ICO, TIFF and WebP files open in a tab to be looked at,
+not edited: a small picture (a sprite) is scaled up with its pixels kept
+sharp, transparent parts show a checkerboard, and a line under it gives its
+size. `+` and `-` (or `Ctrl+=` and `Ctrl+-`) zoom, and `0` (`Ctrl+0`) shows
+it at its own size. When the file changes, say from saving it in a drawing
+program, the tab shows the new picture.
+
 ### Everyday editing
 
 | Action | Standard (⌘ on macOS) | Emacs |

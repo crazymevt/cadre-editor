@@ -59,6 +59,13 @@ Lisp, say), from how it starts: XML or HTML at <, JSON at { or [, Lisp at (."
 (define-major-mode lisp-mode (:title "Lisp" :extensions ("lisp" "asd" "lsp" "cl" "l" "ros"))
   "Common Lisp source.")
 
+(define-major-mode image-mode (:title "Image" :extensions ("png" "jpg" "jpeg" "gif" "bmp" "ico" "tif" "tiff" "webp"))
+  "A picture, shown rather than edited.")
+
+(defun image-file-p (pathname)
+  "True if PATHNAME is a picture, which opens to be looked at, not edited."
+  (eq (major-mode-for-file pathname) 'image-mode))
+
 ;;; Minor modes: extra behaviour a buffer can turn on and off
 
 (defstruct (minor-mode (:constructor make-minor-mode (name title keymap documentation)))

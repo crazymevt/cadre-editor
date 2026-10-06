@@ -307,6 +307,21 @@
   "TAB" 'markdown-indent
   "S-TAB" 'markdown-outdent)
 
+;;; Pictures: the zoom keys scale the picture, not the text; + - and 0 too.
+(bind-keys (major-mode-keymap (find-major-mode 'image-mode))
+  "C-=" 'image-zoom-in
+  "C-+" 'image-zoom-in
+  "C--" 'image-zoom-out
+  "C-0" 'image-actual-size
+  "C-x C-=" 'image-zoom-in
+  "C-x C-+" 'image-zoom-in
+  "C-x C--" 'image-zoom-out
+  "C-x C-0" 'image-actual-size
+  "+" 'image-zoom-in
+  "=" 'image-zoom-in
+  "-" 'image-zoom-out
+  "0" 'image-actual-size)
+
 ;;; Languages from tree-sitter grammars (tree-sitter.lisp)
 (dolist (mode (mapcar #'car *tree-sitter-modes*))
   (bind-keys (major-mode-keymap (find-major-mode mode))

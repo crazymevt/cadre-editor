@@ -276,6 +276,7 @@ Use this for every change to files: there is no other way to edit."
          (new-text (tool-argument args "new_text" :required t))
          (buffer (or (on-main (tool-buffer name))
                      (let ((path (on-main (resolve-path name))))
+                       (when (image-file-p path) (tool-error "~a is a picture, not text" name))
                        (if (probe-file path)
                            (wait-for (lambda (done)
                                        (open-file-path path :then (lambda (view) (funcall done (view-buffer view))))))
@@ -341,6 +342,7 @@ must be saved. The user approves this unless they allowed it for the session."
   (or (on-main (tool-buffer name))
       (let ((path (on-main (resolve-path name))))
         (unless (probe-file path) (tool-error "No file or buffer ~a" name))
+        (when (image-file-p path) (tool-error "~a is a picture, not text" name))
         (wait-for (lambda (done) (open-file-path path :then (lambda (view) (funcall done (view-buffer view)))))))))
 
 (defun notes-report (notes successp verb)
