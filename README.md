@@ -375,8 +375,9 @@ Lisp (`*symbol-hover*` turns the tooltips off).
 ### Markdown
 
 `.md` files are highlighted (headings, emphasis, code, links, lists, quotes,
-tables; fenced `lisp` code as Lisp). `Ctrl+K V` (`C-c C-c p` in Emacs) opens
-a live preview beside the file: it redraws as you type, scrolls along with
+tables; fenced `lisp` code as Lisp). `Ctrl+K V` (`C-c C-c p` in Emacs), or
+Open Preview in the file's tab menu (right-click the tab), opens a live
+preview beside the file: it redraws as you type, scrolls along with
 the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.

@@ -197,17 +197,29 @@
 
 ;;; The tab's menu
 
-(defun show-tab-menu (tab x y)
-  (let ((menu (gio:menu-new))
-        (pinned (let ((entry (gethash tab *tab-widgets*))) (and entry (adw:tab-page-get-pinned (cdr entry))))))
-    (command-item menu (if pinned "Unpin" "Pin") 'toggle-pin-tab)
-    (command-item menu "Close" 'close-tab)
-    (command-item menu "Close Others" 'close-other-tabs)
+(defun tab-menu-model (page)
+  "The menu for PAGE's tab (Open Preview too, for a Markdown file)."
+  (let* ((menu (gio:menu-new))
+         (view (and page (page-view *window* page)))
+         (markdown (and view (eq (buffer-major-mode (view-buffer view)) 'markdown-mode))))
+    (when markdown
+      (let ((preview (gio:menu-new)))
+        (command-item preview "Open Preview" 'markdown-preview)
+        (gio:menu-append-section menu nil preview)))
+    (let ((tab (gio:menu-new)))
+      (command-item tab (if (and page (adw:tab-page-get-pinned page)) "Unpin" "Pin") 'toggle-pin-tab)
+      (command-item tab "Close" 'close-tab)
+      (command-item tab "Close Others" 'close-other-tabs)
+      (gio:menu-append-section menu nil tab))
     (let ((split (gio:menu-new)))
       (command-item split "Split Right" 'split-right)
       (command-item split "Split Down" 'split-below)
       (command-item split "Move to Next Group" 'move-tab-to-next-group)
       (gio:menu-append-section menu nil split))
+    menu))
+
+(defun show-tab-menu (tab x y)
+  (let ((menu (tab-menu-model (cdr (gethash tab *tab-widgets*)))))
     (let ((popover (gtk:popover-menu-new-from-model menu)))
       (gtk:widget-set-parent popover tab)
       (gtk:popover-set-pointing-to popover (gdk:make-rectangle :x (round x) :y (round y) :width 1 :height 1))

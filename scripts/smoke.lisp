@@ -1502,8 +1502,16 @@ d" 0 0)
   (check "link text is highlighted" (has-face-p 2 26 :md-link))
   (check "list markers are highlighted" (has-face-p 4 0 :md-list))
   (check "fenced Lisp is highlighted as Lisp" (and (has-face-p 8 2 :definer) (has-face-p 8 2 :md-code-block)))
-  (cadre-ui::focus-view (current-view))
-  (call-command 'cadre-ui::markdown-preview))
+  ;; Open the preview from the tab's right-click menu, with the focus elsewhere.
+  (let* ((view (current-view))
+         (page (cadre-ui::view-page *window* view))
+         (entries (menu-entries (cadre-ui::tab-menu-model page)))
+         (preview (find "Open Preview" entries :key #'car :test #'string=)))
+    (check "a Markdown file's tab menu offers Open Preview" preview (mapcar #'car entries))
+    (cadre-ui::show-repl-page :focus t)
+    (cadre-ui::select-tab *window* (cadre-ui::view-group view) page)
+    (gio:action-group-activate-action (gtk:window-get-application (cadre-ui::window-gtk-window *window*))
+                                      "command" (glib:variant-new-string (cdr preview)))))
 
 (then 600
   (let ((preview (preview-buffer)))
@@ -1512,6 +1520,10 @@ d" 0 0)
            (and preview (not (eq (cadre-ui::view-group (first (cadre-ui::buffer-views *window* preview)))
                                  (cadre-ui::view-group (current-view))))))
     (check "the source keeps the focus" (string= "guide.md" (buffer-name (current-buffer))))
+    (check "other tabs' menus don't"
+           (not (find "Open Preview" (menu-entries (cadre-ui::tab-menu-model
+                                                    (cadre-ui::view-page *window* (first (cadre-ui::buffer-views *window* preview)))))
+                      :key #'car :test #'string=)))
     (check "the preview shows the text without markup"
            (and (search "Some bold text and a link." (preview-text)) (not (search "**" (preview-text))))
            (preview-text))
