@@ -385,41 +385,52 @@ real path: /var and /private/var are one place on macOS.)"
         ((char/= worktree #\Space) (string worktree))
         (t (string index))))
 
+(defvar *git-refresh* 0
+  "Counts GIT-CHANGED calls. Refreshes run on threads and can finish out of
+order: only the latest one is shown, or an older one would put back what git
+said before.")
+
 (defun git-changed (&optional (root (project-git-root)))
   "After git or the files changed: read the status again, and the HEAD texts if HEAD moved."
   (when root
-    (git-async (lambda ()
-                 (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)
-                       (multiple-value-list (ignore-errors (git-ahead-behind root)))
-                       (ignore-errors (git-stashes root))
-                       (let ((op (ignore-errors (git-operation root))))
-                         (list op (and (eq op :merge) (ignore-errors (git-merge-message root)))))))
-               ;; (Without an upstream there's no ahead or behind: (nil).)
-               (lambda (result)
-                 (destructuring-bind (entries branch head (&optional ahead behind) stashes (operation merge-message)) result
-                   (setf *git-ahead* ahead *git-behind* behind *git-stash-list* stashes
-                         *git-operation* operation *git-merge-message* merge-message)
-                   (let ((moved (and *git-head* head (string/= head *git-head*))))
-                     (setf *git-entries* entries *git-branch* branch *git-head* head)
-                     (clrhash *git-status*)
-                     (dolist (e entries)
-                       (destructuring-bind (index worktree path original) e
-                         (declare (ignore original))
-                         (let ((full (merge-pathnames path root)))
-                           (setf (gethash (namestring full) *git-status*)
-                                 (list (git-status-kind index worktree) (status-letter index worktree)))
-                           ;; Folders above a change get a dot.
-                           (loop for dir = (uiop:pathname-directory-pathname full)
-                                   then (uiop:pathname-parent-directory-pathname dir)
-                                 while (and (uiop:subpathp dir root) (not (equal (namestring dir) (namestring root))))
-                                 do (unless (gethash (namestring dir) *git-status*)
-                                      (setf (gethash (namestring dir) *git-status*) (list :folder "•")))))))
-                     (when moved (reload-git-heads root))
-                     (update-branch-label)
-                     (redecorate-explorer)
-                     (refresh-source-control))))
-               (lambda (error)
-                 (when *window* (panel-log (window-panel *window*) (format nil "Git status failed: ~a" error)))))))
+    (let ((refresh (incf *git-refresh*)))
+      (git-async (lambda ()
+                   (list (ignore-errors (git-status root)) (git-branch root) (git-head-id root)
+                         (multiple-value-list (ignore-errors (git-ahead-behind root)))
+                         (ignore-errors (git-stashes root))
+                         (let ((op (ignore-errors (git-operation root))))
+                           (list op (and (eq op :merge) (ignore-errors (git-merge-message root)))))))
+                 (lambda (result)
+                   (when (= refresh *git-refresh*)
+                     (show-git-status root result)))
+                 (lambda (error)
+                   (when *window* (panel-log (window-panel *window*) (format nil "Git status failed: ~a" error))))))))
+
+(defun show-git-status (root result)
+  "Show what GIT-CHANGED read: the changed files, the branch, and the rest."
+  ;; (Without an upstream there's no ahead or behind: (nil).)
+  (destructuring-bind (entries branch head (&optional ahead behind) stashes (operation merge-message)) result
+    (setf *git-ahead* ahead *git-behind* behind *git-stash-list* stashes
+          *git-operation* operation *git-merge-message* merge-message)
+    (let ((moved (and *git-head* head (string/= head *git-head*))))
+      (setf *git-entries* entries *git-branch* branch *git-head* head)
+      (clrhash *git-status*)
+      (dolist (e entries)
+        (destructuring-bind (index worktree path original) e
+          (declare (ignore original))
+          (let ((full (merge-pathnames path root)))
+            (setf (gethash (namestring full) *git-status*)
+                  (list (git-status-kind index worktree) (status-letter index worktree)))
+            ;; Folders above a change get a dot.
+            (loop for dir = (uiop:pathname-directory-pathname full)
+                    then (uiop:pathname-parent-directory-pathname dir)
+                  while (and (uiop:subpathp dir root) (not (equal (namestring dir) (namestring root))))
+                  do (unless (gethash (namestring dir) *git-status*)
+                       (setf (gethash (namestring dir) *git-status*) (list :folder "•")))))))
+      (when moved (reload-git-heads root))
+      (update-branch-label)
+      (redecorate-explorer)
+      (refresh-source-control))))
 
 (defun update-branch-label ()
   (let ((button (and *window* (gethash :status-branch *named-widgets*))))
