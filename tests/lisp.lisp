@@ -39,6 +39,23 @@
                 :string :number (:paren 0))
         faces)))
 
+(define-test lexing-resumed-from-an-earlier-edit :parent cadre-tests
+  ;; Deleting a paren deepens the lines after it, but lexing goes only as far
+  ;; as asked. An edit above, lexed past, must not leave the rest stale.
+  (let* ((text (c:make-string-text (format nil "(defun f ()~%  (g))~%~%(h)~%(i)")))
+         (syntax (c:make-lisp-syntax text)))
+    (c:ensure-lexed syntax 4)
+    (c:text-delete text 16 17)          ; "  (g))" -> "  (g)"
+    (c:syntax-lines-changed syntax 1 1 1)
+    (c:ensure-lexed syntax 2)
+    (c:text-insert text 1 "x")          ; "(xdefun f ()": its depth is unchanged
+    (c:syntax-lines-changed syntax 0 1 1)
+    (c:ensure-lexed syntax 4)
+    (let ((fresh (syntax-of (c:text-string text))))
+      (dotimes (line 5)
+        (is equal (c:line-start-state fresh line) (c:line-start-state syntax line)
+            "line ~d" (1+ line))))))
+
 (define-test incremental-lexing :parent cadre-tests
   (let* ((text (c:make-string-text (format nil "(a~% b)~%c")))
          (syntax (c:make-lisp-syntax text)))

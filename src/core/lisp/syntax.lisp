@@ -101,7 +101,11 @@
                    (setf (syntax-first-unchecked syntax) nil (syntax-max-dirty syntax) -1)
                    (return))
                   ((> i through)
-                   (setf (syntax-first-unchecked syntax) i)
+                   ;; Line I is unchecked, and its start may now be wrong:
+                   ;; count it as dirty, so lexing that resumes from an
+                   ;; earlier edit can't stop short of it.
+                   (setf (syntax-first-unchecked syntax) i
+                         (syntax-max-dirty syntax) (max i (syntax-max-dirty syntax)))
                    (return)))))))
     syntax))
 
