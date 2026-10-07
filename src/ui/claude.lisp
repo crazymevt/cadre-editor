@@ -118,6 +118,11 @@ of proposing every change for review. Open files reload when they change on disk
                           :stack stack :context-file file :context-problems problems
                           :context-debugger debugger :session-id (make-uuid))))
     (setf *chat* chat)
+    ;; The replies are selectable labels, so they can take the focus; the
+    ;; viewport would then scroll to the one focused, often the first.
+    (let ((viewport (gtk:scrolled-window-get-child scroller)))
+      (when (typep viewport 'gtk:viewport)
+        (gtk:viewport-set-scroll-to-focus viewport nil)))
     (let ((model (position *claude-model* *claude-models* :test #'string=)))
       (when model (gtk:drop-down-set-selected models model)))
     (gtk:widget-set-tooltip-text modes "Chat answers questions and proposes edits. Agent works through a larger task: it plans, edits, compiles and runs the tests, asking before each change.")

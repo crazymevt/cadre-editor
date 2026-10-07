@@ -1735,6 +1735,7 @@ d" 0 0)
 
 ;;; Claude edit
 (section "claude-edit")
+(defvar *chat-bottom* nil)
 
 (then 50
   ;; Lisp's *earmuffs* in code spans once made markup GTK refused, and the
@@ -1744,7 +1745,36 @@ d" 0 0)
     (let ((text (format nil "~{~a~}" (label-texts box))))
       (check "a reply with *earmuffs* in code shows its text"
              (and (search "*scale*" text) (search "*knight*" text) (search "emphasis" text))
-             text))))
+             text)))
+  ;; The panel's tabs scroll without a scrollbar, which covered them.
+  (check "the panel's tabs have no scrollbar to cover them"
+         (eq :external (gtk:scrolled-window-get-policy
+                        (gtk:widget-get-parent (gtk:widget-get-parent
+                                                (first (find-widgets (cadre-ui::panel-widget (cadre-ui::window-panel *window*))
+                                                                     (lambda (w) (typep w 'gtk:stack-switcher))))))))))
+
+(then 100
+  ;; Focusing an earlier reply mustn't scroll the chat back up.
+  (cadre-ui::show-claude-page)
+  (dotimes (i 40) (cadre-ui::chat-note (format nil "Reply ~d" i))))
+
+(then 500
+  ;; The messages, whether or not Claude is set up here.
+  (gtk:stack-set-visible-child-name (cadre-ui::chat-stack cadre-ui::*chat*) "chat")
+  (cadre-ui::chat-scroll-to-end))
+
+(then 500
+  (let* ((adj (gtk:scrolled-window-get-vadjustment (cadre-ui::chat-scroller cadre-ui::*chat*)))
+         (first-label (first (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)
+                                           (lambda (w) (and (typep w 'gtk:label) (gtk:label-get-selectable w)))))))
+    (setf *chat-bottom* (gtk:adjustment-get-value adj))
+    (gtk:widget-grab-focus first-label)))
+
+(then 300
+  (let ((adj (gtk:scrolled-window-get-vadjustment (cadre-ui::chat-scroller cadre-ui::*chat*))))
+    (check "focusing an earlier reply leaves the chat where it was"
+           (and (plusp *chat-bottom*) (= *chat-bottom* (gtk:adjustment-get-value adj)))
+           (list *chat-bottom* (gtk:adjustment-get-value adj)))))
 
 (open-files "src/m1.lisp")
 (then 100

@@ -33,7 +33,9 @@ nil, there are no line numbers."
          (text-view (make-instance 'gtk:text-view
                                    :buffer (buffer-text buffer)
                                    :monospace t :wrap-mode (if *word-wrap* :word-char :none)
-                                   :left-margin 8 :right-margin 8
+                                   ;; Room on the right for the overlay scrollbar,
+                                   ;; which is drawn over the text.
+                                   :left-margin 8 :right-margin 20
                                    :top-margin 4 :bottom-margin 200
                                    :css-classes '("cadre-editor")))
          (gutter (and gutter (make-instance 'gtk:drawing-area :css-classes '("cadre-gutter"))))

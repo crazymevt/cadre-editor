@@ -29,8 +29,10 @@ narrow panel (the vertical layout) has room for the others.")
          (switcher (make-instance 'gtk:stack-switcher :stack stack :halign :start
                                                       :css-classes '("cadre-panel-switcher")))
          ;; In a scroller, so a narrow panel scrolls its tabs instead of
-         ;; forcing the panel wider.
-         (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :automatic :vscrollbar-policy :never
+         ;; forcing the panel wider. With no scrollbar (:external): an
+         ;; overlay one covers the tabs and takes their clicks, and the
+         ;; wheel and the selected tab scroll them (SETUP-TAB-SCROLLING).
+         (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :external :vscrollbar-policy :never
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
