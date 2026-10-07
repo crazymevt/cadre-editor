@@ -159,7 +159,10 @@ everything they need, in file order; all of them if ONLY is empty."
 
 (defmacro then-when ((condition &key (timeout 30)) &body body)
   "A step that runs once CONDITION is true (checked every 100 ms), or after TIMEOUT seconds."
-  `(push-step (list :wait (lambda () ,condition) ,timeout (lambda () ,@body))))
+  `(push-step (list :wait (lambda () ,condition) ,timeout (lambda () ,@body)
+                   ,(format nil "~a: ~a" *current-section*
+                            (let ((s (let ((*print-case* :downcase)) (prin1-to-string condition))))
+                              (if (> (length s) 70) (concatenate 'string (subseq s 0 70) "…") s))))))
 
 (defun open-files (&rest files)
   "Steps that open FILES (relative to *root*) unless they are open, and show
@@ -198,12 +201,17 @@ smoke test starts it without one), and wait for it."
       (finish)
       (let ((step (first steps)))
         (if (eq (car step) :wait)
-            (destructuring-bind (condition timeout fn) (rest step)
+            (destructuring-bind (condition timeout fn where) (rest step)
               (let ((deadline (+ (get-internal-real-time) (* timeout internal-time-units-per-second))))
                 (glib:timeout-add glib:+priority-default+ 100
                                   (lambda ()
                                     (cond ((or (ignore-errors (funcall condition))
-                                               (> (get-internal-real-time) deadline))
+                                               (when (> (get-internal-real-time) deadline)
+                                                 ;; Going on anyway: a wait that always times
+                                                 ;; out only slows the run, so say so.
+                                                 (format t "~&(waited the full ~d s, as ~a never held)~%"
+                                                         timeout where)
+                                                 t))
                                            (run-step fn)
                                            (run-steps (rest steps))
                                            nil)
@@ -2939,6 +2947,7 @@ and the number of items MODEL itself shows."
 ;;; A value from the REPL or the Inspector: copy it, or open it in a tab
 
 (section "repl-values")
+(defvar *title-before* nil)
 (connect-lisp)
 
 (then 100
@@ -2961,9 +2970,11 @@ and the number of items MODEL itself shows."
            (string= "<a><b>x \"q\"</b></a>" (buffer-string buffer)) (buffer-string buffer))
     (check "in the mode it looks like" (eq 'xml-mode (buffer-major-mode buffer)))
     (check "Copy Value says what it copied" (search "Copied 19 characters" (status-text)) (status-text)))
+  (setf *title-before* (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
   (cadre-ui::inspect-string "(list 1 \"two\")" "COMMON-LISP-USER"))
 
-(then-when ((search "two" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))) :timeout 20)
+;; The title names the object (#<CONS …>), not its contents: wait for it to change.
+(then-when ((string/= *title-before* (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))) :timeout 20)
   (let ((items (cadre-ui::inspector-menu-items nil)))
     (check "the Inspector offers the inspected value too"
            (equal '("Copy the Inspected Value" "Open in New Tab") (mapcar #'car items)) (mapcar #'car items))
