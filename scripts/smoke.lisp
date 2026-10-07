@@ -1772,6 +1772,17 @@ d" 0 0)
 
 (then 300
   (let ((adj (gtk:scrolled-window-get-vadjustment (cadre-ui::chat-scroller cadre-ui::*chat*))))
+    ;; Thinking with text is shown, folded; the usual empty thinking adds nothing.
+    (let ((before (length (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)
+                                        (lambda (w) (typep w 'gtk:expander))))))
+      (cadre-ui::handle-claude-event (cadre::make-claude-event :kind :thinking :text ""))
+      (cadre-ui::handle-claude-event (cadre::make-claude-event :kind :thinking :text (format nil "Mostly done — three cleanups remain.~%Details here.")))
+      (let ((expanders (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*) (lambda (w) (typep w 'gtk:expander)))))
+        (check "Claude's thinking, when it has text, shows as one folded row"
+               (and (= (length expanders) (1+ before))
+                    (search "Mostly done" (gtk:label-get-text (gtk:expander-get-label-widget (car (last expanders)))))
+                    (search "Details here" (format nil "~{~a~}" (label-texts (gtk:expander-get-child (car (last expanders)))))))
+               (length expanders))))
     (check "focusing an earlier reply leaves the chat where it was"
            (and (plusp *chat-bottom*) (= *chat-bottom* (gtk:adjustment-get-value adj)))
            (list *chat-bottom* (gtk:adjustment-get-value adj)))))

@@ -571,6 +571,23 @@ the next message restarts Claude Code with that mode's tools and model."
       (when error
         (set-tool-row-label (car entry) (format nil "~a — failed" (gtk:expander-get-label (car entry))))))))
 
+(defun chat-thinking (text)
+  "Show TEXT, Claude's thinking, folded under a row whose title starts it.
+The CLI mostly sends thinking empty, but when it isn't, it can hold what
+Claude meant as its reply: not showing it lost that."
+  (let ((text (string-trim '(#\Space #\Newline) (or text ""))))
+    (when (plusp (length text))
+      (let* ((body (make-instance 'gtk:box :orientation :vertical :css-classes '("dim-label")))
+             (first-line (subseq text 0 (or (position #\Newline text) (length text))))
+             (title (make-instance 'gtk:label :label (format nil "💭 ~a" first-line)
+                                              :xalign 0.0 :ellipsize :end :hexpand t))
+             (expander (make-instance 'gtk:expander :label-widget title :child body
+                                                    :css-classes '("cadre-chat-tool")
+                                                    :tooltip-text "Claude's thinking")))
+        (render-markdown body text)
+        (setf (chat-stream-box *chat*) nil)
+        (chat-append expander)))))
+
 (defun set-tool-row-label (expander text)
   (gtk:label-set-text (gtk:expander-get-label-widget expander) text)
   (gtk:widget-set-tooltip-text expander text))
@@ -585,6 +602,7 @@ the next message restarts Claude Code with that mode's tools and model."
       (:message-start (setf (chat-stream-box *chat*) nil))
       (:text-delta (chat-append-delta (event-text event)))
       (:text (chat-finish-text (event-text event)))
+      (:thinking (chat-thinking (event-text event)))
       (:tool-start (chat-tool-row (event-id event) (event-name event) nil))
       (:tool-use (chat-tool-row (event-id event) (event-name event) (event-input event)))
       (:tool-result (chat-tool-result (event-id event) (event-text event) (event-error event)))
