@@ -77,19 +77,70 @@ doesn't, the app has ended."
     (update-run-button)
     (repl-eval (console-app-form root system entry) :on-done #'console-app-returned)))
 
+;;; Compiling first, for the Problems page
+
+;;; The app's own load (in the REPL, or on the first thread) would recompile
+;;; what changed, but its compiler notes would only be printed. So the
+;;; system is loaded through swank first: the files recompiled get their
+;;; notes on the Problems page in place of their old ones, and the app runs
+;;; only if they compiled.
+
+(defun files-to-compile-form (system)
+  "Source for the files of SYSTEM that loading it will compile, or :UNKNOWN
+if ASDF can't plan it (a dependency not installed: Quicklisp's load fetches it)."
+  (format nil "(handler-case
+  (let ((s (asdf:find-system ~a)))
+    (loop for a in (asdf::plan-actions (asdf:make-plan nil 'asdf:load-op s))
+          for o = (asdf::action-operation a)
+          for c = (asdf::action-component a)
+          when (and (typep o 'asdf:compile-op) (typep c 'asdf:cl-source-file)
+                    (eq (asdf:component-system c) s))
+            collect (namestring (asdf:component-pathname c))))
+  (error () :unknown))"
+          (cadre::lisp-string system)))
+
+(defun compile-app-then (system run)
+  "Load SYSTEM through swank, showing its compiler notes, then call RUN if
+it compiled. With nothing to compile, or no plan, just call RUN."
+  (with-swank-asdf (connection)
+    (rex connection (swank-call "swank:eval-and-grab-output" (files-to-compile-form system))
+         :on-ok (lambda (reply)
+                  (let ((files (ignore-errors (read-sexp (second reply)))))
+                    (if (or (null files) (not (listp files)) (notevery #'stringp files))
+                        (funcall run)
+                        (progn
+                          (message "Compiling ~a…" system)
+                          (rex connection (swank-call "swank:operate-on-system-for-emacs" system "LOAD-OP")
+                               :on-ok (lambda (result)
+                                        (multiple-value-bind (notes successp duration)
+                                            (parse-compilation-result result)
+                                          (show-notes notes :replace-files files)
+                                          (compilation-message notes successp duration
+                                                               (format nil "Compiled ~a" system))
+                                          (if successp
+                                              (funcall run)
+                                              (panel-show (window-panel *window*) "problems"))))
+                               :on-abort (lambda (reason)
+                                           (message "Compiling ~a failed~@[: ~a~]" system reason)))))))
+         :on-abort (lambda (reason) (declare (ignore reason)) (funcall run)))))
+
 (define-command run-app ()
   "Run the project's program, the :entry-point in its .asd, after saving the
-project's files: a gtk4 one as Run GTK App does, any other in the REPL,
-which takes the input it reads."
+project's files and compiling what changed (its notes go to the Problems
+page; with errors, the app doesn't start): a gtk4 one as Run GTK App does,
+any other in the REPL, which takes the input it reads."
   (let* ((root (project-root-or-error))
          (app (or (project-app root) (editor-error "No .asd file in the project has an :entry-point"))))
     (when (app-running-p) (editor-error "The app is running (Stop App ends it)"))
     (save-project-then root
                        (lambda ()
-                         (if (getf app :gtk)
-                             (launch-gtk-app root (getf app :system) (getf app :entry))
-                             (run-console-app root (getf app :system) (getf app :entry)
-                                              :raylib (getf app :raylib)))))))
+                         (compile-app-then
+                          (getf app :system)
+                          (lambda ()
+                            (if (getf app :gtk)
+                                (launch-gtk-app root (getf app :system) (getf app :entry))
+                                (run-console-app root (getf app :system) (getf app :entry)
+                                                 :raylib (getf app :raylib)))))))))
 
 (define-command stop-app ()
   "Stop the program started with Run App."

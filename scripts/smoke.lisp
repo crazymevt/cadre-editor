@@ -2477,6 +2477,58 @@ d" 0 0)
 (then-when ((search "Stopped" (status-text)) :timeout 10)
   (check "the status bar names what stopped" (search "Stopped smoke-cli:main" (status-text)) (status-text)))
 
+;; Run App compiles first: what it recompiles gets its notes on the Problems page.
+(defun cli-main-notes ()
+  (remove-if-not (lambda (s) (search "smoke-cli/src/main.lisp" (namestring (or (cadre-ui::sn-file s) ""))))
+                 cadre-ui::*notes*))
+
+(defun write-cli-main (helper)
+  (with-open-file (out (merge-pathnames "smoke-cli/src/main.lisp" *new-parent*) :direction :output :if-exists :supersede)
+    (format out "(in-package #:smoke-cli)~%~a~%(defun hello (&optional (who \"World\")) (format nil \"Hello, ~~a!\" who))~%(defun main ()~%  (format t \"Your name? \") (finish-output)~%  (write-line (hello (read-line))))~%"
+            helper)))
+
+(then 1100                               ; a new second: ASDF's file dates are in seconds
+  (write-cli-main "(defun initial (s) (let ((unused 1)) (char s 0)))")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and cadre-ui::*console-app* (cadre-ui::repl-reading cadre-ui::*repl*)) :timeout 120)
+  (check "▶ compiles first: a style warning goes to the Problems page" (cli-main-notes)
+         (format nil "~s ~s" (status-text)
+                 (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) cadre-ui::*notes*)))
+  (check "and the app still runs" cadre-ui::*console-app*)
+  (call-command 'cadre-ui::stop-app))
+
+(then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s 0))")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and cadre-ui::*console-app* (cadre-ui::repl-reading cadre-ui::*repl*)) :timeout 120)
+  (check "fixed and run again, the note is gone" (null (cli-main-notes))
+         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) (cli-main-notes)))
+  (call-command 'cadre-ui::stop-app))
+
+(then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s))")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((search "Compiled smoke-cli failed" (status-text)) :timeout 60)
+  (check "a full warning fails the compile (as ASDF has it on SBCL)" (search "warning" (status-text)) (status-text))
+  (check "so the app doesn't start" (null cadre-ui::*console-app*))
+  (check "and the warning is on the Problems page" (cli-main-notes))
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s 0)")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and (search "Compiled smoke-cli failed" (status-text)) (search "error" (status-text))
+                 (notany (lambda (s) (search "CHAR" (cadre::compiler-note-message (cadre-ui::sn-note s))))
+                         (cli-main-notes)))
+            :timeout 60)
+  (check "with a compile error, the app doesn't start" (null cadre-ui::*console-app*))
+  (check "and the error replaces the old warning on the Problems page" (cli-main-notes)
+         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) (cli-main-notes))))
+
 ;;; Pictures open in a tab, to be looked at
 (section "image-view")
 
