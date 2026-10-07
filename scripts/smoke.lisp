@@ -2187,7 +2187,9 @@ d" 0 0)
   (check "and the buttons go" (null (gethash (current-view) cadre-ui::*conflict-buttons*)))
   (call-command 'cadre-ui::save-buffer))
 
-(then-when ((search "(* w h 2)" (m1-disk)) :timeout 10)
+(then-when ((and (search "(* w h 2)" (m1-disk))       ; the save has finished:
+                 (not (buffer-modified-p (current-buffer)))) ; Stage refuses an unsaved file
+            :timeout 10)
   (call-command 'cadre-ui::git-stage-file))
 
 (then-when ((null (find :conflict cadre-ui::*git-entries* :key (lambda (e) (git-status-kind (first e) (second e))))) :timeout 10)
@@ -2198,7 +2200,9 @@ d" 0 0)
     (cadre-ui::git-run root (lambda () (git-continue root :merge)))))
 
 (then-when ((null cadre-ui::*git-operation*) :timeout 15)
-  (check "after staging, Commit finishes the merge" (search "Merge branch" (git-ok *root* "log" "-1" "--format=%s")))
+  (check "after staging, Commit finishes the merge" (search "Merge branch" (git-ok *root* "log" "-1" "--format=%s"))
+         (format nil "status ~s; git status ~s; log ~s" (status-text)
+                 (git-ok *root* "status" "--short") (git-ok *root* "log" "-1" "--format=%s")))
   (check "and the banner goes" (null (adw:bin-get-child (cadre-ui::sc-banner cadre-ui::*source-control*)))))
 
 ;;; Folding
