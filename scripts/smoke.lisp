@@ -1727,6 +1727,17 @@ d" 0 0)
 
 ;;; Claude edit
 (section "claude-edit")
+
+(then 50
+  ;; Lisp's *earmuffs* in code spans once made markup GTK refused, and the
+  ;; reply showed as nothing.
+  (let ((box (make-instance 'gtk:box :orientation :vertical)))
+    (cadre-ui::render-markdown box (format nil "`move-entity` is right: `*scale*` and `*knight*` stay as they are.~%Some *emphasis* and **bold** too."))
+    (let ((text (format nil "~{~a~}" (label-texts box))))
+      (check "a reply with *earmuffs* in code shows its text"
+             (and (search "*scale*" text) (search "*knight*" text) (search "emphasis" text))
+             text))))
+
 (open-files "src/m1.lisp")
 (then 100
   (show-buffer-named "m1.lisp")

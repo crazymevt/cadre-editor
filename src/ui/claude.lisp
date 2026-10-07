@@ -377,20 +377,33 @@ chat or what is missing. THEN is called if Claude is ready."
 
 ;;; Rendering replies: Markdown, simply
 
+(defun split-pairs (string delimiter)
+  "STRING as a list of (piece . inside), INSIDE true for a piece between a
+pair of DELIMITERs (with something between them)."
+  (let ((pieces '()) (start 0) (n (length delimiter)))
+    (loop for a = (search delimiter string :start2 start)
+          for b = (and a (search delimiter string :start2 (+ a n)))
+          while (and a b (> b (+ a n)))
+          do (push (cons (subseq string start a) nil) pieces)
+             (push (cons (subseq string (+ a n) b) t) pieces)
+             (setf start (+ b n)))
+    (push (cons (subseq string start) nil) pieces)
+    (nreverse pieces)))
+
 (defun inline-markup (text)
-  "Pango markup for a line of Markdown: `code`, **bold**, *italic*."
-  (let ((escaped (glib:markup-escape-text text -1)))
-    (flet ((pairs (s delim open close)
-             (with-output-to-string (out)
-               (loop with start = 0
-                     for a = (search delim s :start2 start)
-                     for b = (and a (search delim s :start2 (+ a (length delim))))
-                     while (and a b (> b (+ a (length delim))))
-                     do (write-string s out :start start :end a)
-                        (format out "~a~a~a" open (subseq s (+ a (length delim)) b) close)
-                        (setf start (+ b (length delim)))
-                     finally (write-string s out :start start)))))
-      (pairs (pairs (pairs escaped "`" "<tt>" "</tt>") "**" "<b>" "</b>") "*" "<i>" "</i>"))))
+  "Pango markup for a line of Markdown: `code`, **bold**, *italic*. Each is
+found only outside the ones before it, so the tags always nest: a *var*
+inside `code` stays as it is."
+  (flet ((escape (s) (glib:markup-escape-text s -1)))
+    (with-output-to-string (out)
+      (loop for (code . in-code) in (split-pairs text "`")
+            do (if in-code
+                   (format out "<tt>~a</tt>" (escape code))
+                   (loop for (bold . in-bold) in (split-pairs code "**")
+                         do (when in-bold (write-string "<b>" out))
+                            (loop for (plain . in-italic) in (split-pairs bold "*")
+                                  do (format out (if in-italic "<i>~a</i>" "~a") (escape plain)))
+                            (when in-bold (write-string "</b>" out))))))))
 
 (defun prose-markup (text)
   (with-output-to-string (out)
@@ -446,7 +459,12 @@ chat or what is missing. THEN is called if Claude is ready."
                             (code-block-widget (second segment))
                             (let ((label (make-instance 'gtk:label :xalign 0.0 :wrap t :selectable t
                                                                    :wrap-mode :word-char)))
-                              (gtk:label-set-markup label (prose-markup (second segment)))
+                              ;; Markup GTK can't parse would leave the label
+                              ;; empty: show the text as it is instead.
+                              (let ((markup (prose-markup (second segment))))
+                                (if (ignore-errors (pango:parse-markup markup -1 0) t)
+                                    (gtk:label-set-markup label markup)
+                                    (gtk:label-set-text label (second segment))))
                               label)))))
 
 ;;; Events from the CLI
