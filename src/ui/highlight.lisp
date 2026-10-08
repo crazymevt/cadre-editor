@@ -194,14 +194,13 @@ faces that come from what the connected Lisp knows."
       (let ((match (face-tag gtk-buffer :paren-match))
             (mismatch (face-tag gtk-buffer :paren-mismatch)))
         (when match
-          (dolist (range (buffer-local buffer :paren-ranges))
-            (destructuring-bind (l c) range
-              (when (< l (gtk:text-buffer-get-line-count gtk-buffer))
-                (let ((start (line-iter gtk-buffer l c))
-                      (end (line-iter gtk-buffer l (1+ c))))
-                  (gtk:text-buffer-remove-tag gtk-buffer match start end)
-                  (gtk:text-buffer-remove-tag gtk-buffer mismatch start end)))))
-          (setf (buffer-local buffer :paren-ranges) nil)
+          ;; From the whole buffer, not just the two parens: once the text
+          ;; between them is replaced, they are one tagged run and the new
+          ;; text inside takes the tag too.
+          (let ((start (gtk:text-buffer-get-start-iter gtk-buffer))
+                (end (gtk:text-buffer-get-end-iter gtk-buffer)))
+            (gtk:text-buffer-remove-tag gtk-buffer match start end)
+            (gtk:text-buffer-remove-tag gtk-buffer mismatch start end))
           (let ((syntax (buffer-syntax buffer)))
             (when (and syntax (eq (context-at syntax line column) :code))
               (multiple-value-bind (l1 c1 l2 c2 matched) (paren-match-at syntax line column)
@@ -210,8 +209,7 @@ faces that come from what the connected Lisp knows."
                     (dolist (range (list (list l1 c1) (list l2 c2)))
                       (destructuring-bind (l c) range
                         (gtk:text-buffer-apply-tag gtk-buffer tag (line-iter gtk-buffer l c)
-                                                   (line-iter gtk-buffer l (1+ c)))))
-                    (setf (buffer-local buffer :paren-ranges) (list (list l1 c1) (list l2 c2)))))))))))))
+                                                   (line-iter gtk-buffer l (1+ c)))))))))))))))
 
 (defun setup-theme-following ()
   "Use the current theme now, and again when the light/dark style changes."

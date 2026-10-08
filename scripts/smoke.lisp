@@ -380,6 +380,16 @@ smoke test starts it without one), and wait for it."
 (then 300
   (check "the paren before the cursor and its match are marked"
          (and (has-face-p 1 2 :paren-match) (has-face-p 1 8 :paren-match)))
+  ;; Replace what's between the marked parens, as a reload or Claude's
+  ;; edit does: the new text must not take the mark.
+  (let ((text (buffer-text (current-buffer))))
+    (gtk:text-buffer-delete text (cadre-ui::line-iter text 1 3) (cadre-ui::line-iter text 1 8))
+    (gtk:text-buffer-insert text (cadre-ui::line-iter text 1 3) "* w h" -1))
+  (set-cursor 0 3))
+
+(then 300
+  (check "a paren's mark doesn't spread to text put between the parens"
+         (notany (lambda (c) (has-face-p 1 c :paren-match)) '(2 3 4 5 6 7 8)))
   (set-cursor 0 0)
   (press "C-M-f")
   (check "C-M-f moves over the defun" (equal '(1 10) (cursor)) (cursor))
