@@ -2542,6 +2542,8 @@ d" 0 0)
   (check "the status bar names what stopped" (search "Stopped smoke-cli:main" (status-text)) (status-text)))
 
 ;; Run App compiles first: what it recompiles gets its notes on the Problems page.
+(defvar *notes-before* nil)
+
 (defun cli-main-notes ()
   (remove-if-not (lambda (s) (search "smoke-cli/src/main.lisp" (namestring (or (cadre-ui::sn-file s) ""))))
                  cadre-ui::*notes*))
@@ -2591,7 +2593,47 @@ d" 0 0)
             :timeout 60)
   (check "with a compile error, the app doesn't start" (null cadre-ui::*console-app*))
   (check "and the error replaces the old warning on the Problems page" (cli-main-notes)
-         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) (cli-main-notes))))
+         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) (cli-main-notes)))
+  (setf *notes-before* (length cadre-ui::*notes*))
+  (cadre-ui::message "Running it again")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((search "Compiled smoke-cli failed" (status-text)) :timeout 60)
+  ;; ASDF's "COMPILE-FILE-ERROR while compiling …" is in no file: it used to pile up.
+  (check "failing again replaces the errors, not adds to them" (= *notes-before* (length cadre-ui::*notes*))
+         (list *notes-before* (length cadre-ui::*notes*)))
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s 0))")
+  (call-command 'cadre-ui::run-app))
+
+(then-when ((and cadre-ui::*console-app* (cadre-ui::repl-reading cadre-ui::*repl*)) :timeout 120)
+  (check "and once it compiles, no error is left, in a file or not"
+         (notany (lambda (s) (eql 0 (cadre::severity-rank (cadre::compiler-note-severity (cadre-ui::sn-note s)))))
+                 cadre-ui::*notes*)
+         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) cadre-ui::*notes*))
+  (call-command 'cadre-ui::stop-app))
+
+;; Load (the Systems sidebar's button, Load Project) compiles first too.
+(then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s 0)")
+  (cadre-ui::message "Loading")
+  (cadre-ui::load-system-in-repl (merge-pathnames "smoke-cli/" *new-parent*) "smoke-cli"))
+
+(then-when ((search "Compiled smoke-cli failed" (status-text)) :timeout 60)
+  (check "Load puts the compile's errors on the Problems page" (cli-main-notes))
+  (sleep 1.1)
+  (write-cli-main "(defun initial (s) (char s 0))")
+  (cadre-ui::message "Loading")
+  (cadre-ui::load-system-in-repl (merge-pathnames "smoke-cli/" *new-parent*) "smoke-cli"))
+
+(then-when ((and (search "Compiled smoke-cli" (status-text)) (not (search "failed" (status-text)))) :timeout 60)
+  (check "and loading it fixed clears them"
+         (notany (lambda (s) (eql 0 (cadre::severity-rank (cadre::compiler-note-severity (cadre-ui::sn-note s)))))
+                 cadre-ui::*notes*)
+         (mapcar (lambda (s) (cadre::compiler-note-message (cadre-ui::sn-note s))) cadre-ui::*notes*)))
+
+(then-when ((not (cadre-ui::repl-busy cadre-ui::*repl*)) :timeout 60))
 
 ;;; Pictures open in a tab, to be looked at
 (section "image-view")

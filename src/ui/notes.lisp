@@ -11,7 +11,8 @@
 
 (defstruct (shown-note (:conc-name sn-))
   note buffer file %line %column %end-line %end-column
-  marks)                                ; (start . end) text marks in BUFFER, which follow edits
+  marks                                 ; (start . end) text marks in BUFFER, which follow edits
+  origin)                               ; the buffer compiled, or :system for a system's load
 
 ;;; A note in an open buffer keeps its place with marks, so editing above it
 ;;; or inside its form moves it with the text; recompiling the form then
@@ -113,11 +114,20 @@ expression there, or the rest of its line."
 (defun same-file-p (a b)
   (and a b (string= (uiop:native-namestring a) (uiop:native-namestring b))))
 
+(defun placeless-p (s)
+  "True if SHOWN-NOTE S is in no file or buffer, such as ASDF's \"COMPILE-FILE-ERROR
+while compiling …\": no line or file replaced on recompiling matches it."
+  (and (null (sn-file s)) (null (note-buffer s))))
+
 (defun show-notes (notes &key buffer replace-lines replace-files)
-  "Show NOTES (compiler-notes) from compiling BUFFER. REPLACE-LINES (first .
-last) clears earlier notes in those lines of BUFFER first; :all clears all of
-BUFFER's notes. REPLACE-FILES, a list of files compiled again, clears their
-notes."
+  "Show NOTES (compiler-notes) from compiling BUFFER, or from loading a system
+when BUFFER is nil. REPLACE-LINES (first . last) clears earlier notes in those
+lines of BUFFER first; :all clears all of BUFFER's notes. REPLACE-FILES, a
+list of files compiled again, clears their notes. Notes in no place that the
+last compile of the same BUFFER (or system load) left are cleared too, as
+nothing else would ever clear them."
+  (let ((origin (or buffer :system)))
+    (forget-notes (lambda (s) (and (placeless-p s) (eq (sn-origin s) origin)))))
   (when (and buffer replace-lines)
     (forget-notes (lambda (s)
                     (and (eq (note-buffer s) buffer)
@@ -129,12 +139,18 @@ notes."
   (when replace-files
     (forget-notes (lambda (s)
                     (let ((file (or (sn-file s) (and (note-buffer s) (buffer-file (note-buffer s))))))
-                      (and file (member file replace-files :test #'same-file-p)))))
+                      (and file (or (member file replace-files :test #'same-file-p)
+                                    ;; Deleted or renamed: nothing compiles it again.
+                                    (not (probe-file file)))))))
     (dolist (file replace-files)
       (let ((buffer (find-file-buffer file)))
         (when (and buffer (typep (buffer-text buffer) 'gtk:text-buffer))
           (remove-underlines buffer)))))
-  (let ((new (mapcar (lambda (n) (place-note n :buffer buffer)) notes)))
+  (let ((new (mapcar (lambda (n)
+                       (let ((s (place-note n :buffer buffer)))
+                         (setf (sn-origin s) (or buffer :system))
+                         s))
+                     notes)))
     (dolist (s new) (when (sn-line s) (underline-note s)))
     (setf *notes* (stable-sort (append *notes* new) #'<
                                :key (lambda (s) (severity-rank (compiler-note-severity (sn-note s))))))

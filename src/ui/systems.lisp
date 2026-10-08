@@ -73,9 +73,14 @@ its subdirectories), the main system of each file first."
              (repl-eval form)))))
 
 (defun load-system-in-repl (directory system)
+  "Load SYSTEM, compiling it first so its notes reach the Problems page, then
+in the REPL, which also fetches what Quicklisp must."
   (setf (setting :last-system) system)
-  (run-in-repl (format nil "Loading system ~a~@[ from ~a~]" system (and directory (uiop:native-namestring directory)))
-               (load-system-form directory system)))
+  (compile-system-then
+   system
+   (lambda ()
+     (run-in-repl (format nil "Loading system ~a~@[ from ~a~]" system (and directory (uiop:native-namestring directory)))
+                  (load-system-form directory system)))))
 
 (define-command load-project ()
   "Load the open folder's ASDF system into the Lisp (choosing one if there are several)."
@@ -114,6 +119,53 @@ ASDF can find the project's systems."
 
 (defmacro with-swank-asdf ((var) &body body)
   `(call-with-swank-asdf (lambda (,var) ,@body)))
+
+;;; Compiling first, for the Problems page
+
+;;; Loading a system in the REPL (Load, Run App) recompiles what changed,
+;;; but its compiler notes are only printed there. So the system is loaded
+;;; through swank first: the files recompiled get their notes on the
+;;; Problems page in place of their old ones, and the REPL's load (or the
+;;; app) goes on only if they compiled.
+
+(defun files-to-compile-form (system)
+  "Source for the files of SYSTEM that loading it will compile, or :UNKNOWN
+if ASDF can't plan it (a dependency not installed: Quicklisp's load fetches it)."
+  (format nil "(handler-case
+  (let ((s (asdf:find-system ~a)))
+    (loop for a in (asdf::plan-actions (asdf:make-plan nil 'asdf:load-op s))
+          for o = (asdf::action-operation a)
+          for c = (asdf::action-component a)
+          when (and (typep o 'asdf:compile-op) (typep c 'asdf:cl-source-file)
+                    (eq (asdf:component-system c) s))
+            collect (namestring (asdf:component-pathname c))))
+  (error () :unknown))"
+          (cadre::lisp-string system)))
+
+(defun compile-system-then (system run)
+  "Load SYSTEM through swank, showing its compiler notes, then call RUN if
+it compiled. With nothing to compile, or no plan, just call RUN."
+  (with-swank-asdf (connection)
+    (rex connection (swank-call "swank:eval-and-grab-output" (files-to-compile-form system))
+         :on-ok (lambda (reply)
+                  (let ((files (ignore-errors (read-sexp (second reply)))))
+                    (if (or (null files) (not (listp files)) (notevery #'stringp files))
+                        (funcall run)
+                        (progn
+                          (message "Compiling ~a…" system)
+                          (rex connection (swank-call "swank:operate-on-system-for-emacs" system "LOAD-OP")
+                               :on-ok (lambda (result)
+                                        (multiple-value-bind (notes successp duration)
+                                            (parse-compilation-result result)
+                                          (show-notes notes :replace-files files)
+                                          (compilation-message notes successp duration
+                                                               (format nil "Compiled ~a" system))
+                                          (if successp
+                                              (funcall run)
+                                              (panel-show (window-panel *window*) "problems"))))
+                               :on-abort (lambda (reason)
+                                           (message "Compiling ~a failed~@[: ~a~]" system reason)))))))
+         :on-abort (lambda (reason) (declare (ignore reason)) (funcall run)))))
 
 ;;; The view
 
