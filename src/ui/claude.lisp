@@ -382,33 +382,37 @@ chat or what is missing. THEN is called if Claude is ready."
 
 ;;; Rendering replies: Markdown, simply
 
-(defun split-pairs (string delimiter)
-  "STRING as a list of (piece . inside), INSIDE true for a piece between a
-pair of DELIMITERs (with something between them)."
-  (let ((pieces '()) (start 0) (n (length delimiter)))
-    (loop for a = (search delimiter string :start2 start)
-          for b = (and a (search delimiter string :start2 (+ a n)))
-          while (and a b (> b (+ a n)))
-          do (push (cons (subseq string start a) nil) pieces)
-             (push (cons (subseq string (+ a n) b) t) pieces)
-             (setf start (+ b n)))
-    (push (cons (subseq string start) nil) pieces)
-    (nreverse pieces)))
+(defun code-span-text (string start end)
+  "The code between START and END, less the one space that pads each side
+when both have one (so `` `x` `` shows `x`)."
+  (if (and (> (- end start) 2) (char= #\Space (char string start)) (char= #\Space (char string (1- end)))
+           (find #\Space string :start start :end end :test-not #'char=))
+      (subseq string (1+ start) (1- end))
+      (subseq string start end)))
 
 (defun inline-markup (text)
-  "Pango markup for a line of Markdown: `code`, **bold**, *italic*. Each is
-found only outside the ones before it, so the tags always nest: a *var*
-inside `code` stays as it is."
+  "Pango markup for a line of Markdown: code, bold, italic, strikethrough
+and links, nested as Markdown nests them (bold around code, say)."
   (flet ((escape (s) (glib:markup-escape-text s -1)))
     (with-output-to-string (out)
-      (loop for (code . in-code) in (split-pairs text "`")
-            do (if in-code
-                   (format out "<tt>~a</tt>" (escape code))
-                   (loop for (bold . in-bold) in (split-pairs code "**")
-                         do (when in-bold (write-string "<b>" out))
-                            (loop for (plain . in-italic) in (split-pairs bold "*")
-                                  do (format out (if in-italic "<i>~a</i>" "~a") (escape plain)))
-                            (when in-bold (write-string "</b>" out))))))))
+      (labels ((walk (node)
+                 (destructuring-bind (kind s e cs ce children &rest more) node
+                   (declare (ignore s e))
+                   (flet ((wrap (open close)
+                            (write-string open out) (mapc #'walk children) (write-string close out)))
+                     (case kind
+                       ((:text :escape) (write-string (escape (subseq text cs ce)) out))
+                       (:code (format out "<tt>~a</tt>" (escape (code-span-text text cs ce))))
+                       (:strong (wrap "<b>" "</b>"))
+                       (:emphasis (wrap "<i>" "</i>"))
+                       (:strike (wrap "<s>" "</s>"))
+                       (:link (wrap (format nil "<a href=\"~a\">" (escape (third more))) "</a>"))
+                       (:autolink (format out "<a href=\"~a\">~a</a>"
+                                          (escape (let ((url (first more)))
+                                                    (if (search "://" url) url (format nil "https://~a" url))))
+                                          (escape (subseq text cs ce))))
+                       (:image (write-string (escape (subseq text cs ce)) out)))))))
+        (mapc #'walk (markdown-inlines text))))))
 
 (defun prose-markup (text)
   (with-output-to-string (out)

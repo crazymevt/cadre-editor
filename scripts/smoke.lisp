@@ -893,6 +893,17 @@ smoke test starts it without one), and wait for it."
 (then-when ((chat-says "Done."))
   (check "Claude's reply streams into the chat and is rendered" (chat-says "Hello from fake Claude"))
   (check "code blocks in replies are shown as code" (member "(defun hi () :hi)" (chat-texts) :test #'equal))
+  (let* ((label (first (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)
+                                     (lambda (w) (and (typep w 'gtk:label)
+                                                      (equal "(defun hi () :hi)" (gtk:label-get-text w)))))))
+         (family (and label (pango:font-description-get-family
+                             (pango:context-get-font-description (gtk:widget-get-pango-context label))))))
+    (check "code blocks in replies are in the editor's font" (and family (search "Menlo" family)) family))
+  (check "bold around code in a reply is bold, with the code inside"
+         (equal "<b>It is at <tt>inner</tt>.</b> Tokens"
+                (cadre-ui::inline-markup "**It is at `inner`.** Tokens")))
+  (check "a ``double-backtick`` code span shows its backticks inside, not around"
+         (equal "by <tt>`(...)</tt> here" (cadre-ui::inline-markup "by `` `(...) `` here")))
   (check "the turn ends" (not (cadre-ui::chat-busy cadre-ui::*chat*)))
   (check "the panel shows the conversation's cost"
          (search "$0.0042" (gtk:label-get-text (cadre-ui::chat-status cadre-ui::*chat*)))

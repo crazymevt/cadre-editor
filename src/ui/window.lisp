@@ -124,7 +124,7 @@
 (defvar *font-provider* nil)
 
 (defun install-font-css ()
-  "Use *editor-font* in editors (again, after it changes)."
+  "Use *editor-font* in editors and monospace labels (again, after it changes)."
   (when *font-provider*
     (gtk:style-context-remove-provider-for-display (gdk:display-get-default) *font-provider*))
   (let* ((font *editor-font*)
@@ -132,8 +132,10 @@
          (family (if (font-size-points font) (subseq font 0 (position #\Space font :from-end t)) font))
          (size (zoomed-font-size)))
     (setf *font-provider*
-          (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text, .cadre-gutter, .cadre-terminal { font-family: ~a;~@[ font-size: ~a;~] }"
-                               family size)))))
+          ;; .monospace too, at its own size: libadwaita's monospace font
+          ;; comes out proportional on macOS.
+          (gtk:add-css (format nil "textview.cadre-editor, textview.cadre-editor text, .cadre-gutter, .cadre-terminal { font-family: ~a;~@[ font-size: ~a;~] } .monospace { font-family: ~a; }"
+                               family size family)))))
 
 (defun install-css ()
   (gtk:add-css *css*)
