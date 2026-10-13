@@ -5,6 +5,8 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
 
+![Cadre editing Lisp, with Claude explaining the code in the side panel](docs/screenshot.png)
+
 **Status:** milestone M6 (without packaging, which waits until Cadre is more complete). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
