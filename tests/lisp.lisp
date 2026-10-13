@@ -153,7 +153,17 @@ Second line of the docstring.\"
       (helper a))
     ;; a comment
     (list :a 1
-          :b 2)))
+          :b 2)
+    (loop for i from 0 below 3
+          do (print i)
+             (print a)
+          collect i
+          finally (print 1)
+                  (print 2))
+    (loop :for i :in x
+          :do
+            (print i)
+            (print a))))
 
 (defclass point ()
   ((x :initarg :x)

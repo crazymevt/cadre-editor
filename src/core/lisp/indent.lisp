@@ -9,6 +9,8 @@
 ;;;;   - other calls: under the first argument when it is on the head's line,
 ;;;;     otherwise 1 past the paren.
 ;;;; Local functions in FLET, LABELS and MACROLET indent like DEFUN.
+;;;; In LOOP, the forms of a DO (DOING, INITIALLY, FINALLY) clause line up
+;;;; under the first of them.
 
 (in-package #:cadre)
 
@@ -142,6 +144,36 @@ FLET, LABELS or MACROLET."
                      (declare (ignore tk))
                      (and (= l bl) (= c bc)))))))))))
 
+(defparameter *loop-keywords*
+  '("named" "with" "for" "as" "and" "initially" "finally" "do" "doing" "return"
+    "collect" "collecting" "append" "appending" "nconc" "nconcing" "count" "counting"
+    "sum" "summing" "maximize" "maximizing" "minimize" "minimizing" "into"
+    "repeat" "while" "until" "always" "never" "thereis" "when" "if" "unless" "else" "end"
+    "in" "on" "by" "from" "upfrom" "downfrom" "to" "upto" "downto" "below" "above"
+    "across" "being" "each" "the" "of" "using" "then" "=")
+  "The words that make up LOOP clauses.")
+
+(defparameter *loop-body-keywords* '("do" "doing" "initially" "finally")
+  "The LOOP keywords followed by any number of forms.")
+
+(defun loop-keyword (syntax line token)
+  "TOKEN's name if it is a LOOP keyword (FOR, :FOR, IN…), else nil."
+  (when (member (token-type token) '(:symbol :keyword))
+    (find (symbol-base-name (token-text syntax line token)) *loop-keywords* :test #'string=)))
+
+(defun loop-indentation (syntax line elements)
+  "The column for LINE, in a LOOP whose elements before it are ELEMENTS, when
+it continues the forms of a DO (or similar) clause; else nil."
+  (let ((first (find-if (lambda (tk) (not (eq (token-type tk) :comment))) (line-tokens syntax line))))
+    (unless (and first (loop-keyword syntax line first))
+      (let ((keyword (position-if (lambda (e) (loop-keyword syntax (first e) (third e)))
+                                  elements :from-end t)))
+        (when (and keyword (plusp keyword)
+                   (member (loop-keyword syntax (first (nth keyword elements)) (third (nth keyword elements)))
+                           *loop-body-keywords* :test #'string=))
+          (let ((form (nth (1+ keyword) elements)))
+            (if form (second form) (+ (second (nth keyword elements)) 2))))))))
+
 (defun lisp-indentation (syntax line)
   "The column LINE should be indented to, or nil if it should be left alone
 (it starts inside a string or comment)."
@@ -165,11 +197,14 @@ FLET, LABELS or MACROLET."
                           (not (eq (token-type (third head)) :symbol)))
                       (under-first))
                      (t
-                      (let ((spec (if (local-function-list-p syntax ol oc)
-                                      1
-                                      (indentation-spec (token-text syntax (first head) (third head)))))
-                            (arguments (1- (length elements))))
+                      (let* ((name (token-text syntax (first head) (third head)))
+                             (spec (if (local-function-list-p syntax ol oc)
+                                       1
+                                       (indentation-spec name)))
+                             (arguments (1- (length elements))))
                         (cond
+                          ((and (string= (symbol-base-name name) "loop")
+                                (loop-indentation syntax line elements)))
                           (spec (if (< arguments spec) (+ paren 4) (+ paren 2)))
                           ((and (second elements) (= (first (second elements)) (first head)))
                            (second (second elements)))
