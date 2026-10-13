@@ -252,7 +252,7 @@ it when the project has an :entry-point)."
                                                  (call-command 'toggle-sidebar)))
                 (gtk:box :child-type "end" :spacing 6
                   (run-button)
-                  (command-button "document-save-symbolic" "Save" 'save-buffer)
+                  (command-button "cadre-save-symbolic" "Save" 'save-buffer)
                   (command-button "cadre-layout-horizontal-symbolic"
                                   "Switch between the panel below and beside the editor"
                                   'toggle-layout :id :layout-button)
@@ -366,8 +366,12 @@ it when the project has an :entry-point)."
       (setup-layout win)
       (setup-keys win)
       ;; Coming back to Cadre: files may have changed in Git meanwhile.
+      ;; Redraw all of it either way: on macOS, after a focus change (as
+      ;; when a dialog opens) GTK can repaint only what changed onto an
+      ;; empty buffer, leaving the rest of the window see-through.
       (gobject:connect window "notify::is-active"
                        (lambda (w pspec) (declare (ignore pspec))
+                         (gtk:widget-queue-draw w)
                          (when (gtk:window-is-active w) (git-changed))))
       (gobject:connect window :close-request (lambda (w) (declare (ignore w))
                                                (request-close win)))
