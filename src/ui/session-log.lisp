@@ -9,7 +9,7 @@
 
 (in-package #:cadre-ui)
 
-(define-option *session-log* t boolean
+(define-option *session-log* nil boolean
   "Write what Cadre does (commands, keys, popups, Lisp requests) to
 ~/.local/state/cadre/session.log, to find what led to a crash. Read when
 Cadre starts."
