@@ -408,12 +408,15 @@ examples, with links to other entries. A symbol with several entries (`list`
 is a function and a class) offers a choice. Back and Forward are at the top
 of the page, and on `Alt+Left` / `Alt+Right` and the mouse's side buttons.
 Search HyperSpec (in the Lisp menu) finds any entry by name. The text is the
-dpANS3 draft the ANSI standard was made from, converted by spec-browser into
-`data/docsets/common-lisp/`.
+dpANS3 draft the ANSI standard was made from, converted by
+[spec-browser](https://github.com/crazymevt/spec-browser) into `data/docsets/common-lisp/`. That copy is
+committed, so Cadre doesn't need spec-browser. After rebuilding the docset
+there (`make export`), copy it over:
+`cp ../spec-browser/data/common-lisp/*.sexp data/docsets/common-lisp/`.
 
 Other libraries' documentation shows too, and lookups follow the package a
 symbol is written with (`bt:make-thread`):
-- **gtk4 and raylib**, once they've built their docsets (`make docset` in each).
+- **[gtk4](https://github.com/crazymevt/gtk4) and [raylib](https://github.com/crazymevt/raylib)**, once they've built their docsets (`make docset` in each).
 - **Any docset in `~/.local/share/docsets/`.** The
   [docsets](https://github.com/crazymevt/docsets) project writes them for
   other libraries: bordeaux-threads has full pages, and any library can be
@@ -665,7 +668,7 @@ changed), and calls the entry point:
 - **Any other program** runs in the REPL, and its output appears there. When
   it reads standard input (`read-line`, `read`), the REPL waits for a line:
   type it and press RET.
-- **A raylib game** (its system depends on `raylib`, and its entry point
+- **A raylib game** (its system depends on [`raylib`](https://github.com/crazymevt/raylib), and its entry point
   starts the game with `rl:run`) runs on the Lisp's first thread while the
   REPL stays free for redefining its functions. The app runs until the
   game's window closes.
