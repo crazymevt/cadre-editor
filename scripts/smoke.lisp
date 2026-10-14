@@ -3150,6 +3150,7 @@ and the number of items MODEL itself shows."
 ;;; Racket, through Cadre's back end (if Racket is installed)
 (section "racket")
 
+(defvar *racket-tool-results* nil)
 (defvar *have-racket* (ignore-errors (uiop:run-program '("racket" "--version") :output nil) t))
 
 (then 300
@@ -3249,6 +3250,23 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) (search "problem" (status-text))) :timeout 60)
   (when *have-racket*
     (check "Check Syntax finds the error without running the file" (search "1 problem" (status-text)) (status-text))
+    ;; Claude's tools ask the current file's language: they wait on the GTK
+    ;; thread, so they are called from another.
+    (setf *racket-tool-results* nil)
+    (sb-thread:make-thread
+     (lambda ()
+       (setf *racket-tool-results*
+             (list (cadre:call-mcp-tool "describe_symbol" (cadre::jobj "symbol" "area"))
+                   (cadre:call-mcp-tool "current_context" nil)
+                   (nth-value 1 (cadre:call-mcp-tool "apropos" (cadre::jobj "pattern" "area")))))))))
+
+(then-when ((or (not *have-racket*) *racket-tool-results*) :timeout 30)
+  (when *have-racket*
+    (destructuring-bind (describe context apropos-failed) *racket-tool-results*
+      (check "Claude's describe_symbol asks Racket in a Racket file" (search "(area w h)" describe) describe)
+      (check "current_context names the language and the Racket connection"
+             (and (search "Language: Racket" context) (search "Racket: Racket 9" context)) context)
+      (check "Swank-only tools say so in Racket" apropos-failed))
     (call-command 'cadre-ui::racket-stop)))
 
 (then-when ((or (not *have-racket*) (null (cadre-ui::racket-connection))) :timeout 30)

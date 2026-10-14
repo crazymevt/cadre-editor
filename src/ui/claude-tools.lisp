@@ -6,6 +6,13 @@
 ;;;; change things (eval, compile_file, propose_edit, and Claude Code's own
 ;;;; tools through `approve`) wait for the user's answer in the chat.
 ;;;; Nothing here evaluates in the editor's own Lisp.
+;;;;
+;;;; The tools that ask the running Lisp something go to the connection of
+;;;; the code's language: the "language" argument if Claude gives one, else
+;;;; the language of the buffer the tool names, else the current file's. So
+;;;; describe_symbol in a Clojure file asks nREPL, and eval in a Racket file
+;;;; evaluates in its module. Swank-only tools (apropos, load_system,
+;;;; run_tests) say so for other languages.
 
 (in-package #:cadre-ui)
 
@@ -25,15 +32,37 @@ wait for that result here."
 
 ;;; The Lisp
 
+(defparameter *tool-languages* '(("common-lisp" . :common-lisp) ("clojure" . :clojure) ("racket" . :racket)))
+
+(defun tool-language (args &optional buffer)
+  "The language a tool's request is for: ARGS' \"language\", else BUFFER's, else the current file's."
+  (let ((given (tool-argument args "language")))
+    (cond (given (or (cdr (assoc given *tool-languages* :test #'string-equal))
+                     (tool-error "Unknown language ~a: common-lisp, clojure or racket" given)))
+          (buffer (on-main (buffer-language buffer)))
+          (t (on-main (view-language (selected-view *window*)))))))
+
+(defun ensure-connection (&optional (language :common-lisp))
+  "LANGUAGE's connection, starting one first (and waiting for it) if there is none."
+  (or (on-main (language-connection language))
+      (let ((connection (wait-for (lambda (done)
+                                    (handler-case (call-with-language-connection language done)
+                                      (editor-error (e) (declare (ignore e)) (funcall done nil)))
+                                    (glib:timeout-add-seconds glib:+priority-default+ 300
+                                                              (lambda () (funcall done nil) nil)))
+                                  :timeout 320)))
+        (or connection
+            (tool-error "No ~a is running, and starting one failed."
+                        (dialect-title (find-dialect language)))))))
+
 (defun ensure-lisp ()
   "Start a Lisp if there is none, and wait until it is connected."
-  (unless (on-main (connected-p))
-    (let ((ok (wait-for (lambda (done)
-                          (call-with-connection (lambda (c) (declare (ignore c)) (funcall done t)))
-                          (glib:timeout-add-seconds glib:+priority-default+ 180
-                                                    (lambda () (funcall done nil) nil)))
-                        :timeout 200)))
-      (unless ok (tool-error "No Lisp is connected, and starting one failed.")))))
+  (ensure-connection :common-lisp))
+
+(defun require-common-lisp (language what)
+  (unless (eq language :common-lisp)
+    (tool-error "~a works only with Common Lisp (through Swank), not ~a." what
+                (dialect-title (find-dialect language)))))
 
 (defun swank-sync (form &key package (thread t) (timeout 60))
   "Send FORM to the connected Lisp and wait for its value."
@@ -48,24 +77,40 @@ wait for that result here."
         (second outcome)
         (tool-error "The Lisp aborted the request~@[: ~a~]" (second outcome)))))
 
-(defun backend-sync (function &rest arguments)
-  "Call FUNCTION, one of the BACKEND-… requests, on the connected Lisp with
-ARGUMENTS (its own, then keywords such as :package), and wait for its value."
-  (ensure-lisp)
-  (let ((outcome (wait-for (lambda (done)
-                             (apply #'request function *connection*
+(defun backend-sync (language function &rest arguments)
+  "Call FUNCTION, one of the BACKEND-… requests, on LANGUAGE's connection
+with ARGUMENTS (its own, then keywords such as :package), and wait for its
+value: up to :timeout seconds (one of the keywords; 60 by default)."
+  (let* ((connection (ensure-connection language))
+         (timeout (let ((keys (position-if #'keywordp arguments)))
+                    (or (and keys (getf (subseq arguments keys) :timeout)) 60)))
+         (arguments (let ((keys (position-if #'keywordp arguments)))
+                      (if keys
+                          (append (subseq arguments 0 keys)
+                                  (loop for (k v) on (subseq arguments keys) by #'cddr
+                                        unless (eq k :timeout) append (list k v)))
+                          arguments)))
+         (outcome (wait-for (lambda (done)
+                             (apply #'request function connection
                                     (append arguments
                                             (list :on-ok (lambda (v) (funcall done (list :ok v)))
                                                   :on-abort (lambda (r) (funcall done (list :abort r)))))))
-                           :timeout 60)))
+                           :timeout timeout)))
     (if (eq (first outcome) :ok)
         (second outcome)
         (tool-error "The Lisp aborted the request~@[: ~a~]" (second outcome)))))
 
-(defun tool-package (args)
+(defun tool-package (args &optional (language (tool-language args)))
+  "ARGS' \"package\", else the current file's if it is in LANGUAGE, else
+that language's default (the REPL's)."
   (or (tool-argument args "package")
       (on-main (let ((view (selected-view *window*)))
-                 (if view (view-package view) (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))))))
+                 (cond ((and view (eq (view-language view) language)) (view-package view))
+                       ((eq language :common-lisp)
+                        (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))
+                       ((eq language :clojure)
+                        (let ((c (language-connection :clojure))) (if c (connection-package c) "user")))
+                       (t nil))))))
 
 ;;; Buffers and files
 
@@ -147,6 +192,12 @@ the code's package, the project folder, and the connected Lisp."
       (with-output-to-string (out)
         (format out "Project: ~a~%" (if (window-project *window*) (uiop:native-namestring (window-project *window*)) "none"))
         (format out "Lisp: ~a~%" (if (connected-p) (connection-implementation *connection*) "not connected"))
+        (dolist (language '(:clojure :racket))
+          (let ((connection (language-connection language)))
+            (when connection
+              (format out "~a: ~a~%" (dialect-title (find-dialect language)) (connection-implementation connection)))))
+        (when view
+          (format out "Language: ~a~%" (dialect-title (find-dialect (view-language view)))))
         (if (null view)
             (format out "No file is open.~%")
             (let ((buffer (view-buffer view)))
@@ -190,17 +241,25 @@ the code's package, the project folder, and the connected Lisp."
               (format out "  ~d: ~a~%" (frame-number frame) (frame-description frame))))))))
 
 (define-mcp-tool "describe_symbol" (args)
-  "Describe a symbol in the running Lisp image: what it names, its documentation, arglist, value."
+  "Describe a symbol in the running Lisp (Common Lisp, Clojure or Racket): what it names, its
+documentation, arglist, value."
   (("symbol" "string" "The symbol, e.g. \"my-pkg::foo\"" :required t)
-   ("package" "string" "The package to read it in (default: the current file's)"))
-  (backend-sync #'backend-describe (tool-argument args "symbol" :required t) :package (tool-package args)))
+   ("package" "string" "The package (Clojure: namespace; Racket: module file) to read it in (default: the current file's)")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
+  (let ((language (tool-language args)))
+    (backend-sync language #'backend-describe (tool-argument args "symbol" :required t)
+                  :package (tool-package args language))))
 
 (define-mcp-tool "arglist" (args)
-  "The arglist of a function or macro in the running image."
+  "The arglist of a function or macro in the running Lisp."
   (("symbol" "string" "The operator's name" :required t)
-   ("package" "string" "The package to read it in"))
-  (let ((package (tool-package args)))
-    (or (backend-sync #'backend-arglist (tool-argument args "symbol" :required t) :package package)
+   ("package" "string" "The package to read it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
+  (let ((language (tool-language args)))
+    (or (backend-sync language #'backend-arglist (tool-argument args "symbol" :required t)
+                      :package (tool-package args language))
         "Not a function or macro.")))
 
 (defun locations-text (entries)
@@ -215,16 +274,20 @@ the code's package, the project folder, and the connected Lisp."
                                  (let ((line (on-main (location-line place)))) (and line (1+ line)))))))))
 
 (define-mcp-tool "find_definitions" (args)
-  "Where a symbol is defined (functions, methods, classes, variables), from the running image."
+  "Where a symbol is defined (functions, methods, classes, variables), from the running Lisp."
   (("symbol" "string" "The symbol" :required t)
-   ("package" "string" "The package to read it in"))
-  (let ((found (backend-sync #'backend-find-definitions (tool-argument args "symbol" :required t)
-                             :package (tool-package args))))
+   ("package" "string" "The package to read it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
+  (let* ((language (tool-language args))
+         (found (backend-sync language #'backend-find-definitions (tool-argument args "symbol" :required t)
+                              :package (tool-package args language))))
     (if found (locations-text found) "No definitions found.")))
 
 (defun xref-tool (kind args)
-  (let ((found (backend-sync #'backend-xref (list kind) (tool-argument args "symbol" :required t)
-                             :package (tool-package args))))
+  (let* ((language (tool-language args))
+         (found (backend-sync language #'backend-xref (list kind) (tool-argument args "symbol" :required t)
+                              :package (tool-package args language))))
     (cond ((eq found :not-implemented) "This Lisp cannot answer that.")
           ((null found) "None found.")
           (t (locations-text found)))))
@@ -232,27 +295,35 @@ the code's package, the project folder, and the connected Lisp."
 (define-mcp-tool "who_calls" (args)
   "The functions that call a function, from the running image."
   (("symbol" "string" "The function" :required t)
-   ("package" "string" "The package to read it in"))
+   ("package" "string" "The package to read it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
   (xref-tool :calls args))
 
 (define-mcp-tool "who_references" (args)
   "The code that refers to a global variable, from the running image."
   (("symbol" "string" "The variable" :required t)
-   ("package" "string" "The package to read it in"))
+   ("package" "string" "The package to read it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
   (xref-tool :references args))
 
 (define-mcp-tool "macroexpand" (args)
-  "Expand a macro form in the running image."
+  "Expand a macro form in the running Lisp."
   (("form" "string" "The form, as source text" :required t)
    ("all" "boolean" "Expand every macro inside it, not just the outer one")
-   ("package" "string" "The package to read it in"))
-  (backend-sync #'backend-macroexpand (tool-argument args "form" :required t)
-                :all (jtrue-p (tool-argument args "all")) :package (tool-package args)))
+   ("package" "string" "The package to read it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
+  (let ((language (tool-language args)))
+    (backend-sync language #'backend-macroexpand (tool-argument args "form" :required t)
+                  :all (jtrue-p (tool-argument args "all")) :package (tool-package args language))))
 
 (define-mcp-tool "apropos" (args)
   "Search the running image's symbols whose names contain a string."
   (("pattern" "string" "Part of the name" :required t)
    ("package" "string" "Only symbols in this package"))
+  (require-common-lisp (tool-language args) "apropos")
   (let ((found (swank-sync (swank-call "swank:apropos-list-for-emacs" (tool-argument args "pattern" :required t)
                                        nil nil (tool-argument args "package"))
                            :timeout 30)))
@@ -312,16 +383,24 @@ entering the debugger."
 
 (define-mcp-tool "eval" (args)
   "Evaluate a form in the user's running Lisp (not the editor's) and return its output and
-value. The user approves each evaluation, unless they allowed it for the session."
+value: Common Lisp, or a Clojure or Racket form in its namespace or module (their output
+goes to that language's REPL tab). The user approves each evaluation, unless they allowed
+it for the session."
   (("form" "string" "The form, as source text" :required t)
-   ("package" "string" "The package to evaluate it in"))
-  (let ((form (tool-argument args "form" :required t))
-        (package (tool-package args)))
+   ("package" "string" "The package to evaluate it in")
+   ("language" "string" "The code's language (default: the current file's)"
+    :enum ("common-lisp" "clojure" "racket")))
+  (let* ((form (tool-argument args "form" :required t))
+         (language (tool-language args))
+         (package (tool-package args language)))
     (require-approval "eval" "Claude wants to evaluate" form)
-    (destructuring-bind (output value)
-        (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source form)) :package package :timeout 300)
-      (on-main (image-changed))
-      (format nil "~@[Output:~%~a~%~]Value: ~a" (and (plusp (length output)) output) value))))
+    (if (eq language :common-lisp)
+        (destructuring-bind (output value)
+            (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source form)) :package package :timeout 300)
+          (on-main (image-changed))
+          (format nil "~@[Output:~%~a~%~]Value: ~a" (and (plusp (length output)) output) value))
+        (format nil "Value: ~a"
+                (result-text (backend-sync language #'backend-eval form :package package :timeout 300))))))
 
 (define-mcp-tool "compile_file" (args)
   "Compile and load a file in the user's running Lisp; returns the compiler's notes. The file
@@ -333,9 +412,14 @@ must be saved. The user approves this unless they allowed it for the session."
     (when (and buffer (on-main (buffer-modified-p buffer)))
       (tool-error "~a has unsaved changes; ask the user to save it." (file-namestring path)))
     (require-approval "compile" "Claude wants to compile and load" (uiop:native-namestring path))
-    (let ((result (swank-sync (swank-call "swank:compile-file-for-emacs" (uiop:native-namestring path) t) :timeout 300)))
+    (let* ((language (tool-language args buffer))
+           (result (if (eq language :common-lisp)
+                       (swank-sync (swank-call "swank:compile-file-for-emacs" (uiop:native-namestring path) t)
+                                   :timeout 300)
+                       ;; Clojure loads the file; Racket runs its module.
+                       (backend-sync language #'backend-compile-file (uiop:native-namestring path) :timeout 300))))
       (multiple-value-bind (notes successp) (parse-compilation-result result)
-        (when (and successp (fifth result) (sixth result))
+        (when (and (eq language :common-lisp) successp (fifth result) (sixth result))
           (swank-sync (swank-call "swank:load-file" (sixth result)) :timeout 300))
         (on-main (show-notes notes :buffer buffer :replace-lines (and buffer :all))
                  (image-changed))
@@ -370,21 +454,31 @@ any line inside the form. The user approves this unless they allowed compiling f
    ("line" "integer" "A line (from 1) inside the top-level form" :required t))
   (let* ((buffer (tool-lisp-buffer (tool-argument args "buffer" :required t)))
          (line (1- (tool-argument args "line" :required t))))
-    (multiple-value-bind (text position sl el package filename)
+    (multiple-value-bind (text position sl el package filename language)
         (on-main
-          (let ((syntax (or (buffer-syntax buffer) (tool-error "~a is not a Lisp buffer" (buffer-name buffer)))))
+          (let ((syntax (or (buffer-sexp-syntax buffer) (tool-error "~a is not a Lisp buffer" (buffer-name buffer))))
+                (language (buffer-language buffer)))
             (multiple-value-bind (sl sc el ec) (toplevel-form-bounds syntax (max 0 line) 0)
               (unless sl (tool-error "No top-level form at line ~d" (1+ line)))
               (let ((gtk-buffer (buffer-text buffer)))
                 (values (text-string gtk-buffer (text-line-position gtk-buffer sl sc) (text-line-position gtk-buffer el ec))
                         (1+ (text-line-position gtk-buffer sl sc)) sl el
-                        (or (buffer-package-name syntax sl) (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))
-                        (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer))))))))
+                        (case language
+                          (:common-lisp (or (buffer-package-name syntax sl)
+                                            (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER")))
+                          (:clojure (or (clojure-namespace-at syntax sl) "user"))
+                          (t (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))))
+                        (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
+                        language)))))
       (require-approval "compile" "Claude wants to compile" text)
-      (let ((result (swank-sync (swank-call "swank:compile-string-for-emacs" text (on-main (buffer-name buffer))
-                                            (list (list :position position) (list :line (1+ sl) 1))
-                                            filename nil)
-                                :package package :timeout 300)))
+      (let ((result (if (eq language :common-lisp)
+                        (swank-sync (swank-call "swank:compile-string-for-emacs" text (on-main (buffer-name buffer))
+                                                (list (list :position position) (list :line (1+ sl) 1))
+                                                filename nil)
+                                    :package package :timeout 300)
+                        (backend-sync language #'backend-compile-form text
+                                      :buffer-name (on-main (buffer-name buffer)) :position position
+                                      :line (1+ sl) :column 1 :file filename :package package :timeout 300))))
         (multiple-value-bind (notes successp) (parse-compilation-result result)
           (on-main (show-notes notes :buffer buffer :replace-lines (cons sl el))
                    (image-changed))
@@ -395,6 +489,7 @@ any line inside the form. The user approves this unless they allowed compiling f
 return the output. Systems in the project folder are found. The user approves this unless
 they allowed loading for the session."
   (("system" "string" "The system's name" :required t))
+  (require-common-lisp (tool-language args) "load_system")
   (let ((system (tool-argument args "system" :required t))
         (directory (on-main (window-project *window*))))
     (require-approval "load" "Claude wants to load the system" system)
@@ -408,6 +503,7 @@ they allowed loading for the session."
   "Run an ASDF system's tests (asdf:test-system) in the user's running Lisp and return the
 output. The user approves this unless they allowed running tests for the session."
   (("system" "string" "The system's name" :required t))
+  (require-common-lisp (tool-language args) "run_tests")
   (let ((system (tool-argument args "system" :required t))
         (directory (on-main (window-project *window*))))
     (require-approval "tests" "Claude wants to run the tests of" system)
