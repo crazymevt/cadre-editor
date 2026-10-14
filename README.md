@@ -429,7 +429,9 @@ symbol is written with (`bt:make-thread`):
   ```
 
   It needs the docset library linked into Quicklisp's local projects, as in
-  [Setup](#setup).
+  [Setup](#setup). After updating Quicklisp, `make -C ~/projects/lisp/docsets
+  update` regenerates the docsets whose libraries changed (`make outdated`
+  lists them).
 
 ### Pictures
 
