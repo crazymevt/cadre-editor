@@ -1363,13 +1363,15 @@ d" 0 0)
   (type-keys "[")
   (check "[ wraps too" (string= "(\"[abc]\") def" (buffer-text-string)) (buffer-text-string))
   ;; The right-click menu
-  (let ((menu (gtk:text-view-get-extra-menu (view-text-view (current-view)))))
-    (check "Lisp editors have a right-click menu with Go to Definition"
-           (and menu (plusp (gio:menu-model-get-n-items menu))
-                (search "Go to Definition" (prin1-to-string (loop for i below (gio:menu-model-get-n-items (gio:menu-model-get-item-link menu 0 "section"))
-                                                                     collect (glib:variant-get-string
-                                                                              (gio:menu-model-get-item-attribute-value
-                                                                               (gio:menu-model-get-item-link menu 0 "section") i "label" nil))))))))
+  (let ((labels (mapcar #'car (menu-entries (cadre-ui::editor-context-menu (current-buffer)))))
+        (popover (cadre-ui::show-context-menu (current-view) 40 40)))
+    (check "Lisp editors have a right-click menu with Go to Definition and Copy"
+           (and (member "Go to Definition" labels :test #'string=) (member "Copy" labels :test #'string=)) labels)
+    ;; Short enough to fit above or below a click on a laptop's screen: a
+    ;; menu macOS has to move takes its clicks where it was meant to be.
+    (let ((height (nth-value 1 (gtk:widget-measure popover :vertical -1))))
+      (check "and it is short enough to fit on the screen" (< height 420) height))
+    (gtk:popover-popdown popover))
   ;; Find in the project
   (show-buffer-named "m1.lisp")
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
@@ -1730,6 +1732,49 @@ d" 0 0)
   (check "Search HyperSpec picks from every entry"
          (> (length (cadre-ui::picker-items (picker))) 1000) (length (cadre-ui::picker-items (picker))))
   (cadre-ui::close-picker (picker))
+  (let ((m1 (find-buffer "m1.lisp")))
+    (loop for (code . expected) in '(("(gethash k table)" . "accessor/gethash")
+                                     ("(apply #'+ args)" . "function/apply")
+                                     ("(let ((x 1)) x)" . "special-operator/let")
+                                     ("(mapcar #'1+ xs)" . "function/mapc"))
+          do (let ((view (first (cadre-ui::buffer-views *window* m1))))
+               (cadre-ui::activate-group *window* (cadre-ui::view-group view))
+               (cadre-ui::focus-view view)
+               (text-replace-contents (buffer-text m1) code)
+               (set-cursor 0 2)
+               (call-command 'cadre-ui::hyperspec-look-up)
+               (check (format nil "looking up ~a" code)
+                      (and (equal expected (cadre-ui::sp-entry-id (hyperspec-page)))
+                           (search "Syntax" (hyperspec-text)))
+                      (list (cadre-ui::sp-entry-id (hyperspec-page)) (subseq (hyperspec-text) 0 (min 60 (length (hyperspec-text))))
+                            (gtk:label-get-text (cadre-ui::window-status-message *window*))))))
+    ;; A selection that takes in a paren.
+    (text-replace-contents (buffer-text m1) "(gethash k table)")
+    (gtk:text-buffer-select-range (buffer-text m1) (cadre-ui::iter-at (buffer-text m1) 0)
+                                  (cadre-ui::iter-at (buffer-text m1) 8))
+    (cadre-ui::show-hyperspec-entry "common-lisp" "function/equal")
+    (call-command 'cadre-ui::hyperspec-look-up)
+    (check "a selected (gethash is looked up as gethash"
+           (equal "accessor/gethash" (cadre-ui::sp-entry-id (hyperspec-page))) (cadre-ui::sp-entry-id (hyperspec-page)))
+    (text-replace-contents (buffer-text m1) (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
+    (setf (buffer-modified-p m1) nil)
+    ;; In the REPL: its symbol, not the one at the cursor in the file's tab.
+    (cadre-ui::show-repl-page :focus t)
+    (let* ((repl (cadre-ui::repl-view))
+           (gtk-buffer (cadre-ui::view-gtk-buffer repl)))
+      (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) "(apply #'+ xs" -1)
+      (gtk:text-buffer-place-cursor gtk-buffer (cadre-ui::iter-at gtk-buffer (- (gtk:text-buffer-get-char-count gtk-buffer) 10)))
+      (cadre-ui::focus-view repl)
+      (call-command 'cadre-ui::hyperspec-look-up)
+      (check "looking up in the REPL looks up the REPL's symbol"
+             (equal "function/apply" (cadre-ui::sp-entry-id (hyperspec-page))) (cadre-ui::sp-entry-id (hyperspec-page)))
+      (check "and the REPL keeps the keyboard" (eq repl (cadre-ui::focused-view *window*)))
+      (gtk:text-buffer-delete gtk-buffer (cadre-ui::iter-at gtk-buffer (- (gtk:text-buffer-get-char-count gtk-buffer) 13))
+                              (gtk:text-buffer-get-end-iter gtk-buffer))
+      ;; Leave the file's tab with the focus, as the sections after this expect.
+      (let ((view (first (cadre-ui::buffer-views *window* m1))))
+        (cadre-ui::activate-group *window* (cadre-ui::view-group view))
+        (cadre-ui::focus-view view))))
   (let ((view (first (cadre-ui::buffer-views *window* (hyperspec-buffer)))))
     (cadre-ui::close-view *window* view)))
 

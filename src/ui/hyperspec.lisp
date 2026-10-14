@@ -338,7 +338,8 @@ RECORD puts the entry shown now in the history, so Back returns to it."
         ;; Looked up from code: the code keeps the keyboard.
         (unless focus
           (when (and from (not (eq from view)))
-            (activate-group win (view-group from))
+            ;; The REPL's view is in the panel, not in a group.
+            (when (view-group from) (activate-group win (view-group from)))
             (focus-view from)))))))
 
 (defun current-view-or-nil (win)
@@ -461,10 +462,21 @@ those, anything by that name."
 (defun show-record (pair)
   (show-hyperspec-entry (cadre-docset:docset-id (car pair)) (cadre-docset:record-id (cdr pair))))
 
+(defun hyperspec-text-at-cursor (view)
+  "The selection in VIEW (if short, on one line, and trimmed of parens and
+spaces), else the symbol at its cursor."
+  (let ((gtk-buffer (view-gtk-buffer view)))
+    (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
+      (let ((selected (and has (string-trim '(#\( #\) #\Space #\Tab) (gtk:text-buffer-get-text gtk-buffer start end nil)))))
+        (if (and selected (plusp (length selected)) (< (length selected) 100)
+                 (not (find #\Newline selected)))
+            selected
+            (symbol-at-cursor view))))))
+
 (define-command hyperspec-look-up ()
   "Show the Common Lisp standard's entry for the symbol at the cursor (or
 the selection), in a HyperSpec tab beside the code."
-  (let ((text (selection-or-symbol-text)))
+  (let ((text (hyperspec-text-at-cursor (context-view))))
     (unless text (editor-error "No symbol at the cursor"))
     (let* ((pairs (hyperspec-records text))
            (symbols (remove nil pairs :key (lambda (p) (cadre-docset:record-package (cdr p))))))

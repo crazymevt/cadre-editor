@@ -95,6 +95,9 @@
     (".cadre-tab-pin" :opacity "0.6")
     (".cadre-tabs > button" :min-height "22px" :min-width "22px" :padding "2px" :margin "2px")
     (".cadre-search-match" :padding ("2px" "4px"))
+    ;; The editor's right-click menu (refactor.lisp): compact, to fit on a laptop's screen.
+    ("popover.cadre-context-menu modelbutton" :min-height "22px" :padding ("2px" "10px"))
+    ("popover.cadre-context-menu separator" :margin ("3px" "0"))
     (".cadre-git-modified" :color "@warning_color")
     (".cadre-git-added, .cadre-git-untracked, .cadre-git-renamed" :color "@success_color")
     (".cadre-git-deleted, .cadre-git-conflict" :color "@error_color")
