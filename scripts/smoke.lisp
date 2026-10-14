@@ -4,10 +4,12 @@
 ;;;; screenshots to build/smoke/, prints a report, and exits 0 if all passed.
 
 (push (truename ".") asdf:*central-registry*)
-;; The gtk4 bindings: a checkout next to Cadre if there is one, otherwise
-;; wherever Quicklisp finds them (~/quicklisp/local-projects/).
-(let ((gtk4 (probe-file "../gtk4/gtk4.asd")))
-  (when gtk4 (push (uiop:pathname-directory-pathname gtk4) asdf:*central-registry*)))
+;; The gtk4 bindings and the docset library: checkouts next to Cadre if
+;; there are any, otherwise wherever Quicklisp finds them
+;; (~/quicklisp/local-projects/).
+(dolist (asd '("../gtk4/gtk4.asd" "../docset/docset.asd"))
+  (let ((found (probe-file asd)))
+    (when found (push (uiop:pathname-directory-pathname found) asdf:*central-registry*))))
 (ql:quickload :cadre :silent t)
 
 (defpackage #:cadre-smoke (:use #:cl #:cadre #:cadre-ui))
@@ -1713,7 +1715,7 @@ d" 0 0)
   (call-command 'cadre-ui::hyperspec-look-up))
 
 (then 400
-  (let ((items (mapcar (lambda (p) (cadre-docset:record-id (cdr p))) (cadre-ui::picker-items (picker)))))
+  (let ((items (mapcar (lambda (p) (docset:record-id (cdr p))) (cadre-ui::picker-items (picker)))))
     (check "* is a function and a variable: a choice of the two"
            (equal '("function/*" "variable/*") (sort (copy-list items) #'string<)) items))
   (cadre-ui::choose (picker)))
@@ -1726,7 +1728,7 @@ d" 0 0)
 (then 400
   (screenshot "hyperspec-lists")
   (check "a qualified name too"
-         (equal "function/mapc" (cadre-docset:record-id (cdr (first (cadre-ui::hyperspec-records "#'cl:mapcar"))))))
+         (equal "function/mapc" (docset:record-id (cdr (first (cadre-ui::hyperspec-records "#'cl:mapcar"))))))
   (let ((*window* *window*))
     (cadre-ui::hyperspec-search-for "hash-table-count"))
   (check "Search HyperSpec picks from every entry"

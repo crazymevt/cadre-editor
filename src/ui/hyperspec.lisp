@@ -3,9 +3,10 @@
 ;;;; Look Up in HyperSpec (in the right-click menu of Lisp code) shows the
 ;;;; standard's entry for the symbol at the cursor in a HyperSpec tab beside
 ;;;; the code; Search HyperSpec picks any entry by name. The text is the
-;;;; Common Lisp docset (core's docset.lisp, data/docsets/common-lisp/,
-;;;; made from the dpANS3 draft of the standard by spec-browser); gtk4's and
-;;;; raylib's docsets show too when they're built. Docsets are opened on
+;;;; Common Lisp docset (data/docsets/common-lisp/, made from the dpANS3
+;;;; draft of the standard by spec-browser, read with the docset library);
+;;;; gtk4's and raylib's docsets show too when they're built, and any in
+;;;; ~/.local/share/docsets/ (such as bordeaux-threads'). Docsets are opened on
 ;;;; the first lookup.
 ;;;;
 ;;;; The tab is one read-only buffer drawn like the Markdown preview:
@@ -26,11 +27,11 @@
 
 (defun docsets ()
   (when (eq *docsets* :unread)
-    (setf *docsets* (cadre-docset:find-docsets :directories (list (resource-pathname "data/docsets/")))))
+    (setf *docsets* (docset:find-docsets :directories (list (resource-pathname "data/docsets/")))))
   *docsets*)
 
 (defun find-docset (id)
-  (find id (docsets) :key #'cadre-docset:docset-id :test #'equal))
+  (find id (docsets) :key #'docset:docset-id :test #'equal))
 
 ;;; The page: what the tab shows, and where it has been
 
@@ -276,7 +277,7 @@
   "Draw ENTRY of DOCSET in BUFFER, the HyperSpec tab's."
   (let* ((gtk-buffer (buffer-text buffer))
          (page (buffer-local buffer :hyperspec))
-         (*page* (list gtk-buffer (cadre-docset:docset-id docset) '())))
+         (*page* (list gtk-buffer (docset:docset-id docset) '())))
     (ensure-hyperspec-tags gtk-buffer)
     (gtk:text-buffer-set-text gtk-buffer "" -1)
     ;; Back and Forward, when there's somewhere to go.
@@ -287,15 +288,15 @@
       (when (sp-forward page)
         (page-link (page-insert "Forward →" '(:nav)) '(:forward)))
       (page-insert (format nil "~%") '(:nav)))
-    (page-insert (format nil "~{~a~^, ~}" (cadre-docset:entry-names entry)) '(:title))
-    (let ((kind (cadre-docset:entry-kind-name entry)))
+    (page-insert (format nil "~{~a~^, ~}" (docset:entry-names entry)) '(:title))
+    (let ((kind (docset:entry-kind-name entry)))
       (when kind (page-insert (format nil "   ~a" kind) '(:kind))))
     (page-insert (format nil "~%") nil)
-    (loop for (label . blocks) in (cadre-docset:entry-sections entry)
+    (loop for (label . blocks) in (docset:entry-sections entry)
           do (page-insert (format nil "~a~%" label) '(:heading))
              (page-blocks blocks 0 nil))
-    (page-insert (format nil "~%~a — ~a~%" (cadre-docset:docset-title docset)
-                         (or (getf (cadre-docset:docset-manifest docset) :subtitle) ""))
+    (page-insert (format nil "~%~a — ~a~%" (docset:docset-title docset)
+                         (or (getf (docset:docset-manifest docset) :subtitle) ""))
                  '(:attribution))
     (gtk:text-buffer-apply-tag-by-name gtk-buffer "hs-body" (gtk:text-buffer-get-start-iter gtk-buffer)
                                        (gtk:text-buffer-get-end-iter gtk-buffer))
@@ -317,7 +318,7 @@
   "Show the entry ENTRY-ID of the docset DOCSET-ID in the HyperSpec tab.
 RECORD puts the entry shown now in the history, so Back returns to it."
   (let* ((docset (or (find-docset docset-id) (editor-error "No docset ~a" docset-id)))
-         (entry (or (cadre-docset:docset-entry docset entry-id) (editor-error "No entry ~a" entry-id)))
+         (entry (or (docset:docset-entry docset entry-id) (editor-error "No entry ~a" entry-id)))
          (win *window*)
          (from (and win (current-view-or-nil win)))
          (buffer (hyperspec-buffer))
@@ -329,7 +330,7 @@ RECORD puts the entry shown now in the history, so Back returns to it."
     (setf (sp-docset-id page) docset-id
           (sp-entry-id page) entry-id)
     (draw-hyperspec-page buffer docset entry)
-    (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (cadre-docset:entry-names entry))))
+    (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (docset:entry-names entry))))
     (when win
       (let ((view (show-buffer win buffer :group (hyperspec-group win) :focus focus)))
         (update-tab-titles win buffer)
@@ -446,21 +447,21 @@ those, anything by that name."
     (let ((package (if (or (null prefix) (member prefix '("CL" "KEYWORD") :test #'string=))
                        "COMMON-LISP"
                        prefix)))
-      (or (cadre-docset:lookup-symbol (docsets) name package)
+      (or (docset:lookup-symbol (docsets) name package)
           (loop for docset in (docsets)
-                append (loop for record in (cadre-docset:find-records docset name)
+                append (loop for record in (docset:find-records docset name)
                              collect (cons docset record)))))))
 
 (defun record-label (pair)
-  (first (cadre-docset:record-names (cdr pair))))
+  (first (docset:record-names (cdr pair))))
 
 (defun record-detail (pair)
   (let ((record (cdr pair)))
-    (format nil "~@[~a~]~:[~; — ~a~]" (cadre-docset:record-kind-name record)
-            (rest (docsets)) (cadre-docset:docset-title (car pair)))))
+    (format nil "~@[~a~]~:[~; — ~a~]" (docset:record-kind-name record)
+            (rest (docsets)) (docset:docset-title (car pair)))))
 
 (defun show-record (pair)
-  (show-hyperspec-entry (cadre-docset:docset-id (car pair)) (cadre-docset:record-id (cdr pair))))
+  (show-hyperspec-entry (docset:docset-id (car pair)) (docset:record-id (cdr pair))))
 
 (defun hyperspec-text-at-cursor (view)
   "The selection in VIEW (if short, on one line, and trimmed of parens and
@@ -479,7 +480,7 @@ the selection), in a HyperSpec tab beside the code."
   (let ((text (hyperspec-text-at-cursor (context-view))))
     (unless text (editor-error "No symbol at the cursor"))
     (let* ((pairs (hyperspec-records text))
-           (symbols (remove nil pairs :key (lambda (p) (cadre-docset:record-package (cdr p))))))
+           (symbols (remove nil pairs :key (lambda (p) (docset:record-package (cdr p))))))
       (cond ((null pairs) (hyperspec-search-for (nth-value 0 (split-symbol-name text))))
             ((or (null symbols) (null (rest symbols))) (show-record (first pairs)))
             ;; LIST is a function and a class; FUNCTION an operator and a class.
@@ -490,8 +491,8 @@ the selection), in a HyperSpec tab beside the code."
 
 (defun hyperspec-search-for (text)
   (let ((items (loop for docset in (docsets)
-                     append (loop for record in (cadre-docset:docset-index docset)
-                                  append (loop for name in (cadre-docset:record-names record)
+                     append (loop for record in (docset:docset-index docset)
+                                  append (loop for name in (docset:record-names record)
                                                collect (list* name docset record))))))
     (unless items (editor-error "No HyperSpec found in ~a" (uiop:native-namestring (resource-pathname "data/docsets/"))))
     (open-picker (window-picker *window*)
@@ -515,12 +516,12 @@ the selection), in a HyperSpec tab beside the code."
 (defun restore-hyperspec-buffer (docset-id entry-id)
   "The HyperSpec buffer showing ENTRY-ID, or nil if it can't be shown."
   (let* ((docset (find-docset docset-id))
-         (entry (and docset (cadre-docset:docset-entry docset entry-id))))
+         (entry (and docset (docset:docset-entry docset entry-id))))
     (when entry
       (let* ((buffer (hyperspec-buffer))
              (page (buffer-local buffer :hyperspec)))
         (setf (sp-docset-id page) docset-id
               (sp-entry-id page) entry-id)
         (draw-hyperspec-page buffer docset entry)
-        (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (cadre-docset:entry-names entry))))
+        (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (docset:entry-names entry))))
         buffer))))

@@ -76,7 +76,7 @@
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre" "cffi")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre" "cffi" "docset")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -102,7 +102,6 @@
                (:file "search")
                (:file "definitions" :pathname "lisp/definitions")
                (:file "markdown")
-               (:file "docset")
                (:file "folding")
                (:file "format")
                (:file "git")

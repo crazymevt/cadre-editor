@@ -24,10 +24,12 @@
 ;;;; statistical profiler over the measurements and prints where time went.
 
 (push (truename ".") asdf:*central-registry*)
-;; The gtk4 bindings: a checkout next to Cadre if there is one, otherwise
-;; wherever Quicklisp finds them (~/quicklisp/local-projects/).
-(let ((gtk4 (probe-file "../gtk4/gtk4.asd")))
-  (when gtk4 (push (uiop:pathname-directory-pathname gtk4) asdf:*central-registry*)))
+;; The gtk4 bindings and the docset library: checkouts next to Cadre if
+;; there are any, otherwise wherever Quicklisp finds them
+;; (~/quicklisp/local-projects/).
+(dolist (asd '("../gtk4/gtk4.asd" "../docset/docset.asd"))
+  (let ((found (probe-file asd)))
+    (when found (push (uiop:pathname-directory-pathname found) asdf:*central-registry*))))
 (ql:quickload :cadre :silent t)
 (when (equal (uiop:getenv "CADRE_PERF_PROFILE") "1") (require :sb-sprof))
 
