@@ -403,6 +403,7 @@ it when the project has an :entry-point)."
 (defun update-status (win)
   "Show the current view's position and mode in the status bar."
   (refresh-outline)
+  (follow-status-language)
   (let ((view (selected-view win)))
     (if view
         (multiple-value-bind (line column) (view-cursor-line-column view)

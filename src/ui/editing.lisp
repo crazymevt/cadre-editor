@@ -269,14 +269,14 @@ before the end of the list. With a numeric argument N, kill N lines."
 
 (define-command kill-sexp ()
   "Kill the expression after the cursor."
-  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode clojure-repl-mode)
   (:repeat t)
   (let ((view (current-view)))
     (kill-between view (point-offset view) (sexp-offset view :forward))))
 
 (define-command backward-kill-sexp ()
   "Kill the expression before the cursor."
-  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode clojure-repl-mode)
   (:repeat t)
   (let ((view (current-view)))
     (kill-between view (sexp-offset view :backward) (point-offset view) :direction :backward)))

@@ -94,7 +94,7 @@
   "Call FUNCTION with the symbol at the cursor and its package; if there is
 none, ask for a name."
   (let* ((view (current-view))
-         (syntax (and view (buffer-syntax (view-buffer view))))
+         (syntax (and view (buffer-sexp-syntax (view-buffer view))))
          (name (and syntax (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c))))
          (package (if view (view-package view) (and (connected-p) (connection-package *connection*)))))
     (if name
@@ -107,15 +107,19 @@ none, ask for a name."
 
 (defun xref-command (kinds)
   "Find KINDS of cross-references to the symbol at the cursor."
-  (call-with-symbol-name
+  (let* ((language (view-language (current-view)))
+         (kinds (if (and (eq language :clojure) (rest kinds))
+                    '(:calls)                 ; what cider-nrepl can find
+                    kinds)))
+   (call-with-symbol-name
    "Find references to"
    (lambda (name package)
-     (if (not (connected-p))
+     (if (not (language-connection language))
          ;; No Lisp to ask: search the project's source for the symbol instead.
          (progn (setf (ps-symbol *project-search*) name)
                 (open-project-search :text name :mode :symbol)
                 (message "No Lisp running: showing where ~a appears in the project's files" name))
-     (with-connection (connection)
+     (with-connection (connection :language language)
        (request #'backend-xref connection kinds name
             :package package
             :on-ok (lambda (reply)
@@ -125,7 +129,7 @@ none, ask for a name."
                            (show-references (if (rest kinds)
                                                 (format nil "References to ~a" name)
                                                 (format nil "~@(~a~) ~a" (third (assoc (first kinds) *xref-kinds*)) name))
-                                            xrefs))))))))))
+                                            xrefs)))))))))))
 
 (define-command find-references ()
   "Find everything that calls, references, binds, sets, expands or specializes the symbol at the cursor."

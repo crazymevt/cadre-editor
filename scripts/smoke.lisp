@@ -3051,6 +3051,100 @@ and the number of items MODEL itself shows."
 (then 300
   (check "C-M-f moves over a Clojure form with [ ] in it" (equal '(2 10) (cursor)) (cursor)))
 
+;;; Clojure through nREPL (docs/RACKET-CLOJURE.md, R3). Needs the Clojure CLI;
+;;; the first run downloads nREPL and cider-nrepl.
+(section "clojure")
+
+(defvar *have-clojure* (ignore-errors (uiop:run-program '("clojure" "-Sdescribe") :output nil) t))
+
+(then 300
+  (unless *have-clojure* (format t "~&(the Clojure CLI isn't installed: skipping the Clojure checks)~%"))
+  (when *have-clojure*
+    (write-root-file "clj-demo/deps.edn" "{:paths [\"src\"]}")
+    (write-root-file "clj-demo/src/demo/core.clj"
+                     (format nil "(ns demo.core)~%~%(defn area [w h]~%  (* w h))~%(area 3 4)~%"))
+    (open-file-path (merge-pathnames "clj-demo/src/demo/core.clj" *root*))))
+
+(then-when ((or (not *have-clojure*) (and (find-buffer "core.clj") (eq (current-buffer) (find-buffer "core.clj")))))
+  (when *have-clojure*
+    (check "a .clj file in a deps.edn project opens in Clojure mode" (eq 'clojure-mode (buffer-major-mode (current-buffer))))
+    (set-cursor 2 1)
+    (call-command 'compile-or-eval-defun)))
+
+(then-when ((or (not *have-clojure*) (cadre-ui::clojure-connection)) :timeout 300)
+  (when *have-clojure*
+    (check "compiling a Clojure form starts the project's REPL" (cadre-ui::clojure-connection))
+    (check "the status bar shows Clojure"
+           (search "Clojure" (gtk:button-get-label (cadre-ui::window-status-connection *window*)))
+           (gtk:button-get-label (cadre-ui::window-status-connection *window*)))))
+
+(then-when ((or (not *have-clojure*) (search "Compiled" (status-text))) :timeout 60)
+  (when *have-clojure*
+    (check "the defn compiles" (search "Compiled" (status-text)) (status-text))
+    (set-cursor 4 3)
+    (call-command 'compile-or-eval-defun)))
+
+(then-when ((or (not *have-clojure*) (cadre-ui::buffer-local (current-buffer) :inline-result)) :timeout 60)
+  (when *have-clojure*
+    (let ((shown (cadre-ui::buffer-local (current-buffer) :inline-result)))
+      (check "evaluating a call shows its value inline, in the file's namespace"
+             (and shown (search "⇒ 12" (gtk:label-get-text (cdr shown))))
+             (and shown (gtk:label-get-text (cdr shown)))))
+    (screenshot "49-clojure-eval")
+    (set-cursor 4 8)                    ; (area 3 |4)
+    (cadre-ui::focus-view (current-view))
+    (cadre-ui::request-autodoc (current-view))))
+
+(then-when ((or (not *have-clojure*) (search "area" (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))) :timeout 30)
+  (when *have-clojure*
+    (check "the status bar shows the arglist, with the argument at the cursor"
+           (search "(area [w h])" (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+           (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+    (set-cursor 4 2)
+    (call-command 'edit-definition)))
+
+(then 1500
+  (when *have-clojure*
+    (check "M-. goes to the definition, from cider-nrepl" (equal '(2 0) (cursor)) (cursor))
+    (set-cursor 4 2)
+    (call-command 'describe-symbol)))
+
+(then-when ((or (not *have-clojure*) (find-buffer "*Help*")) :timeout 30)
+  (when *have-clojure*
+    (check "describing shows the qualified name and arglist"
+           (search "demo.core/area" (buffer-string (find-buffer "*Help*")))
+           (buffer-string (find-buffer "*Help*")))
+    (open-file-path (merge-pathnames "clj-demo/src/demo/core.clj" *root*))))
+
+(then 500
+  (when *have-clojure*
+    (let ((text (buffer-text (current-buffer))))
+      (gtk:text-buffer-insert text (gtk:text-buffer-get-end-iter text) (format nil "(defn bad [] (nope))~%") -1))
+    (set-cursor 5 1)
+    (call-command 'compile-defun)))
+
+(then-when ((or (not *have-clojure*) (search "failed" (status-text))) :timeout 60)
+  (when *have-clojure*
+    (check "a compile error fails the compile, with a note" (search "1 error" (status-text)) (status-text))
+    (call-command 'cadre-ui::clojure-repl-tab)))
+
+(then 800
+  (when *have-clojure*
+    (check "the Clojure REPL is a tab" (eq 'cadre-ui::clojure-repl-mode (buffer-major-mode (current-buffer))))
+    (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(demo.core/area 6 7)"))
+    (call-command 'cadre-ui::repl-return)))
+
+(then-when ((or (not *have-clojure*) (search "42" (buffer-string (current-buffer)))) :timeout 30)
+  (when *have-clojure*
+    (check "the Clojure REPL evaluates what is typed" (search "42" (buffer-string (current-buffer)))
+           (buffer-string (current-buffer)))
+    (screenshot "50-clojure-repl")
+    (call-command 'cadre-ui::clojure-disconnect)))
+
+(then-when ((or (not *have-clojure*) (null (cadre-ui::clojure-connection))) :timeout 30)
+  (when *have-clojure*
+    (check "disconnecting stops the REPL Cadre started" (null (cadre-ui::clojure-connection)))))
+
 ;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
 (section "indentation")
 (connect-lisp)

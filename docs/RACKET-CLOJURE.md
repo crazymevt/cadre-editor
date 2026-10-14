@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0, R1 and R2 are built.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R3 are built.
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -157,33 +157,66 @@ As built in R2 (2026-10-14):
 
 ### 2.4 Clojure: nREPL, with cider-nrepl when we start the process
 
-nREPL is what every Clojure editor speaks (CIDER, Calva, Cursive,
-Conjure). It uses bencode over TCP, with sessions and ops.
+As built in R3 (2026-10-14):
 
-- `src/core/nrepl/`: a bencode codec, a connection (reader thread, `id` →
-  callback, `session`), and the back end methods above. It is GTK-free and
-  tested headless against a real nREPL in CI.
-- **Connect:** `M-x connect-clojure` reads `.nrepl-port` from the project,
-  or asks for host and port.
-- **Jack in** (`M-x clojure`): it starts the project's REPL with nREPL and
-  cider-nrepl added, as CIDER does:
-  - `deps.edn`: `clojure -Sdeps '{:deps {nrepl/nrepl {:mvn/version …} cider/cider-nrepl {:mvn/version …}}}' -M -m nrepl.cmdline --middleware '[cider.nrepl/cider-middleware]' --port 0`, plus the user's chosen aliases.
-  - `project.clj`: `lein update-in :plugins conj '[cider/cider-nrepl "…"]' -- repl :headless`.
-  - `bb.edn` / no project: Babashka (`bb nrepl-server`) if it is installed, or a plain `clojure` REPL.
-  - Versions are pinned in an option, like Swank is in `vendor/`, and the
-    packages come from Maven at jack-in. Cadre doesn't ship them.
-    (cider-nrepl is EPL; using it at runtime is fine.)
-- **Without cider-nrepl** (connected to someone else's plain nREPL): eval,
-  load-file, completions and lookup (built-in ops since nREPL 0.8), interrupt,
-  stdin. Go to definition, xref, the inspector and test running are hidden.
-- **With cider-nrepl:** `info` (docs, arglists, file and line), `complete`,
-  `fn-refs` and `fn-deps`, `macroexpand`, `analyze-last-stacktrace` (shown
-  on the Debugger page as a stack trace with source links, without restarts),
-  `test-var-query` (a Tests page), `inspect-*` (the Inspector), and `format-code`.
-- **Static analysis:** clj-kondo, if installed, runs on save, and its findings
-  go to Problems with underlines, as compiler notes do. clojure-lsp is not
-  used: DESIGN.md keeps LSP out for now, and clj-kondo covers what matters
-  most.
+- `src/core/nrepl/` (GTK-free): `bencode.lisp`; `connection.lisp`, an
+  `nrepl-connection` (a `lisp-connection`) with a reader thread, requests
+  matched to answers by id, and two cloned sessions: one for evaluation and
+  the REPL, one for tooling (completion, info), so those answer while code
+  runs; `backend.lisp`, the protocol's requests; `start.lisp`, finding the
+  project and starting its REPL.
+- **Starting** (`clojure-jack-in`, or any Clojure command when nothing is
+  connected): the project is the nearest folder with `deps.edn`,
+  `project.clj` or `bb.edn`. If it has a `.nrepl-port` that answers, Cadre
+  connects to that REPL. Otherwise it starts one in that folder:
+  - `deps.edn`, or no project: `clojure -Sdeps '{:deps {nrepl/nrepl …
+    cider/cider-nrepl …}}' -M<aliases> -m nrepl.cmdline --middleware
+    '[cider.nrepl/cider-middleware]' --port 0`.
+  - `project.clj`: `lein update-in :plugins conj '[cider/cider-nrepl "…"]'
+    -- repl :headless :port 0`.
+  - `bb.edn`: `bb nrepl-server 0`.
+  The port comes from what the server prints, and its output goes to the
+  Output page. Options (Settings → Clojure): `*cider-nrepl*` (on),
+  `*nrepl-version*` 1.7.0 and `*cider-nrepl-version*` 0.62.2 (both pinned at
+  releases a few months old), `*clojure-aliases*`, and the three commands.
+  `clojure-connect` connects to any nREPL by host:port.
+- **What works in a Clojure buffer**, through the same commands and keys as
+  Common Lisp (Emacs keys follow CIDER's: `C-c C-c`, `C-M-x`, `C-x C-e`,
+  `C-c C-k`, `C-c C-z`, `M-.`, `C-c C-d d`, `C-c C-m`, `C-c M-j`):
+  evaluate a form, the last expression or the region (value inline and in the
+  status bar); compile a form (a Clojure error becomes a note in Problems,
+  at the place Clojure names); load the file; describe; go to definition;
+  argument hints in the status bar; completion; macroexpand (once, or all);
+  who calls / calls who (cider-nrepl's `fn-refs` and `fn-deps`); interrupt.
+  Code is evaluated in the file's namespace, from its `(ns …)`. If that
+  namespace doesn't exist yet, the file's `ns` form is evaluated first.
+- **The REPL** is a tab, `*clojure-repl*` (`C-c C-z` from Clojure code, or
+  `clojure-repl-tab`), like the editor REPL: Clojure highlighting and
+  paredit, history, the namespace in the prompt, output and errors as they
+  come. It starts in `user`. `clojure-set-namespace` (`C-c M-n n`) switches
+  it to the file's namespace.
+- **The status bar** shows the Clojure connection (`● Clojure 1.12.6  user`)
+  while a Clojure tab is selected, and the Common Lisp one otherwise.
+  Clicking it shows that language's REPL.
+- **Hidden in Clojure buffers:** the right-click menu offers Go to
+  Definition, Describe, Evaluate, Find References and a Clojure submenu
+  (Macroexpand, Switch the REPL to This Namespace, Load File), not the
+  HyperSpec, tracing or stepping. Swank-only commands keep their Lisp-mode
+  `:modes`, so the palette doesn't offer them there.
+- **Without cider-nrepl** (someone else's plain nREPL): evaluation, loading,
+  the REPL, completion (nREPL's `completions`) and interrupt work.
+  Describing falls back to `clojure.repl/doc` and macroexpansion to
+  `macroexpand-1`. Go to definition uses nREPL's `lookup` if the server has
+  it. Cross-references say they can't be found.
+- **Tested:** `tests/nrepl.lisp` (bencode, the helpers, and every request
+  against a real nREPL with cider-nrepl, skipped without the Clojure CLI)
+  and the `clojure` smoke section (starting from a `deps.edn` project,
+  compiling, inline values, argument hints, `M-.`, describe, a compile
+  error, the REPL tab, disconnecting).
+- **Not yet, moved to R5:** stack traces on the Debugger page
+  (`analyze-last-stacktrace`), a Tests page, the inspector, reading input
+  the program asks for (`need-input`), clj-kondo on save (not installed
+  here to test against), and a Clojure New Project template.
 
 ### 2.5 Racket: our own small back end, in Racket
 
@@ -269,9 +302,9 @@ Each milestone ends with `make test` and the relevant smoke sections passing
 | R0 | **Dialects in the lexer:** `dialect` struct, bracket kinds, datum comments, Racket and Clojure readers; CL unchanged | `lisp/lexer.lisp`, new `lisp/dialect.lisp`, tests | M |
 | R1 | **Modes and static editing** (built): `racket-mode`, `clojure-mode`, editing in all three Lisps, highlighting tables, paredit with brackets, indentation tables, outline and folding, comment toggling. Project detection and New Project templates moved to R3/R4 | `modes.lisp`, `paredit.lisp`, `indent.lisp`, `definitions.lisp`, `ui/highlight.lisp`, `ui/outline.lisp`, `new-project` | L |
 | R2 | **Connection protocol** (built): `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
-| R3 | **Clojure live:** pages and commands a connection can't do hidden; status bar, REPL and Debugger pages following the buffer's language; `gtk-thread-source` only for Common Lisp; project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
+| R3 | **Clojure live** (built; see 2.4 for what moved to R5): pages and commands a connection can't do hidden; status bar, REPL and Debugger pages following the buffer's language; `gtk-thread-source` only for Common Lisp; project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
 | R4 | **Racket live:** project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/*.rkt`, `core/racket.lisp` | L |
-| R5 | **Polish:** docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
+| R5 | **Polish:** Clojure stack traces on the Debugger page, a Tests page, the inspector, program input, clj-kondo, a Clojure New Project template; docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
 
 R0 and R1 are useful alone: Racket and Clojure files edit well with no
 process running. R3 and R4 are independent of each other once R2 is done,

@@ -593,8 +593,24 @@ Lisp, using each language's own reader rules. They get:
 - folding, an Outline of the file's definitions, Toggle Comment and Format
   Document
 
-There is no REPL or evaluation for them yet. [docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md)
-has the plan.
+**Clojure runs too**, through nREPL, as with CIDER. The first command that
+needs it (`C-c C-c`, `C-RET`, or Clojure: Jack In from the palette) starts
+the project's REPL: the nearest folder with `deps.edn`, `project.clj` or
+`bb.edn`, with nREPL and cider-nrepl added. If the project already has a
+REPL running (a `.nrepl-port` file), Cadre connects to it instead.
+Clojure: Connect connects to any nREPL by host and port. Then the Common
+Lisp commands work on Clojure code, in the file's namespace:
+- evaluate a form, the last expression or the selection, with the value
+  shown inline
+- compile a form (errors go to Problems), and load the file
+- describe a symbol, go to its definition, argument hints in the status bar
+- completion, macroexpand, who calls, and interrupt
+- the REPL, a `*clojure-repl*` tab (`C-c C-z`)
+
+The status bar shows the Clojure connection while a Clojure tab is selected.
+This needs the Clojure CLI (or Leiningen, or Babashka). The first start
+downloads nREPL and cider-nrepl. Racket can't run code from Cadre yet.
+[docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md) has the plan.
 
 ### JavaScript, TypeScript, JSON, HTML, CSS and XML (tree-sitter)
 

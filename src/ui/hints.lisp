@@ -283,7 +283,7 @@ knows itself (with SOURCE-ONLY, only from the source), or nil."
 
 (defun buffer-symbol-names (buffer)
   "The symbols and keywords written in BUFFER."
-  (let ((syntax (buffer-syntax buffer))
+  (let ((syntax (buffer-sexp-syntax buffer))
         (names (make-hash-table :test 'equal)))
     (when syntax
       (dotimes (line (syntax-line-count syntax))
@@ -328,9 +328,28 @@ out, as there is nothing to complete."
          (sorted (stable-sort scored #'> :key #'car)))
     (mapcar #'cdr (if (> (length sorted) limit) (subseq sorted 0 limit) sorted))))
 
+(defun other-lisp-local-completions (prefix buffer)
+  "Completions for PREFIX in a Racket or Clojure BUFFER: what the open files
+in its language define, then its words."
+  (let ((seen (make-hash-table :test 'equal))
+        (items '())
+        (language (buffer-language buffer)))
+    (flet ((add (name kind)
+             (unless (or (gethash name seen) (string= name prefix))
+               (setf (gethash name seen) t)
+               (push (list name nil nil kind) items))))
+      (dolist (b (cons buffer (remove buffer (buffer-list))))
+        (let ((syntax (and (eq (buffer-language b) language) (buffer-sexp-syntax b))))
+          (when syntax
+            (dolist (d (ignore-errors (dialect-definitions syntax))) (add (definition-name d) (definition-kind d))))))
+      (dolist (name (buffer-symbol-names buffer)) (add name nil)))
+    (rank-completions prefix (nreverse items))))
+
 (defun local-completions (prefix buffer)
   "Completions for PREFIX from the source, standard Common Lisp and the
 words in BUFFER, as (name nil nil kind), best first."
+  (unless (eq (buffer-language buffer) :common-lisp)
+    (return-from local-completions (other-lisp-local-completions prefix buffer)))
   (refresh-project-definitions)
   (let* ((colon (position #\: prefix :from-end t))
          (package-part (if (and colon (plusp colon)) (subseq prefix 0 (1+ colon)) ""))
@@ -376,14 +395,14 @@ swank:fuzzy-completions) added, best first."
 (defvar *auto-complete-timer* nil)
 (defvar *completion-generation* 0)
 
-(defun fetch-remote-completions (view prefix start local &key on-none)
+(defun fetch-remote-completions (view prefix start local &key on-none (connection (view-connection view)))
   "Ask the connected Lisp for completions of PREFIX (at START in VIEW); when
 they come, if PREFIX is still what's typed there, merge them with LOCAL and
 show them: in the open popup, or a new one. ON-NONE is called if there are
 none."
   (let ((generation (incf *completion-generation*))
         (package (view-package view)))
-    (request #'backend-completions *connection* prefix
+    (request #'backend-completions connection prefix
          :package package
          :on-ok (lambda (result)
                   (multiple-value-bind (now-prefix now-start) (prefix-before-cursor view)
@@ -414,7 +433,7 @@ shows nothing for a single exact match, and stays quiet when there are none."
                   (cond ((null items) (unless auto (message "No completions for ~a" prefix)))
                         ((and (not auto) (null (rest items))) (replace-prefix view start (first (first items))))
                         (t (show-completions view start items)))))
-           (if (connected-p)
+           (if (view-connection view)
                (progn
                  (when local (show local))
                  (fetch-remote-completions view prefix start local
@@ -434,7 +453,7 @@ shows nothing for a single exact match, and stays quiet when there are none."
         (glib:timeout-add glib:+priority-default+ 150
                           (lambda ()
                             (setf *completion-refresh-timer* nil)
-                            (when (and (connected-p) *completion* (eq (cp-view *completion*) view))
+                            (when (and (view-connection view) *completion* (eq (cp-view *completion*) view))
                               (multiple-value-bind (prefix start) (prefix-before-cursor view)
                                 (when (and (= start (cp-start *completion*)) (string/= prefix ""))
                                   (ignore-errors
@@ -444,7 +463,7 @@ shows nothing for a single exact match, and stays quiet when there are none."
 
 (defun auto-complete-p (view)
   "Whether completions should appear now, after typing in VIEW."
-  (let ((syntax (buffer-syntax (view-buffer view))))
+  (let ((syntax (buffer-sexp-syntax (view-buffer view))))
     (and *auto-complete* syntax (eq view (focused-view *window*))
          (multiple-value-bind (prefix) (prefix-before-cursor view)
            (and (>= (length (string-left-trim ":" prefix)) *auto-complete-min-chars*)

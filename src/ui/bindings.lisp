@@ -280,6 +280,50 @@
   "F11" 'step-expression
   "C-k d" 'compile-defun-for-debugging)
 
+;;; Clojure: the same commands, sent to nREPL. Emacs keys follow CIDER's.
+(bind-keys (mode-profile-keymap 'clojure-mode :emacs)
+  "C-c C-c" 'compile-defun
+  "C-M-x" 'eval-defun
+  "C-x C-e" 'eval-last-expression
+  "C-c C-e" 'eval-last-expression
+  "C-c C-r" 'eval-region
+  "C-c C-k" 'compile-and-load-file
+  "C-c C-l" 'load-file
+  "C-c C-z" 'show-repl
+  "C-c M-j" 'clojure-jack-in
+  "C-c M-c" 'clojure-connect
+  "C-c M-n n" 'clojure-set-namespace
+  "M-." 'edit-definition
+  "M-," 'pop-definition
+  "C-c C-d d" 'describe-symbol
+  "C-c C-d C-d" 'describe-symbol
+  "C-M-i" 'complete-symbol
+  "M-TAB" 'complete-symbol
+  "M-n" 'next-note
+  "M-p" 'previous-note
+  "C-c C-b" 'interrupt-lisp
+  "C-c C-m" 'expand-macro-once
+  "C-c RET" 'expand-macro-once
+  "C-c M-m" 'expand-macro-all
+  "C-c C-w c" 'who-calls
+  "C-c C-w w" 'list-callees
+  "M-?" 'find-references)
+
+(bind-keys (mode-profile-keymap 'clojure-mode :standard)
+  "C-RET" 'compile-or-eval-defun
+  "C-S-RET" 'eval-expression-or-region
+  "C-M-RET" 'compile-and-load-file
+  "F12" 'edit-definition
+  "C-M--" 'pop-definition
+  "C-k C-i" 'describe-symbol
+  "C-SPC" 'complete-symbol
+  "F8" 'next-note
+  "S-F8" 'previous-note
+  "S-F12" 'find-references
+  "C-k C-m" 'expand-macro-once
+  "C-k C-a" 'expand-macro-all
+  "C-k n" 'clojure-set-namespace)
+
 (defparameter *emacs-structural-keys*
   '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward
     "C-(" slurp-backward "C-M-Left" slurp-backward "C-{" barf-backward "C-M-Right" barf-backward
@@ -297,7 +341,7 @@
   (setf (cadre::keymap-parent (major-mode-keymap (find-major-mode mode)))
         (major-mode-keymap (find-major-mode 'lisp-mode))))
 
-(dolist (mode '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode))
+(dolist (mode '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode clojure-repl-mode))
   (apply #'bind-keys (mode-profile-keymap mode :emacs) *emacs-structural-keys*)
   (apply #'bind-keys (mode-profile-keymap mode :standard) *standard-structural-keys*))
 

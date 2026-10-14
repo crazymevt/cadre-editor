@@ -89,11 +89,18 @@
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec #:learn-indentation
-   #:token-face #:datum-comment-columns #:dialect-definitions #:*faces* #:*paren-face-count*
+   #:token-face #:datum-comment-columns #:dialect-definitions #:clojure-namespace-at #:*faces* #:*paren-face-count*
    ;; Swank
    #:remote-symbol #:remote-symbol-p #:remote-symbol-name #:remote-symbol= #:write-sexp #:read-sexp
    #:sexp-to-string #:swank-connection #:swank-connect #:swank-disconnect #:swank-rex
    #:swank-send #:swank-call #:swank-interrupt #:*swank-trace* #:swank-eval-sync #:swank-start-session
+   ;; Clojure, through nREPL (nrepl/)
+   #:bencode #:bdecode #:bdecode-stream #:dict-get #:bencode-error
+   #:nrepl-connection #:nrepl-connect #:nrepl-send #:nrepl-disconnect #:nrepl-session #:nrepl-ops
+   #:nrepl-op-p #:clojure-project #:clojure-command #:nrepl-port-in #:start-clojure #:stop-clojure
+   #:clojure-process-directory #:nrepl-port-file #:clojure-error-location #:arglist-with-current
+   #:*clojure-command* #:*leiningen-command* #:*babashka-command* #:*clojure-aliases*
+   #:*cider-nrepl* #:*nrepl-version* #:*cider-nrepl-version*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p
    #:backend-eval #:backend-eval-region #:backend-compile-form #:backend-compile-file

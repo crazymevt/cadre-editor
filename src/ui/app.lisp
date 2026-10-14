@@ -98,7 +98,10 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
     ;; The Lisp Cadre started goes with it. It would exit when its standard
     ;; input closes, but not while a GTK app holds its first thread.
     (when (and *inferior* (inferior-alive-p *inferior*))
-      (ignore-errors (kill-inferior-lisp *inferior*)))))
+      (ignore-errors (kill-inferior-lisp *inferior*)))
+    ;; So does the Clojure REPL it started (a JVM outlives its input).
+    (when *clojure-process*
+      (ignore-errors (stop-clojure *clojure-process*)))))
 
 ;;; The macOS app (scripts/build-app.lisp saves an image that starts here)
 

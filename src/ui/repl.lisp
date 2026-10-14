@@ -139,11 +139,12 @@ editor REPL) bind it to that buffer's REPL.")
     (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) string -1)
     (gtk:text-buffer-place-cursor gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer))))
 
-(defun complete-form-p (string)
-  "True if STRING holds at least one form and no unclosed list, string or comment."
+(defun complete-form-p (string &optional (dialect *common-lisp-dialect*))
+  "True if STRING holds at least one form and no unclosed list, string or
+comment, read as DIALECT."
   (let ((state '(:code 0)) (any nil))
     (dolist (line (uiop:split-string string :separator '(#\Newline)))
-      (multiple-value-bind (tokens end) (lex-line line state)
+      (multiple-value-bind (tokens end) (lex-line line state dialect)
         (when (find-if-not (lambda (tk) (eq (token-type tk) :comment)) tokens) (setf any t))
         (setf state end)))
     (and any (equal state '(:code 0)))))
@@ -265,7 +266,7 @@ package of that code (from the file's IN-PACKAGE)."
 
 (define-command repl-return ()
   "Send the input if it is complete; otherwise start a new line."
-  (:modes repl-mode editor-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode)
   (with-buffer-repl ()
    (let ((input (repl-input)))
     (cond
@@ -276,7 +277,7 @@ package of that code (from the file's IN-PACKAGE)."
          (swank-send *connection* (list :emacs-return-string thread tag (format nil "~a~%" input)))))
       ((repl-busy *repl*)
        (message "The Lisp is busy; interrupt it with the stop button"))
-      ((complete-form-p input)
+      ((complete-form-p input (or (mode-dialect (buffer-major-mode (repl-buffer *repl*))) *common-lisp-dialect*))
        (let ((history (repl-history *repl*))
              ;; Results copied into the input go to the Lisp as the objects themselves.
              (for-lisp (if (repl-evaluator *repl*) input (repl-input-for-lisp))))
@@ -311,12 +312,12 @@ past the newest brings back what was being typed before."
 
 (define-command repl-previous-input ()
   "Replace the input with the previous one from the history."
-  (:modes repl-mode editor-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode)
   (with-buffer-repl () (repl-history-step -1)))
 
 (define-command repl-next-input ()
   "Replace the input with the next one from the history."
-  (:modes repl-mode editor-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode)
   (with-buffer-repl () (repl-history-step 1)))
 
 (define-command clear-repl ()
@@ -335,6 +336,9 @@ past the newest brings back what was being typed before."
     (focus-view (repl-view))))
 
 (define-command show-repl ()
-  "Show the REPL and put the cursor in it, starting a Lisp if needed."
+  "Show the REPL and put the cursor in it, starting a Lisp if needed. From
+Clojure code, the Clojure REPL."
+  (when (eq (view-language (current-view)) :clojure)
+    (return-from show-repl (clojure-repl-tab)))
   (show-repl-page :focus t)
   (unless (or (connected-p) *connecting*) (start-lisp)))

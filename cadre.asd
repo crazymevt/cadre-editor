@@ -48,6 +48,7 @@
                (:file "claude-tools")
                (:file "claude")
                (:file "editor-repl")
+               (:file "clojure")
                (:file "restore")
                (:file "settings-page")
                (:file "project-search")
@@ -117,6 +118,12 @@
                              (:file "forms")
                              (:file "tools")
                              (:file "image")))
+               (:module "nrepl"
+                :serial t
+                :components ((:file "bencode")
+                             (:file "connection")
+                             (:file "backend")
+                             (:file "start")))
                (:file "build")
                (:file "terminal")
                (:file "tree-sitter" :pathname "tree-sitter/tree-sitter")
@@ -141,6 +148,7 @@
                (:file "editing")
                (:file "dialects")
                (:file "swank")
+               (:file "nrepl")
                (:file "claude")
                (:file "terminal"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

@@ -6,11 +6,19 @@
 
 (defun view-package (view)
   "The package for code in VIEW at the cursor: the buffer's own (as for
-*Macroexpansion*), else from its IN-PACKAGE, else the REPL's."
-  (let ((syntax (buffer-syntax (view-buffer view))))
-    (or (buffer-local (view-buffer view) :package)
-        (and syntax (buffer-package-name syntax (cursor-line-column view)))
-        (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))))
+*Macroexpansion*), else from its IN-PACKAGE (in Clojure, its ns), else the
+REPL's."
+  (if (eq (view-language view) :clojure)
+      (let ((syntax (buffer-sexp-syntax (view-buffer view)))
+            (connection (language-connection :clojure)))
+        (or (buffer-local (view-buffer view) :package)
+            (and syntax (clojure-namespace-at syntax (cursor-line-column view)))
+            (and connection (connection-package connection))
+            "user"))
+      (let ((syntax (buffer-syntax (view-buffer view))))
+        (or (buffer-local (view-buffer view) :package)
+            (and syntax (buffer-package-name syntax (cursor-line-column view)))
+            (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER")))))
 
 (defun view-region-text (view line column end-line end-column)
   (let ((gtk-buffer (view-gtk-buffer view)))
@@ -72,54 +80,60 @@
 
 (defun eval-for-message (string package &optional view line)
   "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."
-  (when view (repl-follow-package package))
-  (with-connection (connection)
-    (request #'backend-eval connection (gtk-thread-source string) :package package
-         :on-ok (lambda (result)
-                  (show-result result)
-                  (image-changed)
-                  (when (and view (member (view-buffer view) (buffer-list)))
-                    (show-inline-result view line result))))))
+  (with-connection (connection :language (view-language view))
+    (when view (follow-package connection package))
+    (call-in-file-namespace
+     view connection
+     (lambda ()
+       (request #'backend-eval connection (evaluable-source connection string) :package package
+                :on-ok (lambda (result)
+                         (show-result result)
+                         (image-changed)
+                         (when (and view (member (view-buffer view) (buffer-list)))
+                           (show-inline-result view line result))))))))
 
 ;;; Evaluating
 
 (define-command eval-last-expression ()
   "Evaluate the expression before the cursor and show its value."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
-      (multiple-value-bind (sl sc) (backward-sexp-position (current-lisp-syntax) line column)
+      (multiple-value-bind (sl sc) (backward-sexp-position (current-syntax) line column)
         (unless sl (editor-error "No expression before the cursor"))
         (flash-region view sl sc line column)
         (eval-for-message (view-region-text view sl sc line column) (view-package view) view line)))))
 
 (define-command eval-defun ()
   "Evaluate the top-level form around the cursor and show its value."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
-      (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-lisp-syntax) line column)
+      (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-syntax) line column)
         (unless sl (editor-error "Not in a top-level form"))
         (flash-region view sl sc el ec)
         (eval-for-message (view-region-text view sl sc el ec) (view-package view) view el)))))
 
 (define-command eval-region ()
   "Evaluate the selected text."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (let* ((view (current-view))
          (gtk-buffer (view-gtk-buffer view)))
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
       (unless has (editor-error "Nothing is selected"))
       (let ((text (gtk:text-buffer-get-text gtk-buffer start end t))
             (package (view-package view)))
-        (repl-follow-package package)
-        (with-connection (connection)
-          (request #'backend-eval-region connection (gtk-thread-source text) :package package
-               :on-ok (lambda (result) (show-result result) (image-changed))))))))
+        (with-connection (connection :language (view-language view))
+          (follow-package connection package)
+          (call-in-file-namespace
+           view connection
+           (lambda ()
+             (request #'backend-eval-region connection (evaluable-source connection text) :package package
+                      :on-ok (lambda (result) (show-result result) (image-changed))))))))))
 
 (define-command eval-expression-or-region ()
   "Evaluate the selection if there is one, else the expression before the cursor."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (if (gtk:text-buffer-get-has-selection (view-gtk-buffer (current-view)))
       (eval-region)
       (eval-last-expression)))
@@ -144,55 +158,59 @@ with whether it compiled."
   (let* ((view (current-view))
          (buffer (view-buffer view)))
     (multiple-value-bind (line column) (cursor-line-column view)
-      (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-lisp-syntax) line column)
+      (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-syntax) line column)
         (unless sl (editor-error "Not in a top-level form"))
         (flash-region view sl sc el ec)
         (let* ((text (view-region-text view sl sc el ec))
                (position (1+ (text-line-position (buffer-text buffer) sl sc)))
                (package (view-package view)))
-          (repl-follow-package package)
-          (with-connection (connection)
-            (request #'backend-compile-form connection text
-                 :buffer-name (buffer-name buffer) :position position :line (1+ sl) :column (1+ sc)
-                 :file (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
-                 :policy policy
-                 :package package
-                 :on-ok (lambda (result)
-                          (multiple-value-bind (notes successp duration) (parse-compilation-result result)
-                            (show-notes notes :buffer buffer :replace-lines (cons sl el))
-                            (compilation-message notes successp duration what)
-                            (image-changed)
-                            (when then (funcall then successp)))))))))))
+          (with-connection (connection :language (view-language view))
+            (follow-package connection package)
+            (call-in-file-namespace
+             view connection
+             (lambda ()
+               (request #'backend-compile-form connection text
+                        :buffer-name (buffer-name buffer) :position position :line (1+ sl) :column (1+ sc)
+                        :file (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
+                        :policy policy
+                        :package package
+                        :on-ok (lambda (result)
+                                 (multiple-value-bind (notes successp duration) (parse-compilation-result result)
+                                   (show-notes notes :buffer buffer :replace-lines (cons sl el))
+                                   (compilation-message notes successp duration what)
+                                   (image-changed)
+                                   (when then (funcall then successp)))))))))))))
 
 (define-command compile-defun ()
   "Compile the top-level form around the cursor; show the compiler's notes."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (compile-toplevel-form))
 
 (defun definition-form-p (syntax line column)
-  "True if the top-level form at (LINE, COLUMN) is a definition: its head is DEF… or DEFINE-…."
+  "True if the top-level form at (LINE, COLUMN) is a definition: its head
+defines something, as the buffer's Lisp sees it (DEF… in Common Lisp)."
   (multiple-value-bind (sl sc) (toplevel-form-bounds syntax line column)
     (when sl
       (let ((head (symbol-at syntax sl (1+ sc))))
-        (and head (cadre::definer-name-p head))))))
+        (and head (funcall (cadre::dialect-definer (syntax-dialect syntax)) head) t)))))
 
 (define-command compile-or-eval-defun ()
   "Compile the top-level form if it is a definition (showing compiler notes);
 otherwise evaluate it and show its value."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (multiple-value-bind (line column) (cursor-line-column (current-view))
-    (if (definition-form-p (current-lisp-syntax) line column)
+    (if (definition-form-p (current-syntax) line column)
         (compile-defun)
         (eval-defun))))
 
 (define-command compile-and-load-file ()
   "Save the file, compile it and load the result; show the compiler's notes."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (let* ((view (current-view))
          (buffer (view-buffer view)))
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (flet ((compile-it ()
-             (with-connection (connection)
+             (with-connection (connection :language (buffer-language buffer))
                (request #'backend-compile-file connection (uiop:native-namestring (buffer-file buffer))
                         :on-ok (lambda (result)
                                  (multiple-value-bind (notes successp duration) (parse-compilation-result result)
@@ -200,7 +218,7 @@ otherwise evaluate it and show its value."
                                    (compilation-message notes successp duration
                                                         (format nil "Compiled ~a" (buffer-name buffer)))))
                         :on-loaded (lambda ()
-                                     (handler-case (progn (repl-follow-package (file-package buffer))
+                                     (handler-case (progn (follow-package connection (file-package buffer))
                                                           (image-changed))
                                        (error (e) (message "Error: ~a" e))))))))
       (if (buffer-modified-p buffer)
@@ -209,14 +227,14 @@ otherwise evaluate it and show its value."
 
 (define-command load-file ()
   "Load the current file's source into the Lisp."
-  (:modes lisp-mode)
+  (:modes lisp-mode clojure-mode)
   (let ((buffer (view-buffer (current-view))))
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
-    (with-connection (connection)
+    (with-connection (connection :language (buffer-language buffer))
       (request #'backend-load-file connection (uiop:native-namestring (buffer-file buffer))
            :on-ok (lambda (v) (declare (ignore v))
                     (message "Loaded ~a" (buffer-name buffer))
-                    (repl-follow-package (file-package buffer))
+                    (follow-package connection (file-package buffer))
                     (image-changed))))))
 
 (defun file-package (buffer)
@@ -278,16 +296,17 @@ otherwise evaluate it and show its value."
 no Lisp running, or if it doesn't know the symbol, the source's own
 definitions are used."
   (let* ((view (current-view))
-         (syntax (buffer-syntax (view-buffer view)))
-         (name (and syntax (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c)))))
+         (syntax (buffer-sexp-syntax (view-buffer view)))
+         (name (and syntax (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c))))
+         (language (view-language view)))
     (unless name (editor-error "No symbol at the cursor"))
     (let ((package (view-package view))
-          (source (source-definition-choices name (view-buffer view))))
-      (if (not (connected-p))
+          (source (and (eq language :common-lisp) (source-definition-choices name (view-buffer view)))))
+      (if (and (eq language :common-lisp) (not (connected-p)))
           (if source
               (go-to-definition-choices view name source)
               (message "No definition of ~a in the source (start a Lisp to look in loaded code)" name))
-      (with-connection (connection)
+      (with-connection (connection :language language)
         (request #'backend-find-definitions connection name :package package
              :on-ok (lambda (definitions)
                       (let ((found (remove-if (lambda (d) (getf (parse-location (second d)) :error)) definitions)))
@@ -329,11 +348,11 @@ definitions are used."
 (define-command describe-symbol ()
   "Describe the symbol at the cursor."
   (let* ((view (current-view))
-         (syntax (buffer-syntax (view-buffer view)))
+         (syntax (buffer-sexp-syntax (view-buffer view)))
          (name (and syntax (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c)))))
     (unless name (editor-error "No symbol at the cursor"))
     (let ((package (view-package view)))
-      (with-connection (connection)
+      (with-connection (connection :language (view-language view))
         (request #'backend-describe connection name :package package
              :on-ok (lambda (text) (show-help name text)))))))
 
@@ -371,6 +390,8 @@ definitions are used."
   "Show the arglist of the call around VIEW's cursor: from the source if it
 defines the function, else from the connected Lisp, else from standard
 Common Lisp."
+  (when (eq (view-language view) :clojure)
+    (return-from request-autodoc (request-clojure-autodoc view)))
   (let ((syntax (buffer-syntax (view-buffer view))))
     (if (not (and syntax (eq view (focused-view *window*))))
         (show-arglist nil)
@@ -390,16 +411,36 @@ Common Lisp."
                                      (show-arglist (or doc (ignore-errors (local-autodoc view syntax line column))))))
                           :on-abort (lambda (reason) (declare (ignore reason)) (show-arglist nil))))))))))
 
+(defun request-clojure-autodoc (view)
+  "The arglist for the call around VIEW's cursor, from the Clojure REPL if one is connected."
+  (let ((syntax (buffer-sexp-syntax (view-buffer view)))
+        (connection (language-connection :clojure)))
+    (if (not (and syntax connection (eq view (focused-view *window*))))
+        (show-arglist nil)
+        (multiple-value-bind (line column) (cursor-line-column view)
+          (let* ((form (and (eq (context-at syntax line column) :code) (raw-form-at syntax line column)))
+                 (key (and form (cons :clojure (sexp-to-string form)))))
+            (cond ((null form) (show-arglist nil))
+                  ((gethash key *autodoc-cache*) (show-arglist (gethash key *autodoc-cache*)))
+                  (t (request #'backend-autodoc connection form
+                              :package (view-package view)
+                              :on-ok (lambda (result)
+                                       (let ((doc (and (consp result) (stringp (first result)) (first result))))
+                                         (when doc (setf (gethash key *autodoc-cache*) doc))
+                                         (show-arglist doc)))
+                              :on-abort (lambda (reason) (declare (ignore reason)) (show-arglist nil))))))))))
+
 ;;; Completion
 
 (defun prefix-before-cursor (view)
   "The symbol characters just before VIEW's cursor, and where they start (an offset)."
   (let* ((gtk-buffer (view-gtk-buffer view))
          (end (text-point gtk-buffer))
-         (start end))
+         (start end)
+         (dialect (or (mode-dialect (buffer-major-mode (view-buffer view))) *common-lisp-dialect*)))
     (loop while (and (> start 0)
                      (let ((c (char (gtk:text-buffer-get-text gtk-buffer (iter-at gtk-buffer (1- start)) (iter-at gtk-buffer start) t) 0)))
-                       (not (terminating-char-p c))))
+                       (not (cadre::dialect-terminating-p c dialect))))
           do (decf start))
     (values (gtk:text-buffer-get-text gtk-buffer (iter-at gtk-buffer start) (iter-at gtk-buffer end) t) start)))
 

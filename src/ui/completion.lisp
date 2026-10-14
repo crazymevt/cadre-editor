@@ -176,7 +176,7 @@ chord (⌘↩, C-s …) closes the popup and goes on to its command."
                      (t
                       ;; Nothing left here, but the connected Lisp may know more.
                       (close-completion)
-                      (when (and (connected-p) (auto-complete-p view))
+                      (when (and (view-connection view) (auto-complete-p view))
                         (start-completion view :auto t))))))))))
 
 (defun completion-buffer-changed (buffer)

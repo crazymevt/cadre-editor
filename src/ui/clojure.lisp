@@ -1,0 +1,259 @@
+;;;; clojure.lisp — Clojure REPLs, through nREPL (core/nrepl/)
+;;;;
+;;;; A Clojure buffer's commands (evaluate, compile, describe, go to
+;;;; definition…) use the Clojure connection, which this file starts when
+;;;; the first one needs it: it connects to the project's running nREPL if
+;;;; it has a .nrepl-port, or starts the project's REPL with nREPL and
+;;;; cider-nrepl, as CIDER's jack-in does. The process's output goes to the
+;;;; Output page. The REPL is a tab, *clojure-repl*, like the editor REPL:
+;;;; what is typed there goes to nREPL, and the connection's output and
+;;;; values come back as the same events Swank sends.
+
+(in-package #:cadre-ui)
+
+(define-major-mode clojure-repl-mode (:title "Clojure REPL")
+  "The REPL of the connected Clojure.")
+
+(pushnew '(clojure-repl-mode . :clojure) cadre::*mode-dialects* :test #'equal)
+
+;; Keys not bound here come from the REPL's keymap, then Lisp mode's.
+(setf (cadre::keymap-parent (major-mode-keymap (find-major-mode 'clojure-repl-mode)))
+      (major-mode-keymap (find-major-mode 'repl-mode)))
+
+(defvar *clojure-process* nil "The Clojure REPL Cadre started, or nil.")
+(defvar *clojure-waiting* '() "Functions waiting for the Clojure connection to be ready.")
+(defvar *clojure-repl-buffer* nil)
+
+(defun clojure-connection () (language-connection :clojure))
+
+;;; The REPL tab
+
+(defun clojure-repl-prompt ()
+  (let ((connection (clojure-connection)))
+    (format nil "~a=> " (if connection (connection-package connection) "user"))))
+
+(defun clojure-repl ()
+  "The Clojure REPL's struct, made with its buffer the first time."
+  (unless (and *clojure-repl-buffer* (member *clojure-repl-buffer* (buffer-list)))
+    (let ((buffer (make-buffer :name "*clojure-repl*" :text (make-gtk-text) :major-mode 'clojure-repl-mode)))
+      (setf *clojure-repl-buffer* buffer)
+      (let ((*repl* (make-repl-for-buffer buffer :evaluator 'clojure-repl-evaluate
+                                                 :prompter 'clojure-repl-prompt)))
+        (repl-insert (format nil "; Clojure. Forms typed here go to the connected nREPL.~%") "cadre-repl-note"))))
+  (buffer-local *clojure-repl-buffer* :repl))
+
+(defun clojure-repl-evaluate (input)
+  (let ((repl (clojure-repl)))
+    (with-connection (connection :language :clojure)
+      (setf (repl-busy repl) t)
+      (request #'backend-repl-eval connection input
+               :on-ok (lambda (value)
+                        (declare (ignore value))
+                        (let ((*repl* repl))
+                          (setf (repl-busy *repl*) nil)
+                          (repl-show-prompt)))
+               :on-abort (lambda (reason)
+                           (let ((*repl* repl))
+                             (setf (repl-busy *repl*) nil)
+                             (repl-fresh-line)
+                             (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
+                             (repl-show-prompt)))))))
+
+(defun show-clojure-repl (&key (focus t))
+  (let* ((repl (clojure-repl))
+         (view (show-buffer *window* (repl-buffer repl))))
+    (gtk:text-view-set-wrap-mode (view-text-view view) :word-char)
+    (when focus
+      (gtk:text-buffer-place-cursor (view-gtk-buffer view) (gtk:text-buffer-get-end-iter (view-gtk-buffer view)))
+      (focus-view view))
+    view))
+
+;;; Events from the connection: Swank-shaped (nrepl/connection.lisp)
+
+(defun handle-clojure-event (connection event)
+  (let ((*repl* (clojure-repl)))
+    (case (first event)
+      (:write-string (repl-output (second event) (third event)))
+      (:new-package (update-connection-status))
+      (:disconnected
+       (when (eq (gethash :clojure *connections*) connection)
+         (remhash :clojure *connections*))
+       (repl-disconnected (second event))
+       (update-connection-status)
+       (message "Clojure disconnected: ~a" (second event))))))
+
+;;; Starting and connecting
+
+(defun clojure-start-directory ()
+  "Where the current file's Clojure project is, and its kind; else the open folder."
+  (let* ((view (current-view))
+         (file (and view (buffer-file (view-buffer view))))
+         (start (or file (window-project *window*) (user-homedir-pathname))))
+    (multiple-value-bind (dir kind) (clojure-project start)
+      (if dir
+          (values dir kind)
+          (values (uiop:pathname-directory-pathname start) nil)))))
+
+(defun clojure-ready (connection)
+  (setf (gethash :clojure *connections*) connection
+        *clojure-starting* nil)
+  (let ((*repl* (clojure-repl)))
+    (repl-connected connection))
+  (update-connection-status)
+  (message "Connected to ~a" (connection-implementation connection))
+  (let ((waiting (reverse *clojure-waiting*)))
+    (setf *clojure-waiting* '())
+    (dolist (f waiting)
+      (handler-case (funcall f connection)
+        (editor-error (e) (message "~a" (editor-error-message e)))))))
+
+(defun clojure-failed (why)
+  (setf *clojure-starting* nil *clojure-waiting* '())
+  (update-connection-status)
+  (message "~a" why))
+
+(defun connect-clojure (host port)
+  (setf *clojure-starting* t)
+  (update-connection-status)
+  (handler-case
+      (nrepl-connect host port :deliver #'deliver-to-gui :handler 'handle-clojure-event
+                               :on-ready 'clojure-ready
+                               :on-failure (lambda (reason) (clojure-failed (format nil "nREPL failed: ~a" reason))))
+    (editor-error (e) (clojure-failed (editor-error-message e)))))
+
+(defun start-clojure-connection (then)
+  "Start or connect to the Clojure REPL of the current file's project, then
+call THEN with the connection."
+  (when then (push then *clojure-waiting*))
+  (unless *clojure-starting*
+    (multiple-value-bind (dir kind) (clojure-start-directory)
+      (let ((running (nrepl-port-file dir)))
+        (if (and running (ignore-errors (sb-bsd-sockets:socket-close
+                                         (let ((s (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+                                           (sb-bsd-sockets:socket-connect s #(127 0 0 1) running)
+                                           s))
+                                        t))
+            (progn (message "Connecting to the nREPL running in ~a" (uiop:native-namestring dir))
+                   (connect-clojure "localhost" running))
+            (let ((command (clojure-command kind)))
+              (setf *clojure-starting* t)
+              (update-connection-status)
+              (message "Starting ~a in ~a…" (first command) (uiop:native-namestring dir))
+              (panel-log (window-panel *window*) (format nil "Starting ~{~a~^ ~} in ~a" command (uiop:native-namestring dir)))
+              (handler-case
+                  (setf *clojure-process*
+                        (start-clojure dir kind
+                                       :deliver #'deliver-to-gui
+                                       :on-output (lambda (line) (panel-log-raw (window-panel *window*) line))
+                                       :on-port (lambda (port) (connect-clojure "localhost" port))
+                                       :on-exit #'clojure-failed))
+                (editor-error (e) (clojure-failed (editor-error-message e))))))))))
+
+(setf (gethash :clojure *connection-starters*) 'start-clojure-connection)
+
+(defun stop-clojure-connection ()
+  (let ((connection (clojure-connection)))
+    (when connection (backend-disconnect connection)))
+  (when *clojure-process*
+    (stop-clojure *clojure-process*)
+    (setf *clojure-process* nil)))
+
+;;; Evaluating code from a file needs its namespace to exist, which it
+;;; doesn't until the file's (ns …) form has been evaluated once.
+
+(defvar *loaded-namespaces* (make-hash-table :test 'equal)
+  "Namespaces the Clojure connection has: (connection . name) → t.")
+
+(defun ns-form-text (view)
+  "The text of VIEW's buffer's (ns …) form, or nil."
+  (let ((syntax (buffer-sexp-syntax (view-buffer view))))
+    (when syntax
+      (loop for line below (syntax-line-count syntax)
+            for tokens = (line-tokens syntax line)
+            do (loop for tk across tokens
+                     when (and (eq (token-type tk) :open) (zerop (token-depth tk)))
+                       do (let ((head (symbol-at syntax line (token-end tk))))
+                            (when (and head (string= (cadre::base-symbol-name head #\/) "ns"))
+                              (multiple-value-bind (sl sc el ec) (toplevel-form-bounds syntax line (token-start tk))
+                                (return-from ns-form-text (view-region-text view sl sc el ec))))))))))
+
+(defun call-in-file-namespace (view connection function)
+  "Call FUNCTION once the namespace of the Clojure code in VIEW exists in
+CONNECTION, evaluating the file's ns form first if it doesn't. Other
+Lisps' code: call it at once."
+  (let ((ns (and view (eq (connection-language connection) :clojure) (view-package view))))
+    (if (or (null ns) (gethash (cons connection ns) *loaded-namespaces*))
+        (funcall function)
+        (flet ((loaded () (setf (gethash (cons connection ns) *loaded-namespaces*) t) (funcall function)))
+          (request #'backend-eval connection (format nil "(some? (find-ns '~a))" ns) :package "user"
+                   :on-ok (lambda (value)
+                            (let ((form (ns-form-text view)))
+                              (if (or (search "true" value) (null form))
+                                  (loaded)
+                                  (request #'backend-eval connection form :package "user"
+                                           :on-ok (lambda (v) (declare (ignore v)) (loaded)))))))))))
+
+;;; Commands
+
+(define-command clojure-jack-in ()
+  "Start the current project's Clojure REPL (with nREPL and cider-nrepl) and connect to it."
+  (:title "Clojure: Jack In")
+  (cond ((clojure-connection) (message "Already connected to ~a" (connection-implementation (clojure-connection))))
+        (*clojure-starting* (message "Clojure is starting…"))
+        (t (start-clojure-connection (lambda (c) (declare (ignore c)) (show-clojure-repl :focus nil))))))
+
+(define-command clojure-connect ()
+  "Connect to a running nREPL server, given as host:port."
+  (:title "Clojure: Connect")
+  (multiple-value-bind (dir) (clojure-start-directory)
+    (let ((port (nrepl-port-file dir)))
+      (open-picker (window-picker *window*)
+                   :placeholder "host:port of an nREPL server, such as localhost:7888"
+                   :text (if port (format nil "localhost:~d" port) "localhost:")
+                   :on-choose (lambda (text)
+                                (let* ((colon (position #\: text :from-end t))
+                                       (host (if colon (subseq text 0 colon) "localhost"))
+                                       (port (ignore-errors (parse-integer text :start (if colon (1+ colon) 0)))))
+                                  (unless port (editor-error "Not host:port: ~a" text))
+                                  (when (clojure-connection) (backend-disconnect (clojure-connection)))
+                                  (connect-clojure host port)))))))
+
+(define-command clojure-repl-tab ()
+  "Show the Clojure REPL, starting Clojure if it isn't running."
+  (:title "Clojure: REPL")
+  (show-clojure-repl)
+  (unless (or (clojure-connection) *clojure-starting*)
+    (start-clojure-connection nil)))
+
+(define-command clojure-disconnect ()
+  "Disconnect from Clojure (a REPL Cadre started is stopped)."
+  (:title "Clojure: Disconnect")
+  (if (or (clojure-connection) *clojure-process*)
+      (stop-clojure-connection)
+      (message "Clojure isn't connected")))
+
+(define-command clojure-restart ()
+  "Stop the Clojure REPL Cadre started and start a fresh one."
+  (:title "Clojure: Restart")
+  (stop-clojure-connection)
+  (start-clojure-connection nil))
+
+(define-command clojure-set-namespace ()
+  "Switch the Clojure REPL to the current file's namespace."
+  (:modes clojure-mode)
+  (:title "Clojure: Switch the REPL to This Namespace")
+  (let ((ns (view-package (current-view))))
+    (with-connection (connection :language :clojure)
+      (request #'backend-set-package connection ns
+               :on-ok (lambda (reply)
+                        (declare (ignore reply))
+                        (let ((*repl* (clojure-repl)))
+                          (unless (repl-busy *repl*)
+                            (let ((input (repl-input)))
+                              (set-repl-input "")
+                              (repl-fresh-line)
+                              (repl-insert (format nil "; Namespace ~a~%" ns) "cadre-repl-note")
+                              (repl-show-prompt)
+                              (when (plusp (length input)) (set-repl-input input)))))
+                        (update-connection-status)
+                        (message "Clojure REPL in ~a" ns))))))

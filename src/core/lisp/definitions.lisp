@@ -336,3 +336,19 @@ as DEFINITION structs with their name, kind and line."
                                   definitions))
                           (setf head nil))))))
     (nreverse definitions)))
+
+(defun clojure-namespace-at (syntax line)
+  "The namespace Clojure code at LINE is in: from the last (ns …) or
+(in-ns '…) before it, or nil."
+  (let ((namespace nil) (head nil))
+    (ensure-lexed syntax (min line (1- (syntax-line-count syntax))))
+    (loop for l from 0 to (min line (1- (syntax-line-count syntax)))
+          do (loop for tk across (line-tokens syntax l)
+                   do (cond ((and (eq (token-subtype tk) :head) (= (token-depth tk) 1))
+                             (let ((text (base-symbol-name (token-text syntax l tk) #\/)))
+                               (setf head (and (member text '("ns" "in-ns") :test #'string=) t))))
+                            ((and head (eq (token-type tk) :symbol) (= (token-depth tk) 1))
+                             (setf namespace (token-text syntax l tk) head nil))
+                            ((and head (eq (token-type tk) :close) (zerop (token-depth tk)))
+                             (setf head nil)))))
+    namespace))
