@@ -2968,6 +2968,89 @@ and the number of items MODEL itself shows."
 (then 100
   (gtk:menu-button-popdown (gethash :main-menu cadre-ui::*named-widgets*)))
 
+;;; Racket and Clojure: editing with no Lisp running (docs/RACKET-CLOJURE.md, R1)
+(section "lisp-dialects")
+
+(defun write-root-file (name text)
+  (let ((path (merge-pathnames name *root*)))
+    (ensure-directories-exist path)
+    (with-open-file (o path :direction :output :if-exists :supersede) (write-string text o))
+    path))
+
+(defun key-binding (keys)
+  (lookup-keys (cadre-ui::view-keymaps (current-view)) (parse-keys keys)))
+
+(then 300
+  (write-root-file "dialects/shapes.rkt"
+                   (format nil "#lang racket/base~%(define (area w h)~%  (* w h))~%#;(old-area 1 2)~%(struct point (x y))~%"))
+  (write-root-file "dialects/shapes.clj"
+                   (format nil "(ns shapes.core)~%(defn area [w h]~%  (* w h))~%#_(old-area 1 2)~%(def ^:private origin {:x 0, :y 0})~%"))
+  (open-file-path (merge-pathnames "dialects/shapes.rkt" *root*)))
+
+(then-when ((and (find-buffer "shapes.rkt") (eq (current-buffer) (find-buffer "shapes.rkt"))))
+  (check "a .rkt file opens in Racket mode" (eq 'racket-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (check "Racket: define is a definer and area its name"
+         (and (has-face-p 1 1 :definer) (has-face-p 1 9 :definition-name)))
+  (check "#lang is reader syntax" (has-face-p 0 1 :quote))
+  (check "what #; comments out looks like a comment" (and (has-face-p 3 0 :comment) (has-face-p 3 5 :comment)))
+  (check "the Racket outline lists area and point"
+         (equal '(("area" :function 1 0) ("point" :class 4 0)) (cadre-ui::outline-items (current-buffer)))
+         (cadre-ui::outline-items (current-buffer)))
+  (check "C-M-f moves over forms in Racket too" (eq 'cadre-ui::forward-sexp (key-binding "C-M-f")))
+  (check "but the keys that talk to Common Lisp aren't bound"
+         (not (eq 'cadre-ui::compile-or-eval-defun (key-binding "C-RET"))) (key-binding "C-RET"))
+  (screenshot "47-racket")
+  (set-minor-mode (current-buffer) 'cadre-ui::paredit-mode t)
+  (set-cursor 5 0)
+  (insert-at-cursor "(let (")
+  (press "["))
+
+(then 300
+  (check "[ makes a pair of brackets in Racket" (string= "(let ([]" (line-text 5)) (line-text 5))
+  (check "with the cursor between them" (equal '(5 7) (cursor)) (cursor))
+  (let ((text (buffer-text (current-buffer))))
+    (gtk:text-buffer-insert text (cadre-ui::line-iter text 2 0) "    " -1))
+  (set-cursor 2 0)
+  (press "TAB"))
+
+(then 300
+  (check "TAB indents a Racket body by 2" (string= "  (* w h))" (line-text 2)) (line-text 2))
+  (open-file-path (merge-pathnames "dialects/shapes.clj" *root*)))
+
+(then-when ((and (find-buffer "shapes.clj") (eq (current-buffer) (find-buffer "shapes.clj"))))
+  (check "a .clj file opens in Clojure mode" (eq 'clojure-mode (buffer-major-mode (current-buffer)))))
+
+(then 600
+  (check "Clojure: defn is a definer and area its name"
+         (and (has-face-p 1 1 :definer) (has-face-p 1 6 :definition-name)))
+  (check "metadata doesn't hide a def's name" (has-face-p 4 16 :definition-name))
+  (check "keywords are keywords" (has-face-p 4 24 :keyword))
+  (check "what #_ comments out looks like a comment" (has-face-p 3 5 :comment))
+  (check "the Clojure outline lists the namespace, area and origin"
+         (equal '(("shapes.core" :namespace 0 0) ("area" :function 1 0) ("origin" :variable 4 0))
+                (cadre-ui::outline-items (current-buffer)))
+         (cadre-ui::outline-items (current-buffer)))
+  (screenshot "48-clojure")
+  (set-cursor 2 4)
+  (call-command 'cadre-ui::toggle-fold))
+
+(then 300
+  (check "a Clojure defn folds" (equal '(1) (fold-lines-now)) (fold-lines-now))
+  (call-command 'cadre-ui::unfold-all)
+  (set-cursor 2 2)
+  (call-command 'cadre-ui::toggle-comment))
+
+(then 300
+  (check "Toggle Comment uses ;; in Clojure" (string= "  ;; (* w h))" (line-text 2)) (line-text 2))
+  (call-command 'cadre-ui::toggle-comment)
+  (set-cursor 1 0)
+  (press "C-M-f"))
+
+(then 300
+  (check "C-M-f moves over a Clojure form with [ ] in it" (equal '(2 10) (cursor)) (cursor)))
+
 ;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
 (section "indentation")
 (connect-lisp)

@@ -293,7 +293,7 @@
               (and symbol (symbol-at-cursor view))))))))
 
 (defun symbol-at-cursor (view)
-  (let ((syntax (buffer-syntax (view-buffer view))))
+  (let ((syntax (buffer-sexp-syntax (view-buffer view))))
     (if syntax
         (multiple-value-bind (l c) (cursor-line-column view) (symbol-at syntax l c))
         ;; Outside Lisp, the word at the cursor.

@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 is built.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 and R1 are built.
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -77,21 +77,40 @@ As built in R0 (2026-10-14):
 
 ### 2.2 One "Lisp family" of modes
 
+As built in R1 (2026-10-14):
+
 ```lisp
 (define-major-mode racket-mode  (:title "Racket"  :extensions ("rkt" "rktl" "rktd" "scrbl")))
-(define-major-mode clojure-mode (:title "Clojure" :extensions ("clj" "cljc" "cljs" "edn" "bb")))
+(define-major-mode clojure-mode (:title "Clojure" :extensions ("clj" "cljc" "cljs" "cljd" "edn" "bb")))
 ```
 
-The dozen places that test `(eq … 'lisp-mode)` (`hints.lisp`'s `lisp-buffer-p`,
-`highlight.lisp`, `bindings.lisp`, `format.lisp`, `refactor.lisp`, …) change to
-`lisp-family-p`, which is true for any mode with a dialect. Each one is
-then checked: some features (Swank-driven image colours, `in-package`
-lookup) stay Common Lisp only and test the dialect. Keymaps are shared through
-a parent `lisp-family` keymap, so paredit and evaluation keys are the same
-everywhere. `major-mode-for-text` learns `#lang` and `(ns `.
-
-`.scrbl` (Scribble) is Racket-reader text with `@`-expressions. It gets the
-Racket dialect with `@` read as a prefix. Full Scribble highlighting comes later.
+- `*mode-dialects*` (`modes.lisp`) maps each Lisp mode to its dialect, and
+  `lisp-family-mode-p` is true for all three. `major-mode-for-text` reads
+  `#lang` as Racket and `(ns ` as Clojure.
+- Every Lisp-family buffer gets a syntax read by its dialect. Two accessors
+  keep Swank away from Racket and Clojure without touching the places that
+  call Swank: `buffer-sexp-syntax` returns any dialect's syntax, for editing
+  (highlighting, motion, paredit, indentation, folding, Toggle Comment,
+  Format Document). `buffer-syntax` returns only Common Lisp's, for
+  everything Swank and Common Lisp's own rules drive: image colours, hints,
+  evaluation, macroexpansion, the inspector, cross-references.
+- Racket and Clojure keymaps inherit Lisp mode's editing keymap, and the
+  structural-editing keys are bound in their profile keymaps. The keys that
+  talk to the Lisp stay in Lisp mode's profile keymaps, so `C-RET` and `C-c C-c` do
+  nothing in a `.rkt` or `.clj` file until R3/R4 give those languages a
+  connection. In paredit mode, `[`/`]` and `{`/`}` pair up where the dialect
+  makes them brackets, and insert themselves in Common Lisp.
+- Highlighting: each dialect has its own table of built-in forms and
+  constants (`faces.lisp`). Whatever `#;`/`#_` comments out is shown in the
+  comment colour, across lines (`datum-comment-columns`). Clojure metadata
+  (`^:private`) no longer hides the name in `(defn ^:private f …)`.
+- The Outline page lists Racket and Clojure definitions read from the
+  tokens (`dialect-definitions`). Go to Symbol uses the same list.
+- `.scrbl` files open as Racket. Their `@`-expressions aren't read specially
+  yet.
+- Moved out of R1: project detection (`info.rkt`, `deps.edn`,
+  `project.clj`, `bb.edn`) and New Project templates go to R4 and R3, where
+  starting a REPL first needs them.
 
 ### 2.3 A connection protocol, with Swank as one back end
 
@@ -230,10 +249,10 @@ Each milestone ends with `make test` and the relevant smoke sections passing
 | # | Milestone | Main files | Size |
 | --- | --- | --- | --- |
 | R0 | **Dialects in the lexer:** `dialect` struct, bracket kinds, datum comments, Racket and Clojure readers; CL unchanged | `lisp/lexer.lisp`, new `lisp/dialect.lisp`, tests | M |
-| R1 | **Modes and static editing:** `racket-mode`, `clojure-mode`, `lisp-family-p` where `lisp-mode` is tested, highlighting tables, paredit with brackets, indentation tables, outline and folding, comment toggling, project detection (`info.rkt`, `deps.edn`, `project.clj`, `bb.edn`), New Project templates | `modes.lisp`, `paredit.lisp`, `indent.lisp`, `definitions.lisp`, `ui/highlight.lisp`, `ui/outline.lisp`, `new-project` | L |
+| R1 | **Modes and static editing** (built): `racket-mode`, `clojure-mode`, editing in all three Lisps, highlighting tables, paredit with brackets, indentation tables, outline and folding, comment toggling. Project detection and New Project templates moved to R3/R4 | `modes.lisp`, `paredit.lisp`, `indent.lisp`, `definitions.lisp`, `ui/highlight.lisp`, `ui/outline.lisp`, `new-project` | L |
 | R2 | **Connection protocol:** `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
-| R3 | **Clojure live:** bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
-| R4 | **Racket live:** `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/*.rkt`, `core/racket.lisp` | L |
+| R3 | **Clojure live:** project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
+| R4 | **Racket live:** project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/*.rkt`, `core/racket.lisp` | L |
 | R5 | **Polish:** docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
 
 R0 and R1 are useful alone: Racket and Clojure files edit well with no

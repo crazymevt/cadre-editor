@@ -11,6 +11,11 @@
 ;;;; Local functions in FLET, LABELS and MACROLET indent like DEFUN.
 ;;;; In LOOP, the forms of a DO (DOING, INITIALLY, FINALLY) clause line up
 ;;;; under the first of them.
+;;;;
+;;;; Racket uses the same rules with its own table (racket-mode's and
+;;;; DrRacket's conventions). Clojure follows cljfmt's default style: a form
+;;;; with a spec indents all its arguments 2, whether or not they are
+;;;; distinguished, and [ ], { } and #{ } line up their elements.
 
 (in-package #:cadre)
 
@@ -174,9 +179,108 @@ it continues the forms of a DO (or similar) clause; else nil."
           (let ((form (nth (1+ keyword) elements)))
             (if form (second form) (+ (second (nth keyword elements)) 2))))))))
 
+(defparameter *racket-indentation-specs*
+  (let ((table (make-hash-table :test 'equal)))
+    (loop for (name spec) in
+          '(("define" 1) ("define-values" 1) ("define-syntax" 1) ("define-syntax-rule" 1)
+            ("define/contract" 1) ("define-for-syntax" 1) ("lambda" 1) ("λ" 1) ("case-lambda" 0)
+            ("let" 1) ("let*" 1) ("letrec" 1) ("letrec*" 1) ("let-values" 1) ("let*-values" 1)
+            ("letrec-values" 1) ("let-syntax" 1) ("letrec-syntax" 1) ("when" 1) ("unless" 1)
+            ("begin" 0) ("begin0" 1) ("begin-for-syntax" 0) ("cond" 0) ("case" 1) ("match" 1) ("match*" 1)
+            ("match-let" 1) ("match-let*" 1) ("match-lambda" 0) ("match-lambda*" 0)
+            ("match-define" 1) ("for" 1) ("for*" 1) ("for/fold" 2) ("for*/fold" 2)
+            ("for/foldr" 2) ("for*/foldr" 2) ("do" 2) ("module" 2) ("module*" 2) ("module+" 1)
+            ("struct" 1) ("define-struct" 1) ("class" 1) ("class*" 2) ("mixin" 2) ("interface" 1)
+            ("parameterize" 1) ("parameterize*" 1) ("with-handlers" 1) ("with-handlers*" 1)
+            ("dynamic-wind" 0) ("syntax-case" 2) ("syntax-case*" 3) ("syntax-rules" 1)
+            ("syntax-parse" 1) ("syntax-parser" 0) ("with-syntax" 1) ("with-syntax*" 1)
+            ("quasisyntax/loc" 1) ("syntax/loc" 1) ("local" 1) ("instantiate" 2) ("unit" 2)
+            ("test-case" 1) ("test-suite" 1) ("check-exn" 1) ("place" 1) ("thread" 0)
+            ("with-output-to-string" 0) ("with-input-from-string" 1) ("call-with-output-string" 0)
+            ("call-with-input-file" 1) ("call-with-output-file" 1) ("with-output-to-file" 1)
+            ("with-input-from-file" 1))
+          do (setf (gethash name table) spec))
+    table)
+  "Racket heads → the number of distinguished arguments.")
+
+(defun name-starts-with-p (prefix name)
+  (and (> (length name) (length prefix)) (string= prefix name :end2 (length prefix))))
+
+(defun racket-indentation-spec (name)
+  "The number of distinguished arguments for a Racket form headed by NAME, or nil."
+  (or (gethash name *racket-indentation-specs*)
+      (and (some (lambda (prefix) (name-starts-with-p prefix name)) '("define" "with-" "for/" "for*/"))
+           1)))
+
+(defparameter *clojure-body-forms*
+  '("ns" "fn" "fn*" "let" "letfn" "loop" "binding" "when" "when-not" "when-let" "when-some"
+    "when-first" "if-let" "if-some" "if-not" "doseq" "dotimes" "for" "while" "do" "try" "catch"
+    "finally" "case" "cond" "condp" "cond->" "cond->>" "as->" "with-open" "with-redefs"
+    "with-local-vars" "locking" "future" "delay" "lazy-seq" "dosync" "reify" "proxy" "extend"
+    "extend-type" "extend-protocol" "comment" "testing" "deftest" "are" "go" "go-loop" "thread"
+    "match" "doto" "defrecord" "deftype" "defprotocol" "definterface" "defmethod" "defmulti"
+    "specify" "specify!" "add-watch" "bound-fn" "areduce" "amap" "struct-map")
+  "Clojure heads whose arguments indent 2 (cljfmt's block and inner forms).")
+
+(defun clojure-body-form-p (name)
+  "True for a Clojure head whose arguments all indent 2: def…, with-…, and
+the forms in *clojure-body-forms*."
+  (let ((base (base-symbol-name name #\/)))
+    (or (member base *clojure-body-forms* :test #'string=)
+        (string= base "def")
+        (name-starts-with-p "def" base)
+        (name-starts-with-p "with-" base))))
+
 (defun lisp-indentation (syntax line)
   "The column LINE should be indented to, or nil if it should be left alone
 (it starts inside a string or comment)."
+  (case (dialect-name (syntax-dialect syntax))
+    (:clojure (clojure-indentation syntax line))
+    (:racket (common-lisp-indentation syntax line #'racket-indentation-spec nil))
+    (t (common-lisp-indentation syntax line #'indentation-spec t))))
+
+(defun list-head-context (syntax line)
+  "For LINE inside a list: the open token's place and column, and the list's
+elements before LINE. Nil at top level."
+  (multiple-value-bind (ol oc) (up-list-position syntax line 0)
+    (when ol
+      (multiple-value-bind (ol oi) (open-place syntax ol oc)
+        (values ol oi oc (list-elements syntax ol oi line))))))
+
+(defun clojure-indentation (syntax line)
+  "cljfmt's default style: body forms indent 2; other calls (a keyword at the
+head too, as in (:require …)) line up under the first argument when it is on
+the head's line, else 1 past the paren; [ ], { }, #{ } and data line up
+under the first element."
+  (let ((state (line-start-state syntax line)))
+    (cond
+      ((not (eq (state-mode state) :code)) nil)
+      ((zerop (state-depth state)) 0)
+      (t
+       (multiple-value-bind (ol oi oc elements) (list-head-context syntax line)
+         (declare (ignore oc))
+         (if (null ol)
+             0
+             (let* ((open (token-ref syntax ol oi))
+                    (paren (1- (token-end open)))
+                    (head (first elements)))
+               (flet ((under-first ()
+                        (if (and head (= (first head) ol)) (second head) (1+ paren))))
+                 (cond
+                   ((or (null head) (not (eql (token-subtype open) #\()) (quoted-open-p syntax ol oi)
+                        (not (member (token-type (third head)) '(:symbol :keyword))))
+                    (under-first))
+                   ((and (eq (token-type (third head)) :symbol)
+                         (clojure-body-form-p (token-text syntax (first head) (third head))))
+                    (+ paren 2))
+                   ((and (second elements) (= (first (second elements)) (first head)))
+                    (second (second elements)))
+                   (t (1+ paren)))))))))))
+
+(defun common-lisp-indentation (syntax line spec-function cl-rules)
+  "SLIME's rules (see the top of this file), with SPEC-FUNCTION giving a
+head's number of distinguished arguments. CL-RULES adds Common Lisp's own:
+LOOP clauses and local functions in FLET and LABELS."
   (let ((state (line-start-state syntax line)))
     (cond
       ((not (eq (state-mode state) :code)) nil)
@@ -198,12 +302,13 @@ it continues the forms of a DO (or similar) clause; else nil."
                       (under-first))
                      (t
                       (let* ((name (token-text syntax (first head) (third head)))
-                             (spec (if (local-function-list-p syntax ol oc)
+                             (spec (if (and cl-rules (local-function-list-p syntax ol oc))
                                        1
-                                       (indentation-spec name)))
+                                       (funcall spec-function name)))
                              (arguments (1- (length elements))))
                         (cond
-                          ((and (string= (symbol-base-name name) "loop")
+                          ((and cl-rules
+                                (string= (symbol-base-name name) "loop")
                                 (loop-indentation syntax line elements)))
                           (spec (if (< arguments spec) (+ paren 4) (+ paren 2)))
                           ((and (second elements) (= (first (second elements)) (first head)))

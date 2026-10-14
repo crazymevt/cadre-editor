@@ -16,7 +16,7 @@
   "Turn on paredit mode in Lisp buffers and REPLs."
   :category "Editing")
 
-(defparameter *paredit-major-modes* '(lisp-mode repl-mode editor-repl-mode))
+(defparameter *paredit-major-modes* '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode))
 
 (defun maybe-enable-paredit (buffer)
   (when (and *paredit* (member (buffer-major-mode buffer) *paredit-major-modes*))
@@ -69,7 +69,7 @@ as one undo step. With REINDENT, re-indent the lines the edits span."
 (defmacro define-structural-command (name documentation function &rest options)
   `(define-command ,name ()
      ,documentation
-     (:modes lisp-mode repl-mode editor-repl-mode)
+     (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
      ,@options
      (run-structural-edit ',function)))
 
@@ -106,7 +106,7 @@ as one undo step. With REINDENT, re-indent the lines the edits span."
 
 (define-command wrap-round ()
   "Wrap the next expression, or the selection, in parentheses: |a b → (|a) b."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (let ((view (current-view)))
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds (view-gtk-buffer view))
       (setf (buffer-local (view-buffer view) :mark-active) nil)
@@ -118,19 +118,51 @@ as one undo step. With REINDENT, re-indent the lines the edits span."
 
 (define-command paredit-open-round ()
   "Insert a pair of parentheses (in code), or wrap the selection in them."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (if (gtk:text-buffer-get-has-selection (view-gtk-buffer (current-view)))
       (call-command 'wrap-round)
       (run-structural-edit 'paredit-open :reindent nil)))
 
 (define-command paredit-close-round ()
   "Move past the end of the list, deleting the spaces before its close paren."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (run-structural-edit 'paredit-close :reindent nil))
+
+(defun dialect-bracket-p (char)
+  "True if CHAR opens or closes a list in the current buffer's Lisp: [ and {
+do in Racket and Clojure, not in Common Lisp."
+  (let ((syntax (buffer-sexp-syntax (view-buffer (current-view)))))
+    (and syntax (member (or (car (rassoc char +brackets+)) char)
+                        (dialect-opens (syntax-dialect syntax))))))
+
+(defun insert-typed (string)
+  "Insert STRING at the cursor as if typed, replacing the selection."
+  (let ((gtk-buffer (view-gtk-buffer (current-view))))
+    (with-user-action (gtk-buffer)
+      (gtk:text-buffer-delete-selection gtk-buffer t t)
+      (gtk:text-buffer-insert-at-cursor gtk-buffer string -1))))
+
+(defmacro define-bracket-commands (open-name close-name open close)
+  `(progn
+     (define-command ,open-name ()
+       ,(format nil "Insert a pair of ~a~a (in code) where they make a list, or a lone ~a." open close open)
+       (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
+       (if (dialect-bracket-p ,(char open 0))
+           (run-structural-edit 'paredit-open :reindent nil :args '(:open ,open :close ,close))
+           (insert-typed ,open)))
+     (define-command ,close-name ()
+       ,(format nil "Move past the end of the list where ~a closes one; otherwise insert it." close)
+       (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
+       (if (dialect-bracket-p ,(char close 0))
+           (run-structural-edit 'paredit-close :reindent nil :args '(:close ,close))
+           (insert-typed ,close)))))
+
+(define-bracket-commands paredit-open-square paredit-close-square "[" "]")
+(define-bracket-commands paredit-open-curly paredit-close-curly "{" "}")
 
 (define-command paredit-doublequote ()
   "Insert a pair of quotes; inside a string, move past its end or insert \\\"."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (run-structural-edit 'paredit-quote :reindent nil))
 
 (defun delete-selection-if-any (view)
@@ -141,14 +173,14 @@ as one undo step. With REINDENT, re-indent the lines the edits span."
 
 (define-command paredit-backward-delete ()
   "Delete the character before the cursor, stepping over parentheses and quotes instead of unbalancing them."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (:repeat t)
   (unless (delete-selection-if-any (current-view))
     (run-structural-edit 'paredit-delete-before :reindent nil)))
 
 (define-command paredit-forward-delete ()
   "Delete the character after the cursor, stepping over parentheses and quotes instead of unbalancing them."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (:repeat t)
   (unless (delete-selection-if-any (current-view))
     (run-structural-edit 'paredit-delete-after :reindent nil)))

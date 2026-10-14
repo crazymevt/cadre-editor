@@ -86,7 +86,7 @@ for JavaScript, TypeScript and HTML)."
            (replace-with-formatted view (format-css (buffer-string buffer) :indent *code-indent-width*)))
           ((eq mode 'xml-mode)
            (replace-with-formatted view (format-xml (buffer-string buffer) :indent *code-indent-width*)))
-          ((eq mode 'lisp-mode)
+          ((lisp-family-mode-p mode)          ; Lisp, Racket, Clojure: indent every line
            (let ((before (buffer-string buffer)))
              (indent-lines view 0 (1- (gtk:text-buffer-get-line-count (view-gtk-buffer view))))
              (message (if (string= before (buffer-string buffer)) "Already formatted" "Formatted"))))

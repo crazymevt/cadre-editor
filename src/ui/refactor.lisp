@@ -100,6 +100,7 @@ everyday commands, and the rest in submenus."
          (mode (buffer-major-mode buffer))
          (lisp (member mode '(lisp-mode repl-mode editor-repl-mode)))
          (lisp-file (eq mode 'lisp-mode))
+         (lisp-family (lisp-family-mode-p mode))
          (markdown (eq mode 'markdown-mode)))
     (let ((clipboard (gio:menu-new)))
       ;; The text view's own actions.
@@ -159,7 +160,7 @@ everyday commands, and the rest in submenus."
         (unless markdown
           (command-item code "Toggle Comment" 'toggle-comment)
           (command-item code "Format Document" 'format-document))
-        (when (or lisp-file markdown (tree-sitter-buffer-p buffer))
+        (when (or lisp-family markdown (tree-sitter-buffer-p buffer))
           (let ((fold (gio:menu-new)))
             (command-item fold "Toggle Fold" 'toggle-fold)
             (command-item fold "Fold All" 'fold-all)

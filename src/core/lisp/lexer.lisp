@@ -343,6 +343,14 @@ the line."
                    ((member c '(#\' #\`)) (prefix :quote (1+ i)))
                    ((and (eq kind :clojure) (char= c #\~))
                     (prefix :quote (if (eql (char-at (1+ i)) #\@) (+ i 2) (1+ i))))
+                   ((and (eq kind :clojure) (char= c #\^) (char-at (1+ i))
+                         (not (member (char-at (1+ i)) '(#\{ #\( #\[))))
+                    ;; Metadata such as ^:private or ^String: it doesn't take
+                    ;; the place of the element it is on, (defn ^:private f …).
+                    (prefix :quote (1+ i))
+                    (let ((end (max (1+ i) (scan-atom line i dialect))))
+                      (emit (if (char= (char line i) #\:) :keyword :symbol) i end)
+                      (setf i end)))
                    ((and (eq kind :clojure) (member c '(#\@ #\^))) (prefix :quote (1+ i)))
                    ((and (eq kind :clojure) (char= c #\\)) (character-at i (1+ i)))
                    ((char= c #\,)

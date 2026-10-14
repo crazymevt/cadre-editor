@@ -43,7 +43,7 @@ head is the name, as in Racket's (define (f x) …)."
     (and (> (length name) 3) (string= "def" name :end2 3))))
 
 (defparameter *racket-definers*
-  '("struct" "module" "module*" "module+" "class" "interface" "unit")
+  '("struct" "module" "module*" "module+")
   "Racket heads that name something but don't start with define.")
 
 (defun racket-definer-p (text)
@@ -85,3 +85,7 @@ head is the name, as in Racket's (define (f x) …)."
     (:common-lisp *common-lisp-dialect*)
     (:racket *racket-dialect*)
     (:clojure *clojure-dialect*)))
+
+(defun mode-dialect (mode)
+  "The dialect MODE's text is read as, or nil if MODE isn't a Lisp."
+  (find-dialect (mode-dialect-name mode)))

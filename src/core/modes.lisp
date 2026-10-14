@@ -47,6 +47,8 @@ Lisp, say), from how it starts: XML or HTML at <, JSON at { or [, Lisp at (."
                   (or (alpha-char-p (char head 1)) (member (char head 1) '(#\? #\!))))
              'xml-mode)
             ((or (starts "{") (starts "[")) 'json-mode)
+            ((starts "#lang") 'racket-mode)
+            ((starts "(ns ") 'clojure-mode)
             ((starts "(") 'lisp-mode)
             (t 'fundamental-mode)))))
 
@@ -58,6 +60,24 @@ Lisp, say), from how it starts: XML or HTML at <, JSON at { or [, Lisp at (."
 
 (define-major-mode lisp-mode (:title "Lisp" :extensions ("lisp" "asd" "lsp" "cl" "l" "ros"))
   "Common Lisp source.")
+
+(define-major-mode racket-mode (:title "Racket" :extensions ("rkt" "rktl" "rktd" "scrbl"))
+  "Racket source.")
+
+(define-major-mode clojure-mode (:title "Clojure" :extensions ("clj" "cljc" "cljs" "cljd" "edn" "bb"))
+  "Clojure (and ClojureScript and EDN) source.")
+
+(defparameter *mode-dialects*
+  '((lisp-mode . :common-lisp) (racket-mode . :racket) (clojure-mode . :clojure))
+  "The major modes whose text is a Lisp, and the dialect each reads (dialect.lisp).")
+
+(defun mode-dialect-name (mode)
+  "The name of the dialect MODE's text is read as, or nil if it isn't a Lisp."
+  (cdr (assoc mode *mode-dialects*)))
+
+(defun lisp-family-mode-p (mode)
+  "True for Common Lisp, Racket and Clojure modes: the modes with s-expression editing."
+  (and (mode-dialect-name mode) t))
 
 (define-major-mode image-mode (:title "Image" :extensions ("png" "jpg" "jpeg" "gif" "bmp" "ico" "tif" "tiff" "webp"))
   "A picture, shown rather than edited.")

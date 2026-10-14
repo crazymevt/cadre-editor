@@ -168,7 +168,7 @@ While already stepping, step into the next form."
              (step-form-text (gtk:text-buffer-get-text gtk-buffer start end t) package)))
           (t
            (multiple-value-bind (line column) (cursor-line-column view)
-             (let ((syntax (current-syntax)))
+             (let ((syntax (current-lisp-syntax)))
                (multiple-value-bind (sl sc el ec) (toplevel-form-bounds syntax line column)
                  (unless sl (editor-error "Not in a top-level form"))
                  (if (definition-form-p syntax line column)

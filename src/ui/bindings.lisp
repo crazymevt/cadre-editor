@@ -291,7 +291,13 @@
   '("C-M-S-Right" slurp-forward "C-M-S-Left" barf-forward "C-M-S-Up" raise-sexp
     "C-M-S-Down" splice-sexp "C-M-S-9" wrap-round "C-M-S-k" kill-sexp))
 
-(dolist (mode '(lisp-mode repl-mode editor-repl-mode))
+;;; Racket and Clojure share Lisp mode's editing keys (but not its keys for
+;;; talking to the Lisp, which are in the profile keymaps above).
+(dolist (mode '(racket-mode clojure-mode))
+  (setf (cadre::keymap-parent (major-mode-keymap (find-major-mode mode)))
+        (major-mode-keymap (find-major-mode 'lisp-mode))))
+
+(dolist (mode '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode))
   (apply #'bind-keys (mode-profile-keymap mode :emacs) *emacs-structural-keys*)
   (apply #'bind-keys (mode-profile-keymap mode :standard) *standard-structural-keys*))
 
@@ -299,6 +305,10 @@
 (bind-keys (minor-mode-keymap (find-minor-mode 'paredit-mode))
   "(" 'paredit-open-round
   ")" 'paredit-close-round
+  "[" 'paredit-open-square
+  "]" 'paredit-close-square
+  "{" 'paredit-open-curly
+  "}" 'paredit-close-curly
   "\"" 'paredit-doublequote
   "DEL" 'paredit-backward-delete
   "C-d" 'paredit-forward-delete

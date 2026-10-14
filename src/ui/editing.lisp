@@ -198,7 +198,7 @@ until C-g. With C-u, jump back to the previous mark instead."
   (let* ((buffer (view-buffer view))
          (gtk-buffer (view-gtk-buffer view))
          (point (point-offset view))
-         (syntax (buffer-syntax buffer)))
+         (syntax (buffer-sexp-syntax buffer)))
     (cond ((integerp *prefix-arg*)
            ;; C-u N C-k: N whole lines.
            (multiple-value-bind (line) (text-position-line gtk-buffer point)
@@ -269,14 +269,14 @@ before the end of the list. With a numeric argument N, kill N lines."
 
 (define-command kill-sexp ()
   "Kill the expression after the cursor."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (:repeat t)
   (let ((view (current-view)))
     (kill-between view (point-offset view) (sexp-offset view :forward))))
 
 (define-command backward-kill-sexp ()
   "Kill the expression before the cursor."
-  (:modes lisp-mode repl-mode editor-repl-mode)
+  (:modes lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode)
   (:repeat t)
   (let ((view (current-view)))
     (kill-between view (sexp-offset view :backward) (point-offset view) :direction :backward)))
@@ -548,7 +548,7 @@ end of the line (or start one on a blank line)."
                (string (text-line-string gtk-buffer line))
                (semi (position #\; string)))
           (cond ((string= (string-trim " 	" string) "")
-                 (let ((syntax (buffer-syntax (view-buffer view))))
+                 (let ((syntax (buffer-sexp-syntax (view-buffer view))))
                    (let ((column (or (and syntax (lisp-indentation syntax line)) (length string))))
                      (indent-line-to gtk-buffer line column)
                      (insert-text-at gtk-buffer (text-line-position gtk-buffer line column) ";; ")

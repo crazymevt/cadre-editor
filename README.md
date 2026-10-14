@@ -579,6 +579,23 @@ connected Lisp's REPL, after saving the project's files:
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
 
+### Racket and Clojure
+
+Racket files (`.rkt` `.rktl` `.rktd` `.scrbl`) and Clojure files (`.clj`
+`.cljc` `.cljs` `.cljd` `.edn` `.bb`) are read by the same lexer as Common
+Lisp, using each language's own reader rules. They get:
+- syntax colors, including `[ ]`, `{ }`, `#{ }` and the rest of each
+  language's syntax
+- what `#;` or `#_` comments out shown as a comment
+- moving over forms, paredit's structural editing, with `[` and `{` typed in
+  pairs in paredit mode
+- indentation: Racket's conventions, and cljfmt's default style for Clojure
+- folding, an Outline of the file's definitions, Toggle Comment and Format
+  Document
+
+There is no REPL or evaluation for them yet. [docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md)
+has the plan.
+
 ### JavaScript, TypeScript, JSON, HTML, CSS and XML (tree-sitter)
 
 Files ending in `.js` `.mjs` `.cjs` `.jsx`, `.ts` `.mts` `.cts`, `.tsx`,

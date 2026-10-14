@@ -97,3 +97,109 @@
     ;; In Common Lisp, [ and ] are still parts of symbols.
     (is equal '((:open "(") (:symbol "a[b]") (:close ")")) (token-summary "(a[b])" '(:code 0)))
     (is eq c:*common-lisp-dialect* (c:syntax-dialect (syntax-of "(a)")))))
+
+;;; R1: indentation, faces, outlines and paredit in Racket and Clojure
+
+(defun dialect-syntax (dialect &rest lines)
+  (c:make-lisp-syntax (c:make-string-text (format nil "~{~a~^~%~}" lines)) :dialect dialect))
+
+(defun misindented-lines (dialect &rest lines)
+  "The lines of LINES (already indented as DIALECT's style wants) whose
+indentation Cadre would change, as (line wanted)."
+  (let ((syntax (apply #'dialect-syntax dialect lines)))
+    (loop for string in lines
+          for line from 0
+          for wanted = (c:lisp-indentation syntax line)
+          unless (eql wanted (position #\Space string :test-not #'char=))
+            collect (list line wanted))))
+
+(define-test dialect-indentation :parent cadre-tests
+  (is equal '() (misindented-lines c:*racket-dialect*
+                                   "(define (f x)"
+                                   "  (let ([y 1]"
+                                   "        [z 2])"
+                                   "    (+ x"
+                                   "       y)))"))
+  (is equal '() (misindented-lines c:*racket-dialect*
+                                   "(let loop ([i 0])"
+                                   "  (when (< i 3)"
+                                   "    (loop (add1 i))))"))
+  (is equal '() (misindented-lines c:*racket-dialect*
+                                   "(for/fold ([acc 0])"
+                                   "    ([x xs])"
+                                   "  (+ acc x))"))
+  (is equal '() (misindented-lines c:*racket-dialect*
+                                   "(cond"
+                                   "  [(zero? n)"
+                                   "   1]"
+                                   "  [else (* n"
+                                   "           2)])"))
+  (is equal '() (misindented-lines c:*clojure-dialect*
+                                   "(defn foo"
+                                   "  [x]"
+                                   "  (let [y 1"
+                                   "        z 2]"
+                                   "    (str x"
+                                   "         y)))"))
+  (is equal '() (misindented-lines c:*clojure-dialect* "{:a 1" " :b #{2" "      3}}"))
+  (is equal '() (misindented-lines c:*clojure-dialect* "(foo" " bar)"))
+  (is equal '() (misindented-lines c:*clojure-dialect*
+                                   "(ns my.app"
+                                   "  (:require [a]"
+                                   "            [b]))"))
+  (is equal '() (misindented-lines c:*clojure-dialect* "(cond" "  a b" "  c d)"))
+  (is equal '() (misindented-lines c:*clojure-dialect* "(clojure.core/let [a 1]" "  a)"))
+  (is equal '((1 2)) (misindented-lines c:*clojure-dialect* "(defn f []" "    1)") "a body line is put back at 2"))
+
+(defun faces-of (line dialect)
+  (let ((faces (mapcar (lambda (tk) (c:token-face tk line dialect)) (c:lex-line line '(:code 0) dialect))))
+    (remove-if (lambda (f) (or (null f) (consp f))) faces)))
+
+(define-test dialect-faces :parent cadre-tests
+  (is equal '(:definer :definition-name :builtin :constant :constant :string)
+      (faces-of "(define (f x) (if #t null \"s\"))" c:*racket-dialect*))
+  (is equal '(:definer :definition-name :builtin :constant :lambda-keyword)
+      (faces-of "(defn f [x] (when nil &))" c:*clojure-dialect*))
+  (is equal '(:definer :quote :keyword :definition-name)
+      (faces-of "(defn ^:private f [])" c:*clojure-dialect*) "metadata doesn't hide the name")
+  (is equal '(:definer :definition-name)
+      (faces-of "(clojure.core/defn f [])" c:*clojure-dialect*))
+  (is equal '(:builtin) (faces-of "(class object% (super-new))" c:*racket-dialect*)
+      "class isn't a definer, so object% isn't a name")
+  ;; What #_ comments out, across lines.
+  (let ((s (dialect-syntax c:*clojure-dialect* "(a #_(b" " c) d)" "e")))
+    (is equal '((3 7)) (c:datum-comment-columns s 0))
+    (is equal '((0 3)) (c:datum-comment-columns s 1))
+    (is equal '() (c:datum-comment-columns s 2)))
+  (is equal '((0 7)) (c:datum-comment-columns (dialect-syntax c:*racket-dialect* "#;(a b) c") 0))
+  (is equal '() (c:datum-comment-columns (syntax-of "#+nil (a b)") 0) "not in Common Lisp"))
+
+(define-test dialect-outline :parent cadre-tests
+  (flet ((outline (dialect &rest lines)
+           (mapcar (lambda (d) (list (c:definition-name d) (c:definition-kind d) (c:definition-line d)))
+                   (c:dialect-definitions (apply #'dialect-syntax dialect lines)))))
+    (is equal '(("f" :function 1) ("y" :variable 2) ("p" :class 3) ("m" :macro 4))
+        (outline c:*racket-dialect* "#lang racket" "(define (f x) x)" "(define y 2)" "(struct p (a))"
+                 "(define-syntax-rule (m) 1)"))
+    (is equal '(("my.app" :namespace 0) ("g" :function 1) ("z" :variable 2) ("mm" :macro 3))
+        (outline c:*clojure-dialect* "(ns my.app)" "(defn- g [x] (let [q 1] q))" "(def ^:private z 1)"
+                 "(defmacro mm [] nil)"))))
+
+(defun dialect-paredit (dialect function string &rest args)
+  "STRING read as DIALECT after FUNCTION, with the cursor shown as |."
+  (let* ((text (text-with-cursor string))
+         (syntax (c:make-lisp-syntax text :dialect dialect)))
+    (multiple-value-bind (line column) (c:text-position-line text (c:text-point text))
+      (multiple-value-bind (edits point stick delta) (apply function syntax line column args)
+        (c:apply-edits text edits point (or stick :before) (or delta 0))
+        (shown-with-cursor text)))))
+
+(define-test dialect-paredit :parent cadre-tests
+  (is string= "(let ([|]))"
+      (dialect-paredit c:*racket-dialect* #'c:paredit-open "(let (|))" :open "[" :close "]"))
+  (is string= "[a b]|"
+      (dialect-paredit c:*clojure-dialect* #'c:paredit-close "[a |b ]" :close "]"))
+  (is string= "[a |b]" (dialect-paredit c:*racket-dialect* #'c:paredit-join "[a] |[b]"))
+  (fail (dialect-paredit c:*racket-dialect* #'c:paredit-join "[a] |(b)") 'c:editor-error)
+  (is string= "\\(|" (dialect-paredit c:*clojure-dialect* #'c:paredit-open "\\|") "a character, not a list")
+  (is string= "(a [| b] c)" (dialect-paredit c:*clojure-dialect* #'c:paredit-slurp-forward "(a [|] b c)")))

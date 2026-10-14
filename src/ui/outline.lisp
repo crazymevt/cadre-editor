@@ -13,7 +13,8 @@
 (defvar *outline* nil "The Outline page.")
 
 (defun outline-items (buffer)
-  "What BUFFER defines, as (name kind line depth): definitions for Lisp,
+  "What BUFFER defines, as (name kind line depth): definitions for Lisp
+(Common Lisp, Racket or Clojure),
 headings for Markdown, nil for other files."
   (case (buffer-major-mode buffer)
     (lisp-mode
@@ -23,6 +24,11 @@ headings for Markdown, nil for other files."
                          (definition-name d))
                      (definition-kind d) (definition-line d) 0))
              (buffer-definitions buffer)))
+    ((racket-mode clojure-mode)
+     (let ((syntax (buffer-sexp-syntax buffer)))
+       (and syntax
+            (mapcar (lambda (d) (list (definition-name d) (definition-kind d) (definition-line d) 0))
+                    (dialect-definitions syntax)))))
     (markdown-mode
      (mapcar (lambda (h) (list (second h) :heading (third h) (1- (first h))))
              (markdown-headings (buffer-string buffer))))
@@ -76,7 +82,7 @@ headings for Markdown, nil for other files."
     (setf (ol-buffer ol) buffer (ol-items ol) items)
     (gtk:label-set-text (ol-title ol)
                         (cond ((null buffer) "No file")
-                              ((or (member (buffer-major-mode buffer) '(lisp-mode markdown-mode))
+                              ((or (member (buffer-major-mode buffer) '(lisp-mode racket-mode clojure-mode markdown-mode))
                                    (buffer-ts-document buffer))
                                (if items (buffer-display-name buffer) (format nil "~a defines nothing" (buffer-display-name buffer))))
                               (t (format nil "No outline for ~a" (buffer-display-name buffer)))))

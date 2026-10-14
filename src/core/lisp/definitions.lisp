@@ -289,3 +289,50 @@ is the argument the cursor is in (from 0), KEYWORD the keyword before it."
               (do-external-symbols (s '#:common-lisp)
                 (push (cons (string-downcase (symbol-name s)) (standard-symbol-kind s)) symbols))
               (sort symbols #'string< :key #'car)))))
+
+;;; Racket and Clojure: what a file defines, from its tokens
+
+(defparameter *racket-definition-kinds*
+  '(("define-syntax" . :macro) ("define-syntax-rule" . :macro) ("define-syntaxes" . :macro)
+    ("define-values" . :variable) ("struct" . :class) ("define-struct" . :class)
+    ("module" . :module) ("module*" . :module) ("module+" . :module)))
+
+(defparameter *clojure-definition-kinds*
+  '(("defn" . :function) ("defn-" . :function) ("defmacro" . :macro) ("def" . :variable)
+    ("defonce" . :variable) ("defmulti" . :generic) ("defmethod" . :method)
+    ("defprotocol" . :interface) ("definterface" . :interface) ("defrecord" . :class)
+    ("deftype" . :class) ("defstruct" . :class) ("ns" . :namespace) ("deftest" . :test)))
+
+(defun dialect-definition-kind (dialect head named-by-list)
+  "The kind of thing a top-level form headed by HEAD defines. NAMED-BY-LIST:
+its name is the head of a list, as in (define (f x) …)."
+  (ecase (dialect-name dialect)
+    (:racket (or (cdr (assoc head *racket-definition-kinds* :test #'string=))
+                 (cond ((member head '("define" "define/contract" "define/public" "define/private")
+                                :test #'string=)
+                        (if named-by-list :function :variable)))))
+    (:clojure (cdr (assoc (base-symbol-name head #\/) *clojure-definition-kinds* :test #'string=)))))
+
+(defun dialect-definitions (syntax)
+  "The top-level definitions in SYNTAX's text (Racket or Clojure), in order,
+as DEFINITION structs with their name, kind and line."
+  (let ((dialect (syntax-dialect syntax))
+        (definitions '())
+        (head nil))                     ; the definer heading the current top-level form
+    (ensure-lexed syntax (1- (syntax-line-count syntax)))
+    (dotimes (line (syntax-line-count syntax))
+      (loop with tokens = (line-tokens syntax line)
+            for index from 0 below (length tokens)
+            for tk = (aref tokens index)
+            do (case (token-subtype tk)
+                 (:head (when (and (= (token-depth tk) 1) (eq (token-type tk) :symbol))
+                          (let ((text (token-text syntax line tk)))
+                            (setf head (and (funcall (dialect-definer dialect) text) text)))))
+                 (:name (when (and head (<= (token-depth tk) 2) (eq (token-type tk) :symbol))
+                          (let ((named-by-list (= (token-depth tk) 2)))
+                            (push (make-definition :name (token-text syntax line tk)
+                                                   :kind (dialect-definition-kind dialect head named-by-list)
+                                                   :line line)
+                                  definitions))
+                          (setf head nil))))))
+    (nreverse definitions)))

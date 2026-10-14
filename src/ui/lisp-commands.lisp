@@ -4,9 +4,16 @@
 (in-package #:cadre-ui)
 
 (defun current-syntax ()
-  "The current buffer's Lisp syntax. Signals an editor-error outside Lisp buffers."
-  (or (buffer-syntax (view-buffer (current-view)))
+  "The current buffer's s-expression syntax, in any Lisp. Signals an
+editor-error outside Lisp buffers."
+  (or (buffer-sexp-syntax (view-buffer (current-view)))
       (editor-error "Not a Lisp buffer.")))
+
+(defun current-lisp-syntax ()
+  "The current buffer's syntax if it holds Common Lisp, for what Swank does.
+Signals an editor-error otherwise."
+  (or (buffer-syntax (view-buffer (current-view)))
+      (editor-error "Not a Common Lisp buffer.")))
 
 (defun cursor-line-column (view)
   (iter-line-column (cursor-iter (view-gtk-buffer view))))
@@ -23,7 +30,7 @@
 (defmacro define-motion (name documentation function failure)
   `(define-command ,name ()
      ,documentation
-     (:modes lisp-mode)
+     (:modes lisp-mode racket-mode clojure-mode)
      (let ((view (current-view))
            (syntax (current-syntax)))
        (multiple-value-bind (line column) (cursor-line-column view)
@@ -47,7 +54,7 @@
 
 (define-command mark-sexp ()
   "Select the next s-expression."
-  (:modes lisp-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
       (multiple-value-bind (l c) (forward-sexp-position (current-syntax) line column)
@@ -71,7 +78,7 @@
 
 (defun indent-lines (view first last)
   (let* ((gtk-buffer (view-gtk-buffer view))
-         (syntax (buffer-syntax (view-buffer view))))
+         (syntax (buffer-sexp-syntax (view-buffer view))))
     (with-user-action (gtk-buffer)
       (loop for line from first to last
             for column = (lisp-indentation syntax line)
@@ -80,7 +87,7 @@
 
 (define-command indent-line ()
   "Indent the current line, or the selected lines, as Lisp."
-  (:modes lisp-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let* ((view (current-view))
          (gtk-buffer (view-gtk-buffer view))
          (syntax (current-syntax)))
@@ -102,7 +109,7 @@
 
 (define-command newline-and-indent ()
   "Start a new line, indented as Lisp."
-  (:modes lisp-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let* ((view (current-view))
          (gtk-buffer (view-gtk-buffer view)))
     (with-user-action (gtk-buffer)
@@ -117,7 +124,7 @@
 
 (define-command indent-region ()
   "Indent the selected lines as Lisp."
-  (:modes lisp-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let* ((view (current-view))
          (gtk-buffer (view-gtk-buffer view)))
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
@@ -127,7 +134,7 @@
 
 (define-command indent-defun ()
   "Indent the whole top-level form around the cursor."
-  (:modes lisp-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
       (multiple-value-bind (sl sc el) (toplevel-form-bounds (current-syntax) line column)

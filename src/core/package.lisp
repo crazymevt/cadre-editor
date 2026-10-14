@@ -19,7 +19,7 @@
    ;; modes
    #:define-major-mode #:find-major-mode #:major-mode-for-file
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
-   #:fundamental-mode #:lisp-mode #:markdown-mode #:image-mode #:image-file-p
+   #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p
    ;; buffers
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
@@ -52,7 +52,9 @@
    #:fuzzy-match #:fuzzy-filter
    ;; Lisp syntax
    #:lex-line #:terminating-char-p #:whitespace-char-p #:token #:token-type #:token-start #:token-end #:token-depth #:token-subtype
-   #:dialect #:dialect-name #:dialect-title #:find-dialect
+   #:dialect #:dialect-name #:dialect-title #:dialect-opens #:find-dialect #:mode-dialect
+   #:+brackets+ #:closing-bracket #:close-bracket-char-p
+   #:mode-dialect-name #:lisp-family-mode-p
    #:*common-lisp-dialect* #:*racket-dialect* #:*clojure-dialect*
    #:make-lisp-syntax #:syntax-dialect #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
    #:ensure-lexed #:line-tokens #:line-start-state #:line-end-state
@@ -87,7 +89,7 @@
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec #:learn-indentation
-   #:token-face #:*faces* #:*paren-face-count*
+   #:token-face #:datum-comment-columns #:dialect-definitions #:*faces* #:*paren-face-count*
    ;; Swank
    #:remote-symbol #:remote-symbol-p #:remote-symbol-name #:remote-symbol= #:write-sexp #:read-sexp
    #:sexp-to-string #:swank-connection #:swank-connect #:swank-disconnect #:swank-rex

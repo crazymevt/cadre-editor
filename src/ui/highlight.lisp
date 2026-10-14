@@ -1,6 +1,7 @@
 ;;;; highlight.lisp — syntax colors, the current line, and matching parens
 ;;;;
-;;;; Each Lisp buffer has a LISP-SYNTAX (core) kept in step with its
+;;;; Each Lisp buffer (Common Lisp, Racket or Clojure) has a LISP-SYNTAX
+;;;; (core), read by its mode's dialect, kept in step with its
 ;;;; gtk:text-buffer through the buffer's insert-text and delete-range
 ;;;; signals. Highlighting runs when idle and only tags the lines on screen
 ;;;; (plus a margin) that changed since they were last tagged.
@@ -59,9 +60,16 @@
 
 ;;; Keeping the syntax in step with the text
 
-(defun buffer-syntax (buffer)
-  "BUFFER's Lisp syntax, or nil if it is not a Lisp buffer."
+(defun buffer-sexp-syntax (buffer)
+  "BUFFER's s-expression syntax in any Lisp (Common Lisp, Racket, Clojure), or
+nil: for editing, which works the same in all of them."
   (buffer-local buffer :syntax))
+
+(defun buffer-syntax (buffer)
+  "BUFFER's syntax if it holds Common Lisp, or nil: for what the connected
+Lisp (through Swank) and Common Lisp's own rules know about."
+  (let ((syntax (buffer-local buffer :syntax)))
+    (and syntax (eq (syntax-dialect syntax) *common-lisp-dialect*) syntax)))
 
 (defun attach-syntax (buffer)
   "Set up BUFFER's tags and, for Lisp buffers, its syntax. Safe to call again,
@@ -76,7 +84,7 @@ for instance after the buffer's major mode changes."
                               (lambda (b location text length)
                                 (declare (ignore b length))
                                 (markdown-lines-changed buffer (gtk:text-iter-get-line location))
-                                (let ((syntax (buffer-syntax buffer)))
+                                (let ((syntax (buffer-sexp-syntax buffer)))
                                   (when syntax
                                     (syntax-lines-changed syntax (gtk:text-iter-get-line location) 1
                                                           (1+ (count #\Newline text)))))))
@@ -84,7 +92,7 @@ for instance after the buffer's major mode changes."
                               (lambda (b start end)
                                 (declare (ignore b))
                                 (markdown-lines-changed buffer (gtk:text-iter-get-line start))
-                                (let ((syntax (buffer-syntax buffer)))
+                                (let ((syntax (buffer-sexp-syntax buffer)))
                                   (when syntax
                                     (let ((first (gtk:text-iter-get-line start)))
                                       (syntax-lines-changed syntax first
@@ -95,13 +103,15 @@ for instance after the buffer's major mode changes."
                                 (schedule-highlight buffer)
                                 (clear-inline-result buffer)
                                 (completion-buffer-changed buffer))))))
-    (let ((lisp (eq (buffer-major-mode buffer) 'lisp-mode)))
-      (cond ((and lisp (not (buffer-syntax buffer)))
-             (setf (buffer-local buffer :syntax) (make-lisp-syntax gtk-buffer)))
-            ((and (not lisp) (buffer-syntax buffer))
-             (setf (buffer-local buffer :syntax) nil)
-             (remove-syntax-tags gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
-                                 (gtk:text-buffer-get-end-iter gtk-buffer)))))
+    (let ((dialect (mode-dialect (buffer-major-mode buffer)))
+          (syntax (buffer-sexp-syntax buffer)))
+      (unless (and syntax (eq (syntax-dialect syntax) dialect))
+        (when syntax
+          (setf (buffer-local buffer :syntax) nil)
+          (remove-syntax-tags gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
+                              (gtk:text-buffer-get-end-iter gtk-buffer)))
+        (when dialect
+          (setf (buffer-local buffer :syntax) (make-lisp-syntax gtk-buffer :dialect dialect)))))
     (attach-markdown buffer)
     (attach-tree-sitter buffer)
     (schedule-highlight buffer)))
@@ -116,15 +126,22 @@ for instance after the buffer's major mode changes."
 (defun highlight-line (gtk-buffer syntax line &optional image)
   "Tag LINE's tokens with their faces. IMAGE (from image-context) adds the
 faces that come from what the connected Lisp knows."
-  (let ((string (text-line-string gtk-buffer line)))
+  (let ((string (text-line-string gtk-buffer line))
+        (dialect (syntax-dialect syntax)))
     (remove-syntax-tags gtk-buffer (line-iter gtk-buffer line) (line-end-iter gtk-buffer line))
     (loop for token across (line-tokens syntax line)
-          for face = (or (token-face token string)
+          for face = (or (token-face token string dialect)
                          (and image (eq (token-type token) :symbol) (image-face image syntax line token string)))
           when face
             do (gtk:text-buffer-apply-tag gtk-buffer (face-tag gtk-buffer face)
                                           (line-iter gtk-buffer line (token-start token))
-                                          (line-iter gtk-buffer line (token-end token))))))
+                                          (line-iter gtk-buffer line (token-end token))))
+    ;; What #; or #_ comments out looks like a comment, even across lines.
+    (loop for (start end) in (datum-comment-columns syntax line)
+          do (let ((from (line-iter gtk-buffer line start))
+                   (to (line-iter gtk-buffer line end)))
+               (remove-syntax-tags gtk-buffer from to)
+               (gtk:text-buffer-apply-tag gtk-buffer (face-tag gtk-buffer :comment) from to)))))
 
 (defun visible-lines (view &optional (margin 0))
   "The first and last lines on screen in VIEW, widened by MARGIN lines."
@@ -139,13 +156,14 @@ faces that come from what the connected Lisp knows."
             (min (1- count) (+ bottom margin (if (zerop (gdk:rectangle-height rect)) 60 0))))))
 
 (defun highlight-view (view)
-  (let ((syntax (buffer-syntax (view-buffer view)))
+  (let ((syntax (buffer-sexp-syntax (view-buffer view)))
         (gtk-buffer (view-gtk-buffer view)))
     (when syntax
       (multiple-value-bind (first last) (visible-lines view 40)
         (setf last (min last (1- (syntax-line-count syntax))))
         (ensure-lexed syntax last)
-        (loop with image = (image-context (view-buffer view) syntax first)
+        (loop with image = (and (buffer-syntax (view-buffer view))   ; the image knows Common Lisp only
+                                (image-context (view-buffer view) syntax first))
               for line from first to last
               for info = (line-info syntax line)
               unless (line-info-highlighted info)
@@ -203,7 +221,7 @@ faces that come from what the connected Lisp knows."
                 (end (gtk:text-buffer-get-end-iter gtk-buffer)))
             (gtk:text-buffer-remove-tag gtk-buffer match start end)
             (gtk:text-buffer-remove-tag gtk-buffer mismatch start end))
-          (let ((syntax (buffer-syntax buffer)))
+          (let ((syntax (buffer-sexp-syntax buffer)))
             (when (and syntax (eq (context-at syntax line column) :code))
               (multiple-value-bind (l1 c1 l2 c2 matched) (paren-match-at syntax line column)
                 (when l1

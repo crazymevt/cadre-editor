@@ -230,7 +230,8 @@ offsets) in parentheses; with nothing to wrap, insert a pair."
                   start :before (length close))))))
 
 (defun paredit-join (syntax line column)
-  "(a b) |(c d) → (a b |c d): join the expressions before and after the cursor."
+  "(a b) |(c d) → (a b |c d): join the expressions before and after the
+cursor, two lists with the same kind of bracket or two strings."
   (multiple-value-bind (pl pc) (backward-sexp-position syntax line column)
     (multiple-value-bind (nl nc) (forward-sexp-position syntax line column)
       (unless (and pl nl) (editor-error "Nothing to join"))
@@ -241,7 +242,7 @@ offsets) in parentheses; with nothing to wrap, insert a pair."
              (text (syntax-text syntax))
              (a (text-char text (1- before-end)))
              (b (text-char text after-start)))
-        (cond ((and (char= a #\)) (char= b #\())
+        (cond ((and (close-bracket-char-p a) (eql (closing-bracket b) a))
                (values (list (list after-start (1+ after-start) "")
                              (list (1- before-end) before-end ""))
                        after-start))
@@ -251,17 +252,21 @@ offsets) in parentheses; with nothing to wrap, insert a pair."
 
 ;;; Balanced typing (paredit mode)
 
-(defun after-character-escape-p (text point)
-  "True if the text just before POINT is #\\ (so the next character is a character name)."
-  (and (>= point 2)
-       (char= (text-char text (1- point)) #\\)
-       (char= (text-char text (- point 2)) #\#)))
+(defun after-character-escape-p (syntax point)
+  "True if the text just before POINT starts a character, so the next
+character is its name: #\\ in Common Lisp and Racket, \\ in Clojure."
+  (let ((text (syntax-text syntax)))
+    (and (>= point 1)
+         (char= (text-char text (1- point)) #\\)
+         (if (eq (dialect-name (syntax-dialect syntax)) :clojure)
+             (not (and (>= point 2) (char= (text-char text (- point 2)) #\\)))
+             (and (>= point 2) (char= (text-char text (- point 2)) #\#))))))
 
 (defun paredit-open (syntax line column &key (open "(") (close ")"))
   "Typing (: insert a pair in code, a lone ( in strings and comments."
   (let ((point (offset-of syntax line column)))
     (if (or (member (context-at syntax line column) '(:string :comment))
-            (after-character-escape-p (syntax-text syntax) point))
+            (after-character-escape-p syntax point))
         (values (list (list point point open)) point :after)
         (values (list (list point point (concatenate 'string open close))) point :before
                 ;; The cursor goes between the two: one character after POINT.
@@ -271,7 +276,7 @@ offsets) in parentheses; with nothing to wrap, insert a pair."
   "Typing ): move past the end of the list, removing spaces before it."
   (let ((point (offset-of syntax line column)))
     (if (or (member (context-at syntax line column) '(:string :comment))
-            (after-character-escape-p (syntax-text syntax) point))
+            (after-character-escape-p syntax point))
         (values (list (list point point close)) point :after)
         (multiple-value-bind (ol oc) (up-list-position syntax line column)
           (if (null ol)
@@ -309,7 +314,7 @@ offsets) in parentheses; with nothing to wrap, insert a pair."
                    (values '() (1+ point))
                    (values (list (list point point "\\\"")) point :after)))
       (:comment (values (list (list point point "\"")) point :after))
-      (t (if (after-character-escape-p (syntax-text syntax) point)
+      (t (if (after-character-escape-p syntax point)
              (values (list (list point point "\"")) point :after)
              (values (list (list point point "\"\"")) point :before 1))))))
 
