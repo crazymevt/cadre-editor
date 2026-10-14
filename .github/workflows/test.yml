@@ -23,6 +23,9 @@ jobs:
                --eval '(quicklisp-quickstart:install)' \
                --eval '(ql-util:without-prompting (ql:add-to-init-file))'
 
+      - name: Check out the docset library next to Cadre
+        run: git clone --depth 1 https://github.com/crazymevt/docset.git ../docset
+
       - name: Set a Git identity (the Git tests make commits)
         run: |
           git config --global user.name "Cadre CI"

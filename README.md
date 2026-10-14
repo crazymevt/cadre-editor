@@ -3,7 +3,7 @@
 [![Tests](https://github.com/crazymevt/cadre-editor/actions/workflows/test.yml/badge.svg)](https://github.com/crazymevt/cadre-editor/actions/workflows/test.yml)
 
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
-interface like VS Code's. Built on the [gtk4](../gtk4) bindings and libadwaita.
+interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4) bindings and libadwaita.
 
 ![Cadre editing Lisp, with Claude explaining the code in the side panel](docs/screenshot.png)
 
@@ -59,6 +59,10 @@ hasn't been tested on Linux yet.
 | GTK | 4.14 or newer | The interface |
 | libadwaita | 1.5 or newer | Window styling, light and dark themes |
 | The [gtk4 bindings](https://github.com/crazymevt/gtk4) | — | Checked out next to Cadre (`../gtk4`), or in `~/quicklisp/local-projects/` |
+| The [docset library](https://github.com/crazymevt/docset) | — | Reads the documentation the HyperSpec tab shows. Checked out next to Cadre (`../docset`), or in `~/quicklisp/local-projects/` |
+
+The gtk4 bindings and the docset library aren't in Quicklisp's dist, so you
+check them out yourself (step 3).
 
 On macOS:
 
@@ -76,23 +80,26 @@ On macOS:
    sbcl --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql:add-to-init-file)' --quit
    ```
 
-3. Check out the bindings, either next to Cadre, so the two folders are side
-   by side:
+3. Check out Cadre, the gtk4 bindings and the docset library side by side,
+   and link the two libraries into Quicklisp's local projects:
 
    ```sh
-   git clone https://github.com/crazymevt/gtk4.git ../gtk4
+   mkdir -p ~/projects/lisp && cd ~/projects/lisp
+   git clone https://github.com/crazymevt/cadre-editor.git
+   git clone https://github.com/crazymevt/gtk4.git
+   git clone https://github.com/crazymevt/docset.git
+   ln -s ~/projects/lisp/gtk4 ~/quicklisp/local-projects/gtk4
+   ln -s ~/projects/lisp/docset ~/quicklisp/local-projects/docset
+   cd cadre-editor
    ```
 
-   or where Quicklisp finds local projects, so your own programs can load
-   them too:
+   Cadre's scripts find the libraries next to it on their own. The links let
+   anything else load them: the REPL, your own GTK programs, and the
+   `docsets` project below. If Quicklisp doesn't see a new link, run
+   `(ql:register-local-projects)` once.
 
-   ```sh
-   git clone https://github.com/crazymevt/gtk4.git ~/quicklisp/local-projects/gtk4
-   ```
-
-   If both exist, Cadre uses `../gtk4`. To have one checkout serve both, put
-   it in one place and link the other to it, for example
-   `ln -s ~/projects/lisp/gtk4 ~/quicklisp/local-projects/gtk4`.
+   Any folder works. Cadre itself needs only one of the two: the libraries
+   side by side with it, or linked into Quicklisp's local projects.
 
 4. Start Cadre with `make run`. The first run takes a minute or two, while
    Quicklisp downloads the libraries and SBCL compiles Cadre and the bindings.
@@ -101,6 +108,13 @@ On macOS:
 On Linux (untested), install SBCL, GTK 4 and libadwaita from your
 distribution. On Debian or Ubuntu, that's
 `sudo apt install sbcl libgtk-4-1 libadwaita-1-0`. Then follow steps 2–4.
+
+To update, pull all three, since Cadre may need a newer gtk4 or docset:
+
+```sh
+cd ~/projects/lisp
+for repo in cadre-editor gtk4 docset; do git -C $repo pull; done
+```
 
 ### Optional
 
@@ -394,10 +408,24 @@ examples, with links to other entries. A symbol with several entries (`list`
 is a function and a class) offers a choice. Back and Forward are at the top
 of the page, and on `Alt+Left` / `Alt+Right` and the mouse's side buttons.
 Search HyperSpec (in the Lisp menu) finds any entry by name. The text is the
-dpANS3 draft the ANSI standard was made from, converted by
-[spec-browser](../spec-browser) into `data/docsets/common-lisp/`; when the
-gtk4 or raylib libraries have built their docsets (`make docset` in each),
-their entries show too.
+dpANS3 draft the ANSI standard was made from, converted by spec-browser into
+`data/docsets/common-lisp/`.
+
+Other libraries' documentation shows too, and lookups follow the package a
+symbol is written with (`bt:make-thread`):
+- **gtk4 and raylib**, once they've built their docsets (`make docset` in each).
+- **Any docset in `~/.local/share/docsets/`.** The
+  [docsets](https://github.com/crazymevt/docsets) project writes them for
+  other libraries: bordeaux-threads has full pages, and any library can be
+  documented from its docstrings. To add bordeaux-threads:
+
+  ```sh
+  git clone https://github.com/crazymevt/docsets.git ~/projects/lisp/docsets
+  make -C ~/projects/lisp/docsets docset LIBRARY=bordeaux-threads
+  ```
+
+  It needs the docset library linked into Quicklisp's local projects, as in
+  [Setup](#setup).
 
 ### Pictures
 

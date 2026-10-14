@@ -8,7 +8,11 @@
 (require :asdf)
 (let ((*standard-output* (make-broadcast-stream))
       (*error-output* (make-broadcast-stream)))
-  (push (merge-pathnames "../" (directory-namestring *load-truename*)) asdf:*central-registry*)
+  (let ((cadre (merge-pathnames "../" (directory-namestring *load-truename*))))
+    (push cadre asdf:*central-registry*)
+    ;; The docset library, next to Cadre if it's there (else Quicklisp finds it)
+    (when (probe-file (merge-pathnames "../docset/docset.asd" cadre))
+      (push (merge-pathnames "../docset/" cadre) asdf:*central-registry*)))
   (asdf:load-system "cadre/core"))
 
 (defpackage #:fake-claude (:use #:cl #:cadre))
