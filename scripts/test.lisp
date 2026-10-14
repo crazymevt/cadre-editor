@@ -6,4 +6,4 @@
   (when found (push (uiop:pathname-directory-pathname found) asdf:*central-registry*)))
 (handler-bind ((warning (lambda (w) (format *error-output* "~&WARNING: ~a~%" w) (muffle-warning w))))
   (ql:quickload :cadre/tests :silent t))
-(uiop:quit (if (parachute:status (parachute:test :cadre-tests :report 'parachute:plain)) 0 1))
+(uiop:quit (if (eq :passed (parachute:status (parachute:test :cadre-tests :report 'parachute:plain))) 0 1))
