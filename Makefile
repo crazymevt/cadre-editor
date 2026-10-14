@@ -2,7 +2,7 @@ SBCL ?= sbcl
 LISP = $(SBCL) --dynamic-space-size 4096 --non-interactive
 DIR ?= .
 
-.PHONY: run test smoke smoke-list perf app install-app
+.PHONY: run test smoke smoke-list perf core app install-app release-macos release-linux
 
 # Start Cadre on a folder: make run DIR=~/projects/foo
 run:
@@ -25,10 +25,13 @@ smoke-list:
 perf:
 	$(LISP) --load scripts/perf.lisp
 
-# The macOS app: build/Cadre.app (GTK and the tools come from Homebrew)
-app:
+# The image the packages run: build/app/cadre.core
+core:
 	$(LISP) --load scripts/build-app.lisp
-	scripts/make-app.sh
+
+# The macOS app: build/Cadre.app (GTK and the tools come from Homebrew)
+app: core
+	SBCL=$(SBCL) scripts/make-app.sh
 
 # Build the app and put it in /Applications
 install-app: app
@@ -36,3 +39,13 @@ install-app: app
 	ditto build/Cadre.app /Applications/Cadre.app
 	@echo "Installed /Applications/Cadre.app"
 
+# Release packages in dist/ (docs/RELEASING.md). The macOS app carries its
+# own GTK, with the source of its GPL and LGPL libraries beside it; it's signed and notarized when CODESIGN_IDENTITY and the
+# NOTARY_* variables are set.
+release-macos: core
+	SBCL=$(SBCL) scripts/make-app.sh --bundle
+	packaging/macos/package.sh
+	packaging/macos/sources.sh
+
+release-linux: core
+	SBCL=$(SBCL) packaging/linux/package.sh

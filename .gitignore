@@ -2,3 +2,4 @@
 *.dx64fsl
 build/
 .DS_Store
+dist/

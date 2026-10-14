@@ -102,11 +102,68 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
 
 ;;; The macOS app (scripts/build-app.lisp saves an image that starts here)
 
+(defun runtime-directory ()
+  "The folder of the SBCL runtime running Cadre (Contents/MacOS/ in the app)."
+  (let ((exe (and sb-ext:*runtime-pathname* (probe-file sb-ext:*runtime-pathname*))))
+    (and exe (uiop:pathname-directory-pathname exe))))
+
 (defun bundle-resource-directory ()
-  "Contents/Resources/cadre/ of the app bundle this executable is in, or nil."
-  (let* ((exe (and sb-ext:*runtime-pathname* (probe-file sb-ext:*runtime-pathname*)))
-         (resources (and exe (merge-pathnames "../Resources/cadre/" (uiop:pathname-directory-pathname exe)))))
-    (and resources (probe-file resources))))
+  "Cadre's own files in a package: Contents/Resources/cadre/ of the macOS
+app, or share/cadre/ beside lib/cadre/ (the runtime's folder) on Linux. Nil
+when running from a source checkout."
+  (let ((dir (runtime-directory)))
+    (when dir
+      (some (lambda (relative) (probe-file (merge-pathnames relative dir)))
+            '("../Resources/cadre/" "../../share/cadre/")))))
+
+;;; GTK bundled in the macOS app (scripts/make-app.sh --bundle)
+
+(defvar *bundle-environment* '()
+  "The variables set to point GTK at the app's own copies, with the values
+they had before, so the programs Cadre starts don't get them.")
+
+(defun set-bundle-variable (name value)
+  (push (cons name (uiop:getenv name)) *bundle-environment*)
+  (sb-posix:setenv name value 1))
+
+(defun use-bundled-gtk ()
+  "When the app carries its own GTK (Contents/Frameworks/), keep it from
+loading Homebrew's modules, which would bring a second copy of GLib into
+the process: gdk-pixbuf's image loaders come from the app (their list,
+written with the app's path, goes in the state folder) and GIO's modules
+from nowhere. The gtk4 bindings already pointed XDG_DATA_DIRS and
+GSETTINGS_SCHEMA_DIR at Contents/Resources/share/."
+  (let* ((dir (runtime-directory))
+         (frameworks (and dir (probe-file (merge-pathnames "../Frameworks/" dir))))
+         (template (and dir (probe-file (merge-pathnames "../Resources/gdk-pixbuf-loaders.cache" dir)))))
+    (when frameworks
+      ;; What the bindings set: Resources/share/, before any earlier
+      ;; XDG_DATA_DIRS.
+      (let ((share (probe-file (merge-pathnames "../Resources/share/" dir))))
+        (when share
+          (dolist (name '("XDG_DATA_DIRS" "GSETTINGS_SCHEMA_DIR"))
+            (let ((value (uiop:getenv name)))
+              (when (and value (uiop:string-prefix-p (namestring share) value))
+                (let ((colon (position #\: value)))
+                  (push (cons name (and colon (string= name "XDG_DATA_DIRS") (subseq value (1+ colon))))
+                        *bundle-environment*)))))))
+      (set-bundle-variable "GIO_MODULE_DIR" (namestring (merge-pathnames "gio-modules/" frameworks)))
+      (when template
+        (let ((cache (merge-pathnames "gdk-pixbuf-loaders.cache" (state-directory)))
+              (text (uiop:frob-substrings (uiop:read-file-string template) '("@FRAMEWORKS@")
+                                          (string-right-trim "/" (namestring frameworks)))))
+          (unless (and (probe-file cache) (string= text (uiop:read-file-string cache)))
+            (ensure-directories-exist cache)
+            (with-open-file (out cache :direction :output :if-exists :supersede)
+              (write-string text out)))
+          (set-bundle-variable "GDK_PIXBUF_MODULE_FILE" (namestring cache))))
+      ;; Read them now: GLib keeps what it read, so they can be put back.
+      (cffi:foreign-funcall "g_get_system_data_dirs" :pointer)
+      (cffi:foreign-funcall "g_settings_schema_source_get_default" :pointer)
+      (cffi:foreign-funcall "g_vfs_get_default" :pointer)
+      (cffi:foreign-funcall "g_slist_free" :pointer (cffi:foreign-funcall "gdk_pixbuf_get_formats" :pointer) :void)
+      (loop for (name . value) in *bundle-environment*
+            do (if value (sb-posix:setenv name value 1) (sb-posix:unsetenv name))))))
 
 (defun app-arguments (arguments)
   "ARGUMENTS from the command line as a folder to open and files to open:
@@ -149,6 +206,7 @@ shell's environment when started from the Finder or the Dock (which give
 none), and a folder or files from the command line."
   (setf *random-state* (make-random-state t))
   (setf *resource-directory* (bundle-resource-directory))
+  (use-bundled-gtk)
   ;; Started with macOS malloc debugging (to find a crash), it is already on
   ;; for Cadre; the programs it runs needn't log too, and the CLI's notices
   ;; about it would garble the output Cadre reads.

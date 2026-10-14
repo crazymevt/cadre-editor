@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Cadre
+GenericName=Lisp Editor
+Comment=Cadre, a Lisp editor
+Exec=cadre %F
+Icon=io.github.crazymevt.Cadre
+Terminal=false
+Categories=Development;IDE;TextEditor;
+MimeType=text/x-common-lisp;text/plain;inode/directory;
+StartupWMClass=io.github.crazymevt.Cadre
+StartupNotify=true
