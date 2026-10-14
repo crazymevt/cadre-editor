@@ -207,6 +207,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Compile and load file | `Ctrl+Alt+Return` | `C-c C-k` |
 | Go to definition / back | `F12` / `Ctrl+Alt+-` | `M-.` / `M-,` |
 | Describe symbol | `Ctrl+K Ctrl+I` | `C-c C-d d` |
+| Look up in the HyperSpec | `Ctrl+K H` | `C-c C-d h` |
 | Complete symbol | `Ctrl+Space` | `C-M-i` |
 | Next / previous compiler note | `F8` / `Shift+F8` | `M-n` / `M-p` |
 | Show the REPL | `` Ctrl+` `` | `C-c C-z` |
@@ -383,6 +384,20 @@ preview beside the file: it redraws as you type, scrolls along with
 the source, and its links open (web links in your browser, `#anchors` and
 other files in Cadre). To read a file without editing it, right-click it in
 the explorer and choose Open Preview.
+
+### The HyperSpec
+
+Right-click a symbol in Lisp code and choose Look Up in HyperSpec
+(`Ctrl+K H`, `C-c C-d h` in Emacs) to read the standard's entry for it in a
+tab beside the code: syntax, arguments, description and highlighted
+examples, with links to other entries. A symbol with several entries (`list`
+is a function and a class) offers a choice. Back and Forward are at the top
+of the page, and on `Alt+Left` / `Alt+Right` and the mouse's side buttons.
+Search HyperSpec (in the Lisp menu) finds any entry by name. The text is the
+dpANS3 draft the ANSI standard was made from, converted by
+[spec-browser](../spec-browser) into `data/docsets/common-lisp/`; when the
+gtk4 or raylib libraries have built their docsets (`make docset` in each),
+their entries show too.
 
 ### Pictures
 

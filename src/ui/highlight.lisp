@@ -54,7 +54,8 @@
                                     when (rv-gtk-buffer review) collect (rv-gtk-buffer review))))
     (style-buffer-tags gtk-buffer)
     (restyle-named-tags gtk-buffer)
-    (restyle-preview-tags gtk-buffer)))
+    (restyle-preview-tags gtk-buffer)
+    (restyle-hyperspec-tags gtk-buffer)))
 
 ;;; Keeping the syntax in step with the text
 
@@ -172,6 +173,7 @@ faces that come from what the connected Lisp knows."
 
 (defun update-cursor-decorations (view)
   (unless (or (buffer-local (view-buffer view) :preview-of)  ; a page, not text being edited
+              (hyperspec-buffer-p (view-buffer view))
               (image-buffer-p (view-buffer view)))         ; a picture
     (update-cursor-decorations-1 view)))
 

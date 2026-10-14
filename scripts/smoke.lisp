@@ -1634,6 +1634,108 @@ d" 0 0)
 (then 300
   (check "closing that preview lets the file go too" (and (null (preview-buffer)) (null (find-buffer "guide.md")))))
 
+;;; The HyperSpec
+(section "hyperspec")
+(defun hyperspec-buffer () (find-if #'cadre-ui::hyperspec-buffer-p (buffer-list)))
+(defun hyperspec-text () (buffer-string (hyperspec-buffer)))
+(defun hyperspec-page () (cadre-ui::buffer-local (hyperspec-buffer) :hyperspec))
+
+(open-files "src/m1.lisp")
+
+(then 200
+  ;; Earlier sections edit m1.lisp; start from what's on disk.
+  (text-replace-contents (buffer-text (find-buffer "m1.lisp"))
+                         (uiop:read-file-string (merge-pathnames "src/m1.lisp" *root*)))
+  (setf (buffer-modified-p (find-buffer "m1.lisp")) nil)
+  (set-cursor 0 3)
+  (check "Lisp's right-click menu offers Look Up in HyperSpec"
+         (find "Look Up in HyperSpec" (menu-entries (cadre-ui::editor-context-menu (current-buffer)))
+               :key #'car :test #'string=))
+  (call-command 'cadre-ui::hyperspec-look-up))
+
+(then 600
+  (let ((buffer (hyperspec-buffer)))
+    (check "it opens a HyperSpec tab" (and buffer (cadre-ui::buffer-views *window* buffer)))
+    (check "beside the code, in another group"
+           (and buffer (not (eq (cadre-ui::view-group (first (cadre-ui::buffer-views *window* buffer)))
+                                (cadre-ui::view-group (current-view))))))
+    (check "the code keeps the focus" (string= "m1.lisp" (buffer-name (current-buffer))) (buffer-name (current-buffer)))
+    (check "showing DEFUN's entry"
+           (and (search "defun   Macro" (hyperspec-text)) (search "Syntax" (hyperspec-text))
+                (search "Examples" (hyperspec-text)))
+           (subseq (hyperspec-text) 0 (min 200 (length (hyperspec-text)))))
+    (check "named for it" (string= "HyperSpec: defun" (buffer-name buffer)) (buffer-name buffer))
+    (check "with links to other entries"
+           (find :entry (cadre-ui::sp-links (hyperspec-page)) :key (lambda (l) (first (third l)))))
+    (check "examples are highlighted as Lisp"
+           (let* ((gtk-buffer (buffer-text buffer))
+                  (at (search "(defun " (hyperspec-text) :from-end t)))
+             (and at (gtk:text-iter-has-tag (cadre-ui::iter-at gtk-buffer (1+ at))
+                                            (cadre-ui::face-tag gtk-buffer :definer)))))
+    (check "it needs no saving" (not (cadre-ui::buffer-needs-saving-p buffer)))
+    (let ((state (cadre-ui::view-state (first (cadre-ui::buffer-views *window* buffer)))))
+      (check "the session remembers the entry" (equal '(:hyperspec "common-lisp" "macro/defun") state) state)
+      (let ((group (cadre-ui::view-group (first (cadre-ui::buffer-views *window* buffer)))))
+        (cadre-ui::close-view *window* (first (cadre-ui::buffer-views *window* buffer)))
+        (cadre-ui::restore-group *window* group (list :group :files (list state) :selected 0))
+        (check "and restores it"
+               (and (cadre-ui::buffer-views *window* (hyperspec-buffer))
+                    (equal "macro/defun" (cadre-ui::sp-entry-id (hyperspec-page))))))))
+  (screenshot "hyperspec")
+  (let ((link (find-if (lambda (l) (and (eq :entry (first (third l)))
+                                        (not (equal "macro/defun" (third (third l))))))
+                       (reverse (cadre-ui::sp-links (hyperspec-page))))))
+    (cadre-ui::follow-hyperspec-link (third link))))
+
+(then 400
+  (let ((page (hyperspec-page)))
+    (check "a link opens its entry in the same tab"
+           (and (not (equal "macro/defun" (cadre-ui::sp-entry-id page)))
+                (= 1 (count-if #'cadre-ui::hyperspec-buffer-p (buffer-list))))
+           (cadre-ui::sp-entry-id page))
+    (check "with Back at the top" (string= "← Back" (subseq (hyperspec-text) 0 6)))
+    (press "M-Left")))
+
+(then 400
+  (check "Alt+Left goes back" (equal "macro/defun" (cadre-ui::sp-entry-id (hyperspec-page)))
+         (cadre-ui::sp-entry-id (hyperspec-page)))
+  (check "and Forward is offered" (search "Forward →" (subseq (hyperspec-text) 0 30)))
+  (press "M-Right"))
+
+(then 400
+  (check "Alt+Right goes forward" (not (equal "macro/defun" (cadre-ui::sp-entry-id (hyperspec-page)))))
+  (let ((view (first (cadre-ui::buffer-views *window* (find-buffer "m1.lisp")))))
+    (cadre-ui::activate-group *window* (cadre-ui::view-group view))
+    (cadre-ui::focus-view view))
+  (set-cursor 1 3)
+  (call-command 'cadre-ui::hyperspec-look-up))
+
+(then 400
+  (let ((items (mapcar (lambda (p) (cadre-docset:record-id (cdr p))) (cadre-ui::picker-items (picker)))))
+    (check "* is a function and a variable: a choice of the two"
+           (equal '("function/*" "variable/*") (sort (copy-list items) #'string<)) items))
+  (cadre-ui::choose (picker)))
+
+(then 400
+  (check "choosing one shows it" (member (cadre-ui::sp-entry-id (hyperspec-page)) '("function/*" "variable/*") :test #'equal)
+         (cadre-ui::sp-entry-id (hyperspec-page)))
+  (cadre-ui::show-hyperspec-entry "common-lisp" "function/equal"))
+
+(then 400
+  (screenshot "hyperspec-lists")
+  (check "a qualified name too"
+         (equal "function/mapc" (cadre-docset:record-id (cdr (first (cadre-ui::hyperspec-records "#'cl:mapcar"))))))
+  (let ((*window* *window*))
+    (cadre-ui::hyperspec-search-for "hash-table-count"))
+  (check "Search HyperSpec picks from every entry"
+         (> (length (cadre-ui::picker-items (picker))) 1000) (length (cadre-ui::picker-items (picker))))
+  (cadre-ui::close-picker (picker))
+  (let ((view (first (cadre-ui::buffer-views *window* (hyperspec-buffer)))))
+    (cadre-ui::close-view *window* view)))
+
+(then 300
+  (check "the tab closes" (null (cadre-ui::buffer-views *window* (hyperspec-buffer)))))
+
 ;;; Files from the explorer
 (section "explorer")
 (defun choose-name (text)

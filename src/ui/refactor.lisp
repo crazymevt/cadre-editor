@@ -110,6 +110,7 @@ editor, wrap the selection in the pair and keep it selected. Returns t if so."
     (when lisp
       (let ((lisp-section (gio:menu-new)))
         (command-item lisp-section "Describe Symbol" 'describe-symbol)
+        (command-item lisp-section "Look Up in HyperSpec" 'hyperspec-look-up)
         (command-item lisp-section "Macroexpand" 'expand-macro-once)
         (when (eq (buffer-major-mode buffer) 'lisp-mode)
           (command-item lisp-section "Evaluate or Compile Form" 'compile-or-eval-defun))

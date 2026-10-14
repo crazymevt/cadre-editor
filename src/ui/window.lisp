@@ -179,6 +179,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
      (:submenu "Lisp"
       (:section ("Inspect…" inspect-value) ("Find References" find-references)
                 ("Macroexpand" expand-macro-once))
+      (:section ("Search HyperSpec…" hyperspec-search))
       (:section ("Trace Function…" trace-function) ("Show Traces" show-traces))
       (:section ("Restart Lisp" restart-lisp)))
      (:submenu "Claude"

@@ -229,6 +229,7 @@
   "M-," 'pop-definition
   "C-c C-d d" 'describe-symbol
   "C-c C-d C-d" 'describe-symbol
+  "C-c C-d h" 'hyperspec-look-up
   "C-M-i" 'complete-symbol
   "M-TAB" 'complete-symbol
   "M-n" 'next-note
@@ -263,6 +264,7 @@
   "F12" 'edit-definition
   "C-M--" 'pop-definition
   "C-k C-i" 'describe-symbol
+  "C-k h" 'hyperspec-look-up
   "C-SPC" 'complete-symbol
   "F8" 'next-note
   "S-F8" 'previous-note
@@ -306,6 +308,12 @@
   "RET" 'markdown-newline
   "TAB" 'markdown-indent
   "S-TAB" 'markdown-outdent)
+
+;;; The HyperSpec tab: back and forward as in a browser.
+(bind-keys (major-mode-keymap (find-major-mode 'hyperspec-mode))
+  "M-Left" 'hyperspec-back
+  "M-Right" 'hyperspec-forward
+  "DEL" 'hyperspec-back)
 
 ;;; Pictures: the zoom keys scale the picture, not the text; + - and 0 too.
 (bind-keys (major-mode-keymap (find-major-mode 'image-mode))

@@ -4,7 +4,7 @@
 #   scripts/make-app.sh        (make app runs it)
 #
 # Writes build/Cadre.app: the executable, Cadre's own files (icons, the
-# bundled Swank, the tree-sitter shim's source) in Contents/Resources/cadre,
+# bundled Swank, the tree-sitter shim's source, the HyperSpec's docsets) in Contents/Resources/cadre,
 # and the icon. GTK, libadwaita and the optional tools (sbcl for the REPL,
 # git, tree-sitter, VTE, claude) come from Homebrew on the Mac running it.
 set -euo pipefail
@@ -22,6 +22,8 @@ cp -R icons "$app/Contents/Resources/cadre/"
 mkdir -p "$app/Contents/Resources/cadre/vendor"
 cp -R vendor/slime "$app/Contents/Resources/cadre/vendor/"
 cp src/core/tree-sitter/shim.c "$app/Contents/Resources/cadre/src/core/tree-sitter/"
+mkdir -p "$app/Contents/Resources/cadre/data"
+cp -R data/docsets "$app/Contents/Resources/cadre/data/"
 
 # The icon, from packaging/macos/Cadre.svg.
 iconset=build/app/Cadre.iconset

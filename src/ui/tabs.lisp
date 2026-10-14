@@ -107,7 +107,8 @@ one if it has none. Returns the view."
 (defun add-view (win buffer &optional (group (window-active-group win)))
   (let* ((preview (buffer-local buffer :preview-of))
          (image (image-buffer-p buffer))
-         (view (make-editor-view buffer :gutter (not (or preview image)) :on-cursor-moved
+         (hyperspec (hyperspec-buffer-p buffer))
+         (view (make-editor-view buffer :gutter (not (or preview image hyperspec)) :on-cursor-moved
                                  (lambda (view)
                                    (update-cursor-decorations view)
                                    (schedule-autodoc view)
@@ -120,6 +121,7 @@ one if it has none. Returns the view."
     (cond
       (preview (setup-preview-view view))
       (image (setup-image-view view))
+      (hyperspec (setup-hyperspec-view view))
       (t (setup-note-tooltips view)
          (setup-symbol-hover view)
          (setup-context-menu view)
