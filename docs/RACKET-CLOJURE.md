@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 and R1 are built.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0, R1 and R2 are built.
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -114,28 +114,46 @@ As built in R1 (2026-10-14):
 
 ### 2.3 A connection protocol, with Swank as one back end
 
-The UI calls Swank directly in about 80 places. The busiest files are
-`debugger.lisp`, `claude-tools.lisp`, `systems.lisp`, `inspector.lisp`,
-`lisp-eval.lisp`, `stepper.lisp` and `presentations.lisp`. DESIGN.md 8.1
-already planned a `connection` protocol for Slynk. This plan builds it now:
+As built in R2 (2026-10-14):
 
-- `src/core/backend.lisp`: a `language-connection` class and generic
-  functions with callbacks on the main thread, as `swank-rex` has now:
-  `backend-eval`, `backend-load-file`, `backend-completions`,
-  `backend-arglist`, `backend-describe`, `backend-find-definitions`,
-  `backend-xref`, `backend-macroexpand`, `backend-interrupt`,
-  `backend-repl-send`, `backend-set-namespace`.
-- `backend-supports-p connection feature` (`:inspector`, `:restarts`,
-  `:stepper`, `:trace`, `:systems`, `:presentations`, …). Pages, menus and
-  palette commands a connection can't do are hidden, not greyed out.
-- `swank-connection` implements all of them with the calls it makes today.
-  This is a refactor with no change in behaviour. `make test` and the full
-  `make smoke` must pass unchanged before any new back end is added.
-- Connections are per dialect. A buffer uses the default connection for its
-  dialect, and the status bar shows that one (`Racket 9.3 · my-app/main.rkt`,
-  `Clojure 1.12 · user`). Several can be open at once, as now.
-- REPL, Output and Debugger pages take their connection from the current
-  buffer, or from the page's own picker.
+- `src/core/backend.lisp`: a `lisp-connection` class (host, port, state,
+  package, prompt, process), which `swank-connection` now extends, and
+  generic functions for each request: `backend-eval`, `backend-eval-region`,
+  `backend-compile-form`, `backend-compile-file`, `backend-load-file`,
+  `backend-describe`, `backend-arglist`, `backend-autodoc`,
+  `backend-completions`, `backend-find-definitions`, `backend-xref`,
+  `backend-macroexpand`, `backend-repl-eval`, `backend-set-package`,
+  `backend-interrupt` and `backend-disconnect`, plus `connection-language`,
+  `connection-implementation` and `backend-supports-p`. A request a back end
+  doesn't implement signals an editor-error naming the Lisp ("Clojure 1.12
+  can't expand macros").
+- Replies keep Swank's shapes (listed at the top of `backend.lisp`), so the
+  UI's parsing (`parse-location`, `parse-compilation-result`, the completion
+  and xref readers) is unchanged, and the nREPL and Racket back ends
+  translate their answers into those shapes.
+- `src/core/swank/backend.lisp` implements every request with the Swank call
+  the UI made before, so Common Lisp behaves as it did. `make test` (with
+  new tests through the protocol, against a real SBCL and a fake back end)
+  and the full `make smoke` pass.
+- The UI calls requests through `request` (`session.lisp`), which reports
+  errors in callbacks as `rex` does. Evaluating, compiling, loading, go to
+  definition, describe, argument hints, completion, cross-references,
+  macroexpansion, the REPL's input and package, interrupting, and Claude's
+  describe/arglist/definition/xref/macroexpand tools now go through it.
+- Still Swank's own calls, since only Swank has them: the debugger and its
+  restarts, the inspector, the stepper, the Trace page, ASDF systems,
+  presentations, image colours, GTK apps, running the project's program,
+  and Claude's evaluate (with output), compile, load-system, test-system
+  and apropos tools.
+- Connections per language: `*connection*` stays the Common Lisp one, and
+  `*connections*` holds one per other language, started by the function a
+  back end puts in `*connection-starters*`. `with-connection` takes
+  `:language`. Until R3/R4 register starters, it says "Cadre can't run
+  Clojure code yet".
+- Moved to R3: hiding pages and commands a connection can't do. With Swank
+  as the only back end there is nothing to hide yet, and nothing to test it
+  with. The status bar, REPL page and Debugger page choosing their
+  connection from the current buffer also come with R3.
 
 ### 2.4 Clojure: nREPL, with cider-nrepl when we start the process
 
@@ -250,8 +268,8 @@ Each milestone ends with `make test` and the relevant smoke sections passing
 | --- | --- | --- | --- |
 | R0 | **Dialects in the lexer:** `dialect` struct, bracket kinds, datum comments, Racket and Clojure readers; CL unchanged | `lisp/lexer.lisp`, new `lisp/dialect.lisp`, tests | M |
 | R1 | **Modes and static editing** (built): `racket-mode`, `clojure-mode`, editing in all three Lisps, highlighting tables, paredit with brackets, indentation tables, outline and folding, comment toggling. Project detection and New Project templates moved to R3/R4 | `modes.lisp`, `paredit.lisp`, `indent.lisp`, `definitions.lisp`, `ui/highlight.lisp`, `ui/outline.lisp`, `new-project` | L |
-| R2 | **Connection protocol:** `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
-| R3 | **Clojure live:** project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
+| R2 | **Connection protocol** (built): `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
+| R3 | **Clojure live:** pages and commands a connection can't do hidden; status bar, REPL and Debugger pages following the buffer's language; `gtk-thread-source` only for Common Lisp; project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
 | R4 | **Racket live:** project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/*.rkt`, `core/racket.lisp` | L |
 | R5 | **Polish:** docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
 

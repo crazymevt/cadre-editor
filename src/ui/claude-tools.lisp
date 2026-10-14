@@ -48,6 +48,20 @@ wait for that result here."
         (second outcome)
         (tool-error "The Lisp aborted the request~@[: ~a~]" (second outcome)))))
 
+(defun backend-sync (function &rest arguments)
+  "Call FUNCTION, one of the BACKEND-… requests, on the connected Lisp with
+ARGUMENTS (its own, then keywords such as :package), and wait for its value."
+  (ensure-lisp)
+  (let ((outcome (wait-for (lambda (done)
+                             (apply #'request function *connection*
+                                    (append arguments
+                                            (list :on-ok (lambda (v) (funcall done (list :ok v)))
+                                                  :on-abort (lambda (r) (funcall done (list :abort r)))))))
+                           :timeout 60)))
+    (if (eq (first outcome) :ok)
+        (second outcome)
+        (tool-error "The Lisp aborted the request~@[: ~a~]" (second outcome)))))
+
 (defun tool-package (args)
   (or (tool-argument args "package")
       (on-main (let ((view (selected-view *window*)))
@@ -179,16 +193,14 @@ the code's package, the project folder, and the connected Lisp."
   "Describe a symbol in the running Lisp image: what it names, its documentation, arglist, value."
   (("symbol" "string" "The symbol, e.g. \"my-pkg::foo\"" :required t)
    ("package" "string" "The package to read it in (default: the current file's)"))
-  (swank-sync (swank-call "swank:describe-symbol" (tool-argument args "symbol" :required t))
-              :package (tool-package args)))
+  (backend-sync #'backend-describe (tool-argument args "symbol" :required t) :package (tool-package args)))
 
 (define-mcp-tool "arglist" (args)
   "The arglist of a function or macro in the running image."
   (("symbol" "string" "The operator's name" :required t)
    ("package" "string" "The package to read it in"))
   (let ((package (tool-package args)))
-    (or (swank-sync (swank-call "swank:operator-arglist" (tool-argument args "symbol" :required t) package)
-                    :package package)
+    (or (backend-sync #'backend-arglist (tool-argument args "symbol" :required t) :package package)
         "Not a function or macro.")))
 
 (defun locations-text (entries)
@@ -206,13 +218,13 @@ the code's package, the project folder, and the connected Lisp."
   "Where a symbol is defined (functions, methods, classes, variables), from the running image."
   (("symbol" "string" "The symbol" :required t)
    ("package" "string" "The package to read it in"))
-  (let ((found (swank-sync (swank-call "swank:find-definitions-for-emacs" (tool-argument args "symbol" :required t))
-                           :package (tool-package args))))
+  (let ((found (backend-sync #'backend-find-definitions (tool-argument args "symbol" :required t)
+                             :package (tool-package args))))
     (if found (locations-text found) "No definitions found.")))
 
 (defun xref-tool (kind args)
-  (let ((found (swank-sync (swank-call "swank:xref" kind (tool-argument args "symbol" :required t))
-                           :package (tool-package args))))
+  (let ((found (backend-sync #'backend-xref (list kind) (tool-argument args "symbol" :required t)
+                             :package (tool-package args))))
     (cond ((eq found :not-implemented) "This Lisp cannot answer that.")
           ((null found) "None found.")
           (t (locations-text found)))))
@@ -234,9 +246,8 @@ the code's package, the project folder, and the connected Lisp."
   (("form" "string" "The form, as source text" :required t)
    ("all" "boolean" "Expand every macro inside it, not just the outer one")
    ("package" "string" "The package to read it in"))
-  (swank-sync (swank-call (if (jtrue-p (tool-argument args "all")) "swank:swank-macroexpand-all" "swank:swank-macroexpand-1")
-                          (tool-argument args "form" :required t))
-              :package (tool-package args)))
+  (backend-sync #'backend-macroexpand (tool-argument args "form" :required t)
+                :all (jtrue-p (tool-argument args "all")) :package (tool-package args)))
 
 (define-mcp-tool "apropos" (args)
   "Search the running image's symbols whose names contain a string."

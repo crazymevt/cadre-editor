@@ -31,7 +31,8 @@ one just before it, or else the list around it."
   (or (find-buffer "*Macroexpansion*")
       (make-buffer :name "*Macroexpansion*" :text (make-gtk-text) :major-mode 'lisp-mode)))
 
-(defun expand-form (swank-function)
+(defun expand-form (&rest kind)
+  "Expand the form at the cursor; KIND is passed to BACKEND-MACROEXPAND (:all t, :compiler t)."
   (let ((view (current-view)))
     (multiple-value-bind (sl sc el ec) (form-for-expansion view)
       (unless sl (editor-error "No form at the cursor"))
@@ -40,12 +41,13 @@ one just before it, or else the list around it."
             (in-place (eq (view-buffer view) (find-buffer "*Macroexpansion*"))))
         (flash-region view sl sc el ec)
         (with-connection (connection)
-          (rex connection (swank-call swank-function text) :package package
-               :on-ok (lambda (expansion)
-                        (let ((expansion (string-right-trim '(#\Newline #\Space) expansion)))
-                          (if in-place
-                              (replace-with-expansion view sl sc el ec expansion)
-                              (show-expansion expansion package))))))))))
+          (apply #'request #'backend-macroexpand connection text :package package
+                 :on-ok (lambda (expansion)
+                          (let ((expansion (string-right-trim '(#\Newline #\Space) expansion)))
+                            (if in-place
+                                (replace-with-expansion view sl sc el ec expansion)
+                                (show-expansion expansion package))))
+                 kind))))))
 
 (defun show-expansion (expansion package)
   (let ((buffer (macroexpansion-buffer)))
@@ -66,14 +68,14 @@ one just before it, or else the list around it."
 (define-command expand-macro-once ()
   "Expand the macro form at the cursor once."
   (:modes lisp-mode)
-  (expand-form "swank:swank-macroexpand-1"))
+  (expand-form))
 
 (define-command expand-macro-all ()
   "Expand the form at the cursor completely, including every macro inside it."
   (:modes lisp-mode)
-  (expand-form "swank:swank-macroexpand-all"))
+  (expand-form :all t))
 
 (define-command expand-compiler-macro ()
   "Expand the form at the cursor with its compiler macro, if it has one."
   (:modes lisp-mode)
-  (expand-form "swank:swank-compiler-macroexpand-1"))
+  (expand-form :compiler t))

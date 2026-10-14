@@ -1,9 +1,15 @@
-;;;; session.lisp — the connection to the Lisp being edited
+;;;; session.lisp — the connections to the Lisps being edited
 ;;;;
-;;;; There is one connection at a time (for now). Commands that need the
-;;;; Lisp use WITH-CONNECTION: if there is none, Cadre starts one with
+;;;; *CONNECTION* is the Common Lisp one, through Swank. Commands that need
+;;;; it use WITH-CONNECTION: if there is none, Cadre starts one with
 ;;;; *lisp-command* and runs the command once it is ready. Swank messages
 ;;;; arrive on the reader thread and are handled on the GTK thread.
+;;;;
+;;;; Other Lisps (Clojure, Racket) get one connection each, kept in
+;;;; *CONNECTIONS* and started by the function their back end registers in
+;;;; *CONNECTION-STARTERS*. Requests go through REQUEST and the BACKEND-…
+;;;; generic functions (core/backend.lisp), so the same commands work with
+;;;; any of them.
 
 (in-package #:cadre-ui)
 
@@ -26,8 +32,61 @@
         (setf *when-connected* (append *when-connected* (list function)))
         (unless *connecting* (start-lisp)))))
 
-(defmacro with-connection ((var) &body body)
-  `(call-with-connection (lambda (,var) ,@body)))
+(defvar *connections* (make-hash-table) "Language (:clojure, :racket) → its open connection.")
+(defvar *connection-starters* (make-hash-table)
+  "Language → a function of a callback that starts a connection for it and
+calls the callback with the connection once it is ready.")
+
+(defun language-connection (language)
+  "The open connection for LANGUAGE (a dialect name), or nil."
+  (if (eq language :common-lisp)
+      (and (connected-p) *connection*)
+      (let ((connection (gethash language *connections*)))
+        (and (connection-open-p connection) connection))))
+
+(defun call-with-language-connection (language function)
+  "Call FUNCTION with LANGUAGE's connection, starting one if there is none."
+  (cond ((eq language :common-lisp) (call-with-connection function))
+        ((language-connection language) (funcall function (language-connection language)))
+        ((gethash language *connection-starters*)
+         (funcall (gethash language *connection-starters*)
+                  (lambda (connection)
+                    (setf (gethash language *connections*) connection)
+                    (funcall function connection))))
+        (t (editor-error "Cadre can't run ~a code yet"
+                         (dialect-title (or (find-dialect language) (error "No language ~s" language)))))))
+
+(defmacro with-connection ((var &key (language :common-lisp)) &body body)
+  "Run BODY with VAR bound to LANGUAGE's connection (the Common Lisp one by
+default), starting one first if there is none."
+  `(call-with-language-connection ,language (lambda (,var) ,@body)))
+
+(defun reporting-on-ok (on-ok)
+  "ON-OK, with errors it signals shown as messages."
+  (lambda (value)
+    (handler-case (when on-ok (funcall on-ok value))
+      (editor-error (e) (message "~a" (editor-error-message e)))
+      (error (e) (message "Error: ~a" e)))))
+
+(defun reporting-on-abort (on-abort)
+  (lambda (reason)
+    (if on-abort
+        (funcall on-abort reason)
+        (message "Evaluation aborted~@[: ~a~]" reason))))
+
+(defun request (function connection &rest arguments)
+  "Call FUNCTION, one of the BACKEND-… requests, on CONNECTION with
+ARGUMENTS (its own, then keywords), as REX does: errors in :on-ok are shown
+as messages, and an abort without :on-abort says so."
+  (let* ((keys (or (position-if #'keywordp arguments) (length arguments)))
+         (positional (subseq arguments 0 keys))
+         (options (subseq arguments keys)))
+    (apply function connection
+           (append positional
+                   (list :on-ok (reporting-on-ok (getf options :on-ok))
+                         :on-abort (reporting-on-abort (getf options :on-abort)))
+                   (loop for (k v) on options by #'cddr
+                         unless (member k '(:on-ok :on-abort)) append (list k v))))))
 
 (defun rex (connection form &rest options &key on-ok on-abort package thread)
   "SWANK-REX with errors in ON-OK reported as messages."
@@ -107,7 +166,7 @@
 (defun disconnect-lisp (&key kill)
   (let ((connection *connection*)
         (inferior *inferior*))
-    (when connection (swank-disconnect connection))
+    (when connection (backend-disconnect connection))
     (when (and kill inferior)
       (kill-inferior-lisp inferior)
       (setf *inferior* nil))))
@@ -213,5 +272,5 @@
 (define-command interrupt-lisp ()
   "Interrupt the evaluation running in the REPL."
   (if (connected-p)
-      (progn (swank-interrupt *connection* :repl-thread) (message "Interrupted"))
+      (progn (backend-interrupt *connection*) (message "Interrupted"))
       (message "Not connected")))

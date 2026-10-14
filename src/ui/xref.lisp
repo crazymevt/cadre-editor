@@ -116,10 +116,7 @@ none, ask for a name."
                 (open-project-search :text name :mode :symbol)
                 (message "No Lisp running: showing where ~a appears in the project's files" name))
      (with-connection (connection)
-       (rex connection
-            (if (rest kinds)
-                (swank-call "swank:xrefs" kinds name)
-                (swank-call "swank:xref" (first kinds) name))
+       (request #'backend-xref connection kinds name
             :package package
             :on-ok (lambda (reply)
                      (let ((xrefs (if (rest kinds) (parse-xrefs-groups reply) (parse-xrefs (first kinds) reply))))

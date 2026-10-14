@@ -141,7 +141,7 @@ for it and call THEN when it comes."
           (cached (and (stringp cached) cached))
           ((connected-p)
            (setf (gethash key *remote-arglists*) :pending)
-           (rex *connection* (swank-call "swank:operator-arglist" name package) :package package
+           (request #'backend-arglist *connection* name :package package
                 :on-ok (lambda (result)
                          (setf (gethash key *remote-arglists*)
                                (if (and (stringp result) (string/= result "")) result :none))
@@ -383,8 +383,7 @@ show them: in the open popup, or a new one. ON-NONE is called if there are
 none."
   (let ((generation (incf *completion-generation*))
         (package (view-package view)))
-    (rex *connection* (swank-call "swank:fuzzy-completions" prefix package
-                                  :limit 100 :time-limit-in-msec 500)
+    (request #'backend-completions *connection* prefix
          :package package
          :on-ok (lambda (result)
                   (multiple-value-bind (now-prefix now-start) (prefix-before-cursor view)

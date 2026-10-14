@@ -74,7 +74,7 @@
   "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."
   (when view (repl-follow-package package))
   (with-connection (connection)
-    (rex connection (swank-call "swank:interactive-eval" (gtk-thread-source string) 3 120) :package package
+    (request #'backend-eval connection (gtk-thread-source string) :package package
          :on-ok (lambda (result)
                   (show-result result)
                   (image-changed)
@@ -114,7 +114,7 @@
             (package (view-package view)))
         (repl-follow-package package)
         (with-connection (connection)
-          (rex connection (swank-call "swank:interactive-eval-region" (gtk-thread-source text) 3 120) :package package
+          (request #'backend-eval-region connection (gtk-thread-source text) :package package
                :on-ok (lambda (result) (show-result result) (image-changed))))))))
 
 (define-command eval-expression-or-region ()
@@ -152,11 +152,10 @@ with whether it compiled."
                (package (view-package view)))
           (repl-follow-package package)
           (with-connection (connection)
-            (rex connection
-                 (swank-call "swank:compile-string-for-emacs" text (buffer-name buffer)
-                             (list (list :position position) (list :line (1+ sl) (1+ sc)))
-                             (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
-                             policy)
+            (request #'backend-compile-form connection text
+                 :buffer-name (buffer-name buffer) :position position :line (1+ sl) :column (1+ sc)
+                 :file (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
+                 :policy policy
                  :package package
                  :on-ok (lambda (result)
                           (multiple-value-bind (notes successp duration) (parse-compilation-result result)
@@ -194,20 +193,16 @@ otherwise evaluate it and show its value."
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (flet ((compile-it ()
              (with-connection (connection)
-               (rex connection (swank-call "swank:compile-file-for-emacs"
-                                           (uiop:native-namestring (buffer-file buffer)) t)
-                    :on-ok (lambda (result)
-                             (multiple-value-bind (notes successp duration) (parse-compilation-result result)
-                               (show-notes notes :buffer buffer :replace-lines :all)
-                               (compilation-message notes successp duration
-                                                    (format nil "Compiled ~a" (buffer-name buffer)))
-                               ;; Compiling only compiles; load the fasl if it worked.
-                               (let ((loadp (fifth result)) (fasl (sixth result)))
-                                 (when (and successp loadp fasl)
-                                   (rex connection (swank-call "swank:load-file" fasl)
-                                        :on-ok (lambda (v) (declare (ignore v))
-                                                 (repl-follow-package (file-package buffer))
-                                                 (image-changed)))))))))))
+               (request #'backend-compile-file connection (uiop:native-namestring (buffer-file buffer))
+                        :on-ok (lambda (result)
+                                 (multiple-value-bind (notes successp duration) (parse-compilation-result result)
+                                   (show-notes notes :buffer buffer :replace-lines :all)
+                                   (compilation-message notes successp duration
+                                                        (format nil "Compiled ~a" (buffer-name buffer)))))
+                        :on-loaded (lambda ()
+                                     (handler-case (progn (repl-follow-package (file-package buffer))
+                                                          (image-changed))
+                                       (error (e) (message "Error: ~a" e))))))))
       (if (buffer-modified-p buffer)
           (write-buffer buffer (buffer-file buffer) (lambda (ok) (when ok (compile-it))))
           (compile-it)))))
@@ -218,7 +213,7 @@ otherwise evaluate it and show its value."
   (let ((buffer (view-buffer (current-view))))
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (with-connection (connection)
-      (rex connection (swank-call "swank:load-file" (uiop:native-namestring (buffer-file buffer)))
+      (request #'backend-load-file connection (uiop:native-namestring (buffer-file buffer))
            :on-ok (lambda (v) (declare (ignore v))
                     (message "Loaded ~a" (buffer-name buffer))
                     (repl-follow-package (file-package buffer))
@@ -293,7 +288,7 @@ definitions are used."
               (go-to-definition-choices view name source)
               (message "No definition of ~a in the source (start a Lisp to look in loaded code)" name))
       (with-connection (connection)
-        (rex connection (swank-call "swank:find-definitions-for-emacs" name) :package package
+        (request #'backend-find-definitions connection name :package package
              :on-ok (lambda (definitions)
                       (let ((found (remove-if (lambda (d) (getf (parse-location (second d)) :error)) definitions)))
                         (cond ((and (null found) source) (go-to-definition-choices view name source))
@@ -339,7 +334,7 @@ definitions are used."
     (unless name (editor-error "No symbol at the cursor"))
     (let ((package (view-package view)))
       (with-connection (connection)
-        (rex connection (swank-call "swank:describe-symbol" name) :package package
+        (request #'backend-describe connection name :package package
              :on-ok (lambda (text) (show-help name text)))))))
 
 ;;; Argument hints
@@ -387,7 +382,7 @@ Common Lisp."
                   (source (show-arglist source))
                   ((not (connected-p)) (show-arglist (ignore-errors (local-autodoc view syntax line column))))
                   ((gethash key *autodoc-cache*) (show-arglist (gethash key *autodoc-cache*)))
-                  (t (rex *connection* (swank-call "swank:autodoc" form :print-right-margin 200)
+                  (t (request #'backend-autodoc *connection* form
                           :package (view-package view)
                           :on-ok (lambda (result)
                                    (let ((doc (and (consp result) (stringp (first result)) (first result))))

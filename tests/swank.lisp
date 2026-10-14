@@ -91,6 +91,38 @@
         when (funcall predicate) return t
         do (sleep 0.05)))
 
+;;; The connection protocol (core/backend.lisp)
+
+(defclass fake-connection (c:lisp-connection) ())
+(defmethod c:connection-language ((c fake-connection)) :clojure)
+(defmethod c:connection-implementation ((c fake-connection)) "Fake 1.0")
+(defmethod c:backend-supports-p ((c fake-connection) feature) (eq feature :eval))
+(defmethod c:backend-eval ((c fake-connection) string &key on-ok &allow-other-keys)
+  (funcall on-ok (format nil "=> ~a" string)))
+
+(define-test backend-protocol :parent cadre-tests
+  (let ((fake (make-instance 'fake-connection :package "user")))
+    (true (c:connection-open-p fake))
+    (is string= "user" (c:connection-package fake))
+    (is string= "=> (+ 1 2)" (let (v) (c:backend-eval fake "(+ 1 2)" :on-ok (lambda (x) (setf v x))) v))
+    (true (c:backend-supports-p fake :eval))
+    (false (c:backend-supports-p fake :inspector))
+    ;; What a back end doesn't implement says so, naming the Lisp.
+    (fail (c:backend-describe fake "map") 'c:editor-error)
+    (is string= "Fake 1.0 can't describe symbols"
+        (handler-case (c:backend-describe fake "map") (c:editor-error (e) (c:editor-error-message e))))
+    (fail (c:backend-interrupt fake) 'c:editor-error)))
+
+(defun backend-value (function conn &rest arguments)
+  "Call the BACKEND-… request FUNCTION and wait for its value."
+  (let ((done (sb-thread:make-semaphore)) (value nil) (failed nil))
+    (apply function conn (append arguments
+                                 (list :on-ok (lambda (v) (setf value v) (sb-thread:signal-semaphore done))
+                                       :on-abort (lambda (r) (setf failed (or r t)) (sb-thread:signal-semaphore done)))))
+    (unless (sb-thread:wait-on-semaphore done :timeout 30) (error "Timed out waiting for ~a" function))
+    (when failed (error "~a aborted: ~a" function failed))
+    value))
+
 (define-test swank-integration :parent cadre-tests
   ;; The handler runs on the reader thread, so it sees the global *EVENTS*.
   (setf *events* '())
@@ -120,6 +152,16 @@
            (let ((completions (first (swank conn "swank:fuzzy-completions" "mvb" "COMMON-LISP-USER"
                                             :limit 10 :time-limit-in-msec 1000))))
              (true (find "multiple-value-bind" completions :key #'first :test #'string-equal)))
+           ;; The same requests through the connection protocol
+           (is eq :common-lisp (c:connection-language conn))
+           (true (c:backend-supports-p conn :debugger))
+           (is string= "=> 3 (2 bits, #x3, #o3, #b11)" (backend-value #'c:backend-eval conn "(+ 1 2)"))
+           (true (search "CONTROL-STRING" (backend-value #'c:backend-arglist conn "format" :package "COMMON-LISP-USER")))
+           (true (search "CAR" (backend-value #'c:backend-describe conn "car")))
+           (true (search "IF" (backend-value #'c:backend-macroexpand conn "(when x y)")))
+           (true (find "multiple-value-bind" (first (backend-value #'c:backend-completions conn "mvb"))
+                       :key #'first :test #'string-equal))
+           (true (consp (backend-value #'c:backend-find-definitions conn "cl:car")))
            ;; Definitions, from a compiled file
            (let ((file (merge-pathnames (format nil "cadre-def-~d.lisp" (random 100000)) (uiop:temporary-directory))))
              (with-open-file (o file :direction :output :if-exists :supersede)

@@ -164,8 +164,7 @@ returns or is aborted."
     (return-from repl-eval (funcall (repl-evaluator *repl*) string)))
   (with-connection (connection)
     (setf (repl-busy *repl*) t)
-    (rex connection (swank-call "swank-repl:listener-eval" (gtk-thread-source string))
-         :thread :repl-thread
+    (request #'backend-repl-eval connection (gtk-thread-source string)
          :on-ok (lambda (value)
                   (declare (ignore value))
                   (setf (repl-busy *repl*) nil)
@@ -198,8 +197,7 @@ package of that code (from the file's IN-PACKAGE)."
              (not (repl-busy *repl*)) (not (repl-reading *repl*))
              (not (same-package-name-p package (connection-package *connection*))))
     (let ((repl *repl*))
-      (rex *connection* (swank-call "swank:set-package" package)
-           :thread :repl-thread
+      (request #'backend-set-package *connection* package
            :on-ok (lambda (reply)
                     (destructuring-bind (name prompt) reply
                       (let ((changed (not (same-package-name-p name (connection-package *connection*)))))

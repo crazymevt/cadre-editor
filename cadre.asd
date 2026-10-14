@@ -107,10 +107,12 @@
                (:file "format")
                (:file "git")
                (:file "new-project")
+               (:file "backend")
                (:module "swank"
                 :serial t
                 :components ((:file "sexp")
                              (:file "connection")
+                             (:file "backend")
                              (:file "inferior")
                              (:file "forms")
                              (:file "tools")

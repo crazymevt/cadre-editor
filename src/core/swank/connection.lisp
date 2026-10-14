@@ -16,7 +16,7 @@
   "When a function, it is called with :send or :receive and the text of each
 Swank message: for debugging the protocol.")
 
-(defclass swank-connection ()
+(defclass swank-connection (lisp-connection)
   ((socket :initarg :socket :reader connection-socket)
    (stream :initarg :stream :reader connection-stream)
    (write-lock :initform (sb-thread:make-mutex :name "swank write") :reader connection-write-lock)
@@ -28,24 +28,17 @@ Swank message: for debugging the protocol.")
    (handler :initarg :handler :initform nil :accessor connection-handler
             :documentation "Called with the connection and each message that is not a reply.")
    (info :initform nil :accessor connection-info
-         :documentation "The plist from swank:connection-info.")
-   (package :initform "COMMON-LISP-USER" :accessor connection-package)
-   (prompt :initform "CL-USER" :accessor connection-prompt)
-   (state :initform :open :accessor connection-state)
-   (host :initarg :host :reader connection-host)
-   (port :initarg :port :reader connection-port)
-   (process :initform nil :accessor connection-process
-            :documentation "The inferior Lisp, if Cadre started it.")))
+         :documentation "The plist from swank:connection-info."))
+  (:default-initargs :package "COMMON-LISP-USER" :prompt "CL-USER")
+  (:documentation "A connection to a Common Lisp running Swank."))
 
 (defmethod print-object ((c swank-connection) stream)
   (print-unreadable-object (c stream :type t)
     (format stream "~a:~d ~(~a~)" (connection-host c) (connection-port c) (connection-state c))))
 
-(defun connection-open-p (connection)
-  (and connection (eq (connection-state connection) :open)))
+(defmethod connection-language ((connection swank-connection)) :common-lisp)
 
-(defun connection-implementation (connection)
-  "A short name for the other Lisp, such as \"SBCL 2.6.9\"."
+(defmethod connection-implementation ((connection swank-connection))
   (let ((impl (getf (connection-info connection) :lisp-implementation)))
     (if impl
         (format nil "~a ~a" (getf impl :type) (getf impl :version))
