@@ -72,12 +72,12 @@ one just before it, or else the list around it."
 
 (define-command expand-macro-once ()
   "Expand the macro form at the cursor once."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (expand-form))
 
 (define-command expand-macro-all ()
   "Expand the form at the cursor completely, including every macro inside it."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (expand-form :all t))
 
 (define-command expand-compiler-macro ()

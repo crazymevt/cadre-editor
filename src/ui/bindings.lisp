@@ -324,6 +324,47 @@
   "C-k C-a" 'expand-macro-all
   "C-k n" 'clojure-set-namespace)
 
+;;; Racket: the same commands, sent to Cadre's Racket back end. Emacs keys
+;;; follow racket-mode's.
+(bind-keys (mode-profile-keymap 'racket-mode :emacs)
+  "C-c C-c" 'compile-defun
+  "C-M-x" 'eval-defun
+  "C-x C-e" 'eval-last-expression
+  "C-c C-e e" 'eval-last-expression
+  "C-c C-r" 'eval-region
+  "C-c C-k" 'racket-run
+  "C-c C-z" 'show-repl
+  "M-." 'edit-definition
+  "M-," 'pop-definition
+  "C-c C-." 'describe-symbol
+  "C-c C-d" 'racket-documentation
+  "C-M-i" 'complete-symbol
+  "M-TAB" 'complete-symbol
+  "M-n" 'next-note
+  "M-p" 'previous-note
+  "C-c C-b" 'interrupt-lisp
+  "C-c C-e f" 'expand-macro-once
+  "C-c C-e a" 'expand-macro-all
+  "C-c C-t" 'raco-test
+  "M-?" 'find-references)
+
+(bind-keys (mode-profile-keymap 'racket-mode :standard)
+  "C-RET" 'compile-or-eval-defun
+  "C-S-RET" 'eval-expression-or-region
+  "C-M-RET" 'racket-run
+  "F5" 'racket-run
+  "F12" 'edit-definition
+  "C-M--" 'pop-definition
+  "C-k C-i" 'describe-symbol
+  "F1" 'racket-documentation
+  "C-SPC" 'complete-symbol
+  "F8" 'next-note
+  "S-F8" 'previous-note
+  "S-F12" 'find-references
+  "C-k C-m" 'expand-macro-once
+  "C-k C-a" 'expand-macro-all
+  "C-k t" 'raco-test)
+
 (defparameter *emacs-structural-keys*
   '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward
     "C-(" slurp-backward "C-M-Left" slurp-backward "C-{" barf-backward "C-M-Right" barf-backward
@@ -341,7 +382,7 @@
   (setf (cadre::keymap-parent (major-mode-keymap (find-major-mode mode)))
         (major-mode-keymap (find-major-mode 'lisp-mode))))
 
-(dolist (mode '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode clojure-repl-mode))
+(dolist (mode '(lisp-mode racket-mode clojure-mode repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode))
   (apply #'bind-keys (mode-profile-keymap mode :emacs) *emacs-structural-keys*)
   (apply #'bind-keys (mode-profile-keymap mode :standard) *standard-structural-keys*))
 

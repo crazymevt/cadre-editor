@@ -101,6 +101,10 @@
    #:clojure-process-directory #:nrepl-port-file #:clojure-error-location #:arglist-with-current
    #:*clojure-command* #:*leiningen-command* #:*babashka-command* #:*clojure-aliases*
    #:*cider-nrepl* #:*nrepl-version* #:*cider-nrepl-version*
+   ;; Racket, through Cadre's back end (racket/)
+   #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
+   #:racket-problems #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p
    #:backend-eval #:backend-eval-region #:backend-compile-form #:backend-compile-file
@@ -127,7 +131,7 @@
    ;; formatting
    #:format-json #:format-css #:format-xml #:major-mode-for-text
    ;; new projects
-   #:valid-project-name-p #:fill-template #:project-files-for #:create-lisp-project #:*license-templates*
+   #:valid-project-name-p #:fill-template #:project-files-for #:project-main-file #:create-lisp-project #:*license-templates*
    #:makefile-has-target-p #:asd-build-pathname #:project-build-plan #:project-test-plan
    #:asd-entry-point #:asd-depends-on-p #:asd-uses-gtk4-p #:project-app
    ;; tree-sitter

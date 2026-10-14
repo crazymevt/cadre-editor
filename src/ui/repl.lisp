@@ -266,7 +266,7 @@ package of that code (from the file's IN-PACKAGE)."
 
 (define-command repl-return ()
   "Send the input if it is complete; otherwise start a new line."
-  (:modes repl-mode editor-repl-mode clojure-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl ()
    (let ((input (repl-input)))
     (cond
@@ -312,12 +312,12 @@ past the newest brings back what was being typed before."
 
 (define-command repl-previous-input ()
   "Replace the input with the previous one from the history."
-  (:modes repl-mode editor-repl-mode clojure-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl () (repl-history-step -1)))
 
 (define-command repl-next-input ()
   "Replace the input with the next one from the history."
-  (:modes repl-mode editor-repl-mode clojure-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl () (repl-history-step 1)))
 
 (define-command clear-repl ()
@@ -337,8 +337,9 @@ past the newest brings back what was being typed before."
 
 (define-command show-repl ()
   "Show the REPL and put the cursor in it, starting a Lisp if needed. From
-Clojure code, the Clojure REPL."
-  (when (eq (view-language (current-view)) :clojure)
-    (return-from show-repl (clojure-repl-tab)))
+Clojure or Racket code, that language's REPL."
+  (case (view-language (current-view))
+    (:clojure (return-from show-repl (clojure-repl-tab)))
+    (:racket (return-from show-repl (racket-repl-tab))))
   (show-repl-page :focus t)
   (unless (or (connected-p) *connecting*) (start-lisp)))

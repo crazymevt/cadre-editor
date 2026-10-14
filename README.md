@@ -609,8 +609,27 @@ Lisp commands work on Clojure code, in the file's namespace:
 
 The status bar shows the Clojure connection while a Clojure tab is selected.
 This needs the Clojure CLI (or Leiningen, or Babashka). The first start
-downloads nREPL and cider-nrepl. Racket can't run code from Cadre yet.
-[docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md) has the plan.
+downloads nREPL and cider-nrepl.
+
+**Racket runs too**, through Cadre's own back end (`vendor/cadre-racket/`,
+needing only an installed Racket). The first command that needs it starts
+Racket in the file's package (the nearest folder with `info.rkt`). Code is
+evaluated in the file's module, and Run File (`C-c C-k`, or F5) runs the
+module and puts the REPL in it, as DrRacket's Run does. Then:
+- evaluate and compile forms, with values inline and errors in Problems;
+  redefining a function changes its callers
+- argument hints from the documentation's signatures, describe, completion,
+  macroexpand, and Racket: Documentation (`C-c C-d`, or F1) to open a name's
+  page in the installed docs
+- go to definition and Find References from check-syntax, which reads the
+  buffer's text without running it. Saving checks the file the same way:
+  unbound identifiers, bad syntax and unused requires go to Problems.
+- `raco make` and `raco test`, with the places they report in Problems
+- the REPL, a `*racket-repl*` tab (`C-c C-z`)
+- a Racket package in New Project
+
+[docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md) has the plan and what is
+still to come.
 
 ### JavaScript, TypeScript, JSON, HTML, CSS and XML (tree-sitter)
 

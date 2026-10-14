@@ -42,7 +42,7 @@ mkdir -p "$contents/MacOS" "$contents/Resources/cadre/src/core/tree-sitter" "$co
          "$contents/Resources/cadre/data"
 cp "$core" "$contents/Resources/cadre.core"
 cp -R icons "$contents/Resources/cadre/"
-cp -R vendor/slime "$contents/Resources/cadre/vendor/"
+cp -R vendor/slime vendor/cadre-racket "$contents/Resources/cadre/vendor/"
 cp src/core/tree-sitter/shim.c "$contents/Resources/cadre/src/core/tree-sitter/"
 cp -R data/docsets "$contents/Resources/cadre/data/"
 cp LICENSE "$contents/Resources/LICENSE"

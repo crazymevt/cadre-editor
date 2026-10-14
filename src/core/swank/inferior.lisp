@@ -60,17 +60,25 @@ and two of them loading ASDF together leave it half loaded."
                (and line (parse-integer line :junk-allowed t)))))))
 
 (defun start-inferior-lisp (&key (command *lisp-command*) (deliver #'funcall)
+                                 arguments directory (server "Swank") (timeout *swank-startup-timeout*)
                                  on-output on-port on-exit)
   "Start a Lisp with Swank. Calls, through DELIVER: ON-OUTPUT with each line
 the Lisp prints, ON-PORT with its Swank port once it is listening, and
-ON-EXIT with a message if it exits first or takes too long."
+ON-EXIT with a message if it exits first or takes too long. For another
+server that writes its port to a file (Racket's), ARGUMENTS is a function
+of the port file giving the arguments that start it, DIRECTORY the folder
+to start it in, SERVER its name in messages and TIMEOUT the seconds it has."
   (let* ((port-file (merge-pathnames (format nil "swank-port-~d-~d" (sb-posix:getpid) (random 1000000))
                                      (uiop:temporary-directory)))
          (process (progn
                     (ignore-errors (delete-file port-file))
                     (sb-ext:run-program (first command)
-                                        (append (rest command) (list "--eval" (bootstrap-form port-file)))
+                                        (append (rest command)
+                                                (if arguments
+                                                    (funcall arguments port-file)
+                                                    (list "--eval" (bootstrap-form port-file))))
                                         :search t :wait nil
+                                        :directory (and directory (uiop:native-namestring directory))
                                         :input :stream :output :stream :error :output
                                         :external-format :utf-8)))
          (inferior (make-inferior-lisp :process process :port-file port-file)))
@@ -84,7 +92,7 @@ ON-EXIT with a message if it exits first or takes too long."
            :name "inferior lisp output"))
     (sb-thread:make-thread
      (lambda ()
-       (loop with deadline = (+ (get-universal-time) *swank-startup-timeout*)
+       (loop with deadline = (+ (get-universal-time) timeout)
              for port = (read-port-file port-file)
              do (cond (port
                        (ignore-errors (delete-file port-file))
@@ -92,11 +100,13 @@ ON-EXIT with a message if it exits first or takes too long."
                        (return))
                       ((not (sb-ext:process-alive-p process))
                        (funcall deliver (lambda () (when on-exit
-                                                     (funcall on-exit (format nil "The Lisp exited (status ~a) before Swank started."
-                                                                              (sb-ext:process-exit-code process))))))
+                                                     (funcall on-exit (format nil "~a exited (status ~a) before ~a started."
+                                                                              (first command)
+                                                                              (sb-ext:process-exit-code process)
+                                                                              server)))))
                        (return))
                       ((> (get-universal-time) deadline)
-                       (funcall deliver (lambda () (when on-exit (funcall on-exit "Swank did not start in time."))))
+                       (funcall deliver (lambda () (when on-exit (funcall on-exit (format nil "~a did not start in time." server)))))
                        (return)))
                 (sleep 0.1)))
      :name "swank port watcher")

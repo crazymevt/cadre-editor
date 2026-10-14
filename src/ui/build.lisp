@@ -24,6 +24,7 @@
          (what (getf build :what))
          (seconds (/ (- (get-internal-real-time) (getf build :start)) internal-time-units-per-second)))
     (setf *build* nil)
+    (when (getf build :on-end) (funcall (getf build :on-end) code))
     (cond ((eql code 0)
            (panel-log (window-panel *window*) (format nil "~a finished in ~,1f s" what seconds))
            (funcall (getf build :on-success) seconds))
@@ -35,10 +36,11 @@
            (message "~a failed (exit ~a): see the Output page" what code)
            (call-command 'show-output)))))
 
-(defun run-project-process (root plan &key (what "Build") on-success)
+(defun run-project-process (root plan &key (what "Build") on-success on-line on-end)
   "Run PLAN (from project-build-plan or project-test-plan) in ROOT, with its
 output on the Output page. WHAT names it in messages; ON-SUCCESS is called
-with the seconds taken if it exits 0."
+with the seconds taken if it exits 0. ON-LINE, if given, is called with each
+line of output too, and ON-END with the exit code when it ends."
   (panel-log (window-panel *window*)
              (format nil "~a in ~a: ~a" what (uiop:native-namestring root) (getf plan :description)))
   (call-command 'show-output)
@@ -50,6 +52,7 @@ with the seconds taken if it exits 0."
                    (error (e) (editor-error "Could not run ~a: ~a" (getf plan :program) e)))))
     (setf *build* (list :process process :plan plan :root root :what what
                         :on-success (or on-success (lambda (seconds) (message "~a finished in ~,1f s" what seconds)))
+                        :on-line on-line :on-end on-end
                         :start (get-internal-real-time)))
     (message "~a: ~a…" what (getf plan :description))
     (sb-thread:make-thread
@@ -57,7 +60,10 @@ with the seconds taken if it exits 0."
        (let ((stream (sb-ext:process-output process)))
          (loop for line = (ignore-errors (read-line stream nil))
                while line
-               do (let ((line line)) (glib:call-in-main-thread (lambda () (build-log line)))))
+               do (let ((line line))
+                    (glib:call-in-main-thread (lambda ()
+                                                (build-log line)
+                                                (when on-line (funcall on-line line))))))
          (sb-ext:process-wait process)
          (let ((code (sb-ext:process-exit-code process)))
            (glib:call-in-main-thread (lambda () (build-finished code))))))

@@ -33,6 +33,7 @@
         (unless *connecting* (start-lisp)))))
 
 (defvar *clojure-starting* nil "True while a Clojure REPL starts (clojure.lisp).")
+(defvar *racket-starting* nil "True while Racket starts (racket.lisp).")
 (defvar *connections* (make-hash-table) "Language (:clojure, :racket) → its open connection.")
 (defvar *connection-starters* (make-hash-table)
   "Language → a function of a callback that starts a connection for it and
@@ -248,32 +249,46 @@ as messages, and an abort without :on-abort says so."
   "Whose connection the status bar shows: the selected tab's language's.")
 
 (defun status-language ()
-  (let ((view (and *window* (selected-view *window*))))
-    (if (and view (eq (view-language view) :clojure)) :clojure :common-lisp)))
+  (let ((language (and *window* (selected-view *window*) (view-language (selected-view *window*)))))
+    (if (member language '(:clojure :racket)) language :common-lisp)))
 
 (defun follow-status-language ()
   "Show the selected tab's language's connection, if that changed."
   (unless (eq (status-language) *status-language*)
     (update-connection-status)))
 
-(defun update-clojure-status (label)
-  (let ((connection (language-connection :clojure)))
-    (gtk:button-set-label label
-                          (cond (connection (format nil "● ~a  ~a" (connection-implementation connection)
-                                                    (connection-package connection)))
-                                (*clojure-starting* "◌ Starting Clojure…")
-                                (t "○ No Clojure REPL")))
-    (gtk:widget-set-tooltip-text label
-                                 (cond (connection (format nil "Connected to nREPL at ~a:~d. Click to show the REPL."
-                                                           (connection-host connection) (connection-port connection)))
-                                       (*clojure-starting* "Starting…")
-                                       (t "Click to start the project's Clojure REPL")))))
+(defun language-starting-p (language)
+  (case language
+    (:clojure *clojure-starting*)
+    (:racket *racket-starting*)
+    (t *connecting*)))
+
+(defparameter *language-status-texts*
+  '((:clojure "○ No Clojure REPL" "◌ Starting Clojure…" "Click to start the project's Clojure REPL" "nREPL")
+    (:racket "○ No Racket" "◌ Starting Racket…" "Click to start Racket" "Racket"))
+  "Language → the status bar's text when it isn't running and while it
+starts, the tooltip offering to start it, and what Cadre connects to.")
+
+(defun update-language-status (label language)
+  (destructuring-bind (none starting offer server) (rest (assoc language *language-status-texts*))
+    (let ((connection (language-connection language)))
+      (gtk:button-set-label label
+                            (cond (connection (format nil "● ~a  ~a" (connection-implementation connection)
+                                                      (connection-prompt connection)))
+                                  ((language-starting-p language) starting)
+                                  (t none)))
+      (gtk:widget-set-tooltip-text label
+                                   (cond (connection (format nil "Connected to ~a at ~a:~d. Click to show the REPL."
+                                                             server (connection-host connection) (connection-port connection)))
+                                         ((language-starting-p language) "Starting…")
+                                         (t offer))))))
 
 (defun update-connection-status ()
   (update-run-button)
   (setf *status-language* (status-language))
-  (when (and *window* (eq *status-language* :clojure))
-    (return-from update-connection-status (update-clojure-status (window-status-connection *window*))))
+  (when (and *window* (not (eq *status-language* :common-lisp)))
+    (return-from update-connection-status
+      (update-language-status (window-status-connection *window*) *status-language*)))
   (when *window*
     (let ((label (window-status-connection *window*)))
       (gtk:button-set-label
@@ -322,8 +337,8 @@ as messages, and an abort without :on-abort says so."
   (start-lisp))
 
 (define-command interrupt-lisp ()
-  "Interrupt the evaluation running in the REPL (in a Clojure buffer or REPL,
-Clojure's)."
+  "Interrupt the evaluation running in the REPL (in a Clojure or Racket
+buffer or REPL, that language's)."
   (let ((connection (language-connection (view-language (current-view)))))
     (if connection
         (progn (backend-interrupt connection) (message "Interrupted"))

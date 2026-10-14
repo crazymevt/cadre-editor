@@ -16,7 +16,7 @@
   "When a function, it is called with :send or :receive and the text of each
 Swank message: for debugging the protocol.")
 
-(defclass swank-connection (lisp-connection)
+(defclass framed-connection (lisp-connection)
   ((socket :initarg :socket :reader connection-socket)
    (stream :initarg :stream :reader connection-stream)
    (write-lock :initform (sb-thread:make-mutex :name "swank write") :reader connection-write-lock)
@@ -26,13 +26,17 @@ Swank message: for debugging the protocol.")
    (deliver :initarg :deliver :initform #'funcall :reader connection-deliver
             :documentation "Called with a thunk to run each incoming message.")
    (handler :initarg :handler :initform nil :accessor connection-handler
-            :documentation "Called with the connection and each message that is not a reply.")
-   (info :initform nil :accessor connection-info
+            :documentation "Called with the connection and each message that is not a reply."))
+  (:documentation "A connection whose messages are framed as Swank's: Swank
+itself, and Cadre's Racket back end (racket/)."))
+
+(defclass swank-connection (framed-connection)
+  ((info :initform nil :accessor connection-info
          :documentation "The plist from swank:connection-info."))
   (:default-initargs :package "COMMON-LISP-USER" :prompt "CL-USER")
   (:documentation "A connection to a Common Lisp running Swank."))
 
-(defmethod print-object ((c swank-connection) stream)
+(defmethod print-object ((c framed-connection) stream)
   (print-unreadable-object (c stream :type t)
     (format stream "~a:~d ~(~a~)" (connection-host c) (connection-port c) (connection-state c))))
 
@@ -81,14 +85,16 @@ Swank message: for debugging the protocol.")
       #(127 0 0 1)
       (sb-bsd-sockets:host-ent-address (sb-bsd-sockets:get-host-by-name host))))
 
-(defun swank-connect (host port &key (deliver #'funcall) handler)
-  "Connect to the Swank server at HOST:PORT and start reading messages."
+(defun swank-connect (host port &key (deliver #'funcall) handler (class 'swank-connection))
+  "Connect to the Swank server at HOST:PORT and start reading messages.
+CLASS is the connection's class: another FRAMED-CONNECTION for a server
+that frames its messages as Swank does."
   (let ((socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
     (handler-case (sb-bsd-sockets:socket-connect socket (resolve-host host) port)
       (error (e)
         (sb-bsd-sockets:socket-close socket)
         (editor-error "Could not connect to ~a:~d: ~a" host port e)))
-    (let ((connection (make-instance 'swank-connection
+    (let ((connection (make-instance class
                                      :socket socket :host host :port port
                                      :stream (sb-bsd-sockets:socket-make-stream
                                               socket :input t :output t
@@ -97,7 +103,7 @@ Swank message: for debugging the protocol.")
                                      :deliver deliver :handler handler)))
       (setf (connection-reader-thread connection)
             (sb-thread:make-thread (lambda () (reader-loop connection))
-                                   :name (format nil "swank reader ~a:~d" host port)))
+                                   :name (format nil "~(~a~) reader ~a:~d" class host port)))
       connection)))
 
 (defun reader-loop (connection)

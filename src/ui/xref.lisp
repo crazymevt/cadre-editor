@@ -107,10 +107,12 @@ none, ask for a name."
 
 (defun xref-command (kinds)
   "Find KINDS of cross-references to the symbol at the cursor."
-  (let* ((language (view-language (current-view)))
-         (kinds (if (and (eq language :clojure) (rest kinds))
-                    '(:calls)                 ; what cider-nrepl can find
-                    kinds)))
+  (let* ((view (current-view))
+         (language (view-language view))
+         (kinds (cond ((and (eq language :clojure) (rest kinds)) '(:calls)) ; what cider-nrepl can find
+                      ((and (eq language :racket) (rest kinds)) '(:references)) ; check-syntax: uses in the file
+                      (t kinds)))
+         (place (racket-place-keys view)))
    (call-with-symbol-name
    "Find references to"
    (lambda (name package)
@@ -120,7 +122,7 @@ none, ask for a name."
                 (open-project-search :text name :mode :symbol)
                 (message "No Lisp running: showing where ~a appears in the project's files" name))
      (with-connection (connection :language language)
-       (request #'backend-xref connection kinds name
+       (apply #'request #'backend-xref connection kinds name
             :package package
             :on-ok (lambda (reply)
                      (let ((xrefs (if (rest kinds) (parse-xrefs-groups reply) (parse-xrefs (first kinds) reply))))
@@ -129,7 +131,8 @@ none, ask for a name."
                            (show-references (if (rest kinds)
                                                 (format nil "References to ~a" name)
                                                 (format nil "~@(~a~) ~a" (third (assoc (first kinds) *xref-kinds*)) name))
-                                            xrefs)))))))))))
+                                            xrefs))))
+            place)))))))
 
 (define-command find-references ()
   "Find everything that calls, references, binds, sets, expands or specializes the symbol at the cursor."

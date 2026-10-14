@@ -43,7 +43,7 @@ lay_out() {
   cp "$runtime" "$dir/lib/cadre/sbcl"
   chmod 755 "$dir/lib/cadre/sbcl"
   cp -R icons "$dir/share/cadre/"
-  cp -R vendor/slime "$dir/share/cadre/vendor/"
+  cp -R vendor/slime vendor/cadre-racket "$dir/share/cadre/vendor/"
   cp src/core/tree-sitter/shim.c "$dir/share/cadre/src/core/tree-sitter/"
   cp -R data/docsets "$dir/share/cadre/data/"
   cp packaging/Cadre.svg "$dir/share/icons/hicolor/scalable/apps/$id.svg"

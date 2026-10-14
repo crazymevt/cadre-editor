@@ -11,6 +11,9 @@
 ;;;;                       run, dev and build for a GTK application)
 ;;;;   README.md, .gitignore, and LICENSE (MIT or BSD 2-Clause)
 ;;;;
+;;;; A Racket package is info.rkt, main.rkt (with test and main submodules),
+;;;; README.md, .gitignore and LICENSE.
+;;;;
 ;;;; CREATE-LISP-PROJECT writes them into a new folder.
 
 (in-package #:cadre)
@@ -312,27 +315,97 @@ keywords and strings."
          "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.")))
   "License name → LICENSE file text.")
 
+;;; A Racket package
+
+(defun racket-info-template (license)
+  (apply #'template-lines
+         (append
+          '("#lang info"
+            ""
+            "(define collection \"{{name}}\")"
+            "(define pkg-desc \"{{description}}\")"
+            "(define version \"0.1\")"
+            "(define pkg-authors '(\"{{author}}\"))"
+            "(define deps '(\"base\"))"
+            "(define build-deps '(\"rackunit-lib\"))")
+          (and license (list "(define license '{{license}})")))))
+
+(defparameter *racket-main-template*
+  (template-lines
+   "#lang racket/base"
+   ";; {{description}}"
+   ""
+   "(provide hello)"
+   ""
+   "(define (hello [who \"World\"])"
+   "  (format \"Hello, ~a!\" who))"
+   ""
+   "(module+ test"
+   "  (require rackunit)"
+   "  (check-equal? (hello \"Racket\") \"Hello, Racket!\"))"
+   ""
+   "(module+ main"
+   "  (displayln (hello)))"))
+
+(defparameter *racket-readme-template*
+  (template-lines
+   "# {{name}}"
+   ""
+   "{{description}}"
+   ""
+   "## Running"
+   ""
+   "```"
+   "racket main.rkt"
+   "```"
+   ""
+   "Or install it as a package, from this folder: `raco pkg install`."
+   ""
+   "## Tests"
+   ""
+   "```"
+   "raco test ."
+   "```"))
+
+(defparameter *racket-gitignore-template*
+  (template-lines "compiled/" "doc/" "*~" ".#*" "\\#*#" ".DS_Store"))
+
+(defun racket-project-files (license)
+  (list (cons "info.rkt" (racket-info-template license))
+        (cons "main.rkt" *racket-main-template*)
+        (cons "README.md" *racket-readme-template*)
+        (cons ".gitignore" *racket-gitignore-template*)))
+
+(defun project-main-file (kind)
+  "The file a new project of KIND opens with."
+  (if (eq kind :racket-package) "main.rkt" "src/main.lisp"))
+
 (defun project-files-for (name &key (description "") (author "") (license "MIT")
                                     (kind :library) (tests :parachute))
   "The files of a new project NAME, as (relative-path . contents). KIND is
-:library or :application; TESTS is :parachute or :fiveam; LICENSE is a key
-of *license-templates*, or nil for none."
+:library, :application, :gtk-application or :racket-package; TESTS is
+:parachute or :fiveam (a Racket package's are rackunit); LICENSE is a key of
+*license-templates*, or nil for none."
   (unless (valid-project-name-p name)
     (editor-error "A project name is lower-case letters, digits and hyphens, starting with a letter"))
   (let* ((values (list :name name
-                       :description (substitute #\' #\" (if (string= description "") "A Common Lisp project." description))
+                       :description (substitute #\' #\" (cond ((string/= description "") description)
+                                                             ((eq kind :racket-package) "A Racket package.")
+                                                             (t "A Common Lisp project.")))
                        :author (substitute #\' #\" author)
                        :license (or license "Proprietary")
                        :depends (if (eq kind :gtk-application) "\"gtk4\"" "")
                        :app-id (format nil "org.example.~a" (substitute #\_ #\- name))
                        :year (princ-to-string (nth-value 5 (decode-universal-time (get-universal-time))))))
-         (files (list (cons (format nil "~a.asd" name) (asd-template kind tests))
-                      (cons "src/package.lisp" (package-template kind))
-                      (cons "src/main.lisp" (main-template kind))
-                      (cons "tests/main.lisp" (tests-template tests))
-                      (cons "Makefile" (makefile-template kind tests))
-                      (cons "README.md" (readme-template kind))
-                      (cons ".gitignore" *gitignore-template*))))
+         (files (if (eq kind :racket-package)
+                    (racket-project-files license)
+                    (list (cons (format nil "~a.asd" name) (asd-template kind tests))
+                          (cons "src/package.lisp" (package-template kind))
+                          (cons "src/main.lisp" (main-template kind))
+                          (cons "tests/main.lisp" (tests-template tests))
+                          (cons "Makefile" (makefile-template kind tests))
+                          (cons "README.md" (readme-template kind))
+                          (cons ".gitignore" *gitignore-template*)))))
     (when license
       (let ((text (cdr (assoc license *license-templates* :test #'string=))))
         (unless text (editor-error "Unknown license: ~a" license))

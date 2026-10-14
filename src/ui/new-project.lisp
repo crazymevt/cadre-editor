@@ -8,7 +8,8 @@
 (in-package #:cadre-ui)
 
 (defparameter *project-kinds* '((:library . "Library") (:application . "Application (builds a program)")
-                                 (:gtk-application . "GTK application (gtk4)")))
+                                 (:gtk-application . "GTK application (gtk4)")
+                                 (:racket-package . "Racket package")))
 (defparameter *project-test-frameworks* '((:parachute . "Parachute") (:fiveam . "FiveAM")))
 (defparameter *project-licenses* '(("MIT" . "MIT") ("BSD-2-Clause" . "BSD 2-Clause") (nil . "None")))
 
@@ -35,7 +36,7 @@ Returns the project's folder."
         (error (e) (message "The project is made, but git init failed: ~a" e))))
     (when open
       (open-project directory)
-      (open-file-path (merge-pathnames "src/main.lisp" directory)))
+      (open-file-path (merge-pathnames (project-main-file kind) directory)))
     (message "Created ~a in ~a" name (uiop:native-namestring parent))
     directory))
 

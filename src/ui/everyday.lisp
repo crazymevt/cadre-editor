@@ -323,7 +323,7 @@
 
 (define-command repl-up ()
   "On the input's first line, the previous input from the history; elsewhere, up a line."
-  (:modes repl-mode editor-repl-mode clojure-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl ()
     (if (and *repl* (nth-value 0 (input-line-bounds)))
         (repl-history-step -1)
@@ -331,7 +331,7 @@
 
 (define-command repl-down ()
   "On the input's last line, the next input from the history; elsewhere, down a line."
-  (:modes repl-mode editor-repl-mode clojure-repl-mode)
+  (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl ()
     (if (and *repl* (nth-value 1 (input-line-bounds)) (repl-history-index *repl*))
         (repl-history-step 1)

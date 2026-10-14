@@ -6,19 +6,34 @@
 
 (defun view-package (view)
   "The package for code in VIEW at the cursor: the buffer's own (as for
-*Macroexpansion*), else from its IN-PACKAGE (in Clojure, its ns), else the
-REPL's."
-  (if (eq (view-language view) :clojure)
-      (let ((syntax (buffer-sexp-syntax (view-buffer view)))
-            (connection (language-connection :clojure)))
-        (or (buffer-local (view-buffer view) :package)
-            (and syntax (clojure-namespace-at syntax (cursor-line-column view)))
-            (and connection (connection-package connection))
-            "user"))
-      (let ((syntax (buffer-syntax (view-buffer view))))
-        (or (buffer-local (view-buffer view) :package)
-            (and syntax (buffer-package-name syntax (cursor-line-column view)))
-            (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER")))))
+*Macroexpansion*), else from its IN-PACKAGE (in Clojure, its ns; in
+Racket, its file's module), else the REPL's."
+  (case (view-language view)
+    (:clojure
+     (let ((syntax (buffer-sexp-syntax (view-buffer view)))
+           (connection (language-connection :clojure)))
+       (or (buffer-local (view-buffer view) :package)
+           (and syntax (clojure-namespace-at syntax (cursor-line-column view)))
+           (and connection (connection-package connection))
+           "user")))
+    (:racket
+     ;; nil: the REPL's module.
+     (let ((file (buffer-file (view-buffer view))))
+       (or (buffer-local (view-buffer view) :package)
+           (and file (not (eq (buffer-major-mode (view-buffer view)) 'racket-repl-mode))
+                (uiop:native-namestring file)))))
+    (t
+     (let ((syntax (buffer-syntax (view-buffer view))))
+       (or (buffer-local (view-buffer view) :package)
+           (and syntax (buffer-package-name syntax (cursor-line-column view)))
+           (if (connected-p) (connection-package *connection*) "COMMON-LISP-USER"))))))
+
+(defun racket-place-keys (view)
+  "For a Racket file, the :text and :offset keys Racket's requests take for
+the identifier at VIEW's cursor (check-syntax reads the buffer's text)."
+  (when (and view (eq (view-language view) :racket) (buffer-file (view-buffer view)))
+    (list :text (text-string (buffer-text (view-buffer view)))
+          :offset (text-point (view-gtk-buffer view)))))
 
 (defun view-region-text (view line column end-line end-column)
   (let ((gtk-buffer (view-gtk-buffer view)))
@@ -96,7 +111,7 @@ REPL's."
 
 (define-command eval-last-expression ()
   "Evaluate the expression before the cursor and show its value."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
       (multiple-value-bind (sl sc) (backward-sexp-position (current-syntax) line column)
@@ -106,7 +121,7 @@ REPL's."
 
 (define-command eval-defun ()
   "Evaluate the top-level form around the cursor and show its value."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
       (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-syntax) line column)
@@ -116,7 +131,7 @@ REPL's."
 
 (define-command eval-region ()
   "Evaluate the selected text."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let* ((view (current-view))
          (gtk-buffer (view-gtk-buffer view)))
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
@@ -133,7 +148,7 @@ REPL's."
 
 (define-command eval-expression-or-region ()
   "Evaluate the selection if there is one, else the expression before the cursor."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (if (gtk:text-buffer-get-has-selection (view-gtk-buffer (current-view)))
       (eval-region)
       (eval-last-expression)))
@@ -183,7 +198,7 @@ with whether it compiled."
 
 (define-command compile-defun ()
   "Compile the top-level form around the cursor; show the compiler's notes."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (compile-toplevel-form))
 
 (defun definition-form-p (syntax line column)
@@ -197,7 +212,7 @@ defines something, as the buffer's Lisp sees it (DEF… in Common Lisp)."
 (define-command compile-or-eval-defun ()
   "Compile the top-level form if it is a definition (showing compiler notes);
 otherwise evaluate it and show its value."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (multiple-value-bind (line column) (cursor-line-column (current-view))
     (if (definition-form-p (current-syntax) line column)
         (compile-defun)
@@ -205,7 +220,7 @@ otherwise evaluate it and show its value."
 
 (define-command compile-and-load-file ()
   "Save the file, compile it and load the result; show the compiler's notes."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let* ((view (current-view))
          (buffer (view-buffer view)))
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
@@ -227,7 +242,7 @@ otherwise evaluate it and show its value."
 
 (define-command load-file ()
   "Load the current file's source into the Lisp."
-  (:modes lisp-mode clojure-mode)
+  (:modes lisp-mode racket-mode clojure-mode)
   (let ((buffer (view-buffer (current-view))))
     (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
     (with-connection (connection :language (buffer-language buffer))
@@ -307,7 +322,7 @@ definitions are used."
               (go-to-definition-choices view name source)
               (message "No definition of ~a in the source (start a Lisp to look in loaded code)" name))
       (with-connection (connection :language language)
-        (request #'backend-find-definitions connection name :package package
+        (apply #'request #'backend-find-definitions connection name :package package
              :on-ok (lambda (definitions)
                       (let ((found (remove-if (lambda (d) (getf (parse-location (second d)) :error)) definitions)))
                         (cond ((and (null found) source) (go-to-definition-choices view name source))
@@ -323,7 +338,8 @@ definitions are used."
                                               :placeholder (format nil "Definitions of ~a" name)
                                               :on-choose (lambda (d)
                                                            (push-position view)
-                                                           (goto-location (parse-location (second d)))))))))))))))
+                                                           (goto-location (parse-location (second d)))))))))
+             (racket-place-keys view)))))))
 
 (define-command pop-definition ()
   "Go back to where the last M-. started."
@@ -390,8 +406,8 @@ definitions are used."
   "Show the arglist of the call around VIEW's cursor: from the source if it
 defines the function, else from the connected Lisp, else from standard
 Common Lisp."
-  (when (eq (view-language view) :clojure)
-    (return-from request-autodoc (request-clojure-autodoc view)))
+  (unless (eq (view-language view) :common-lisp)
+    (return-from request-autodoc (request-language-autodoc view (view-language view))))
   (let ((syntax (buffer-syntax (view-buffer view))))
     (if (not (and syntax (eq view (focused-view *window*))))
         (show-arglist nil)
@@ -411,15 +427,16 @@ Common Lisp."
                                      (show-arglist (or doc (ignore-errors (local-autodoc view syntax line column))))))
                           :on-abort (lambda (reason) (declare (ignore reason)) (show-arglist nil))))))))))
 
-(defun request-clojure-autodoc (view)
-  "The arglist for the call around VIEW's cursor, from the Clojure REPL if one is connected."
+(defun request-language-autodoc (view language)
+  "The arglist for the call around VIEW's cursor, from LANGUAGE's (Clojure's
+or Racket's) connection if there is one."
   (let ((syntax (buffer-sexp-syntax (view-buffer view)))
-        (connection (language-connection :clojure)))
+        (connection (language-connection language)))
     (if (not (and syntax connection (eq view (focused-view *window*))))
         (show-arglist nil)
         (multiple-value-bind (line column) (cursor-line-column view)
           (let* ((form (and (eq (context-at syntax line column) :code) (raw-form-at syntax line column)))
-                 (key (and form (cons :clojure (sexp-to-string form)))))
+                 (key (and form (list language (view-package view) (sexp-to-string form)))))
             (cond ((null form) (show-arglist nil))
                   ((gethash key *autodoc-cache*) (show-arglist (gethash key *autodoc-cache*)))
                   (t (request #'backend-autodoc connection form

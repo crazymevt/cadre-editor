@@ -5,9 +5,7 @@
 ;;;; the first one needs it: it connects to the project's running nREPL if
 ;;;; it has a .nrepl-port, or starts the project's REPL with nREPL and
 ;;;; cider-nrepl, as CIDER's jack-in does. The process's output goes to the
-;;;; Output page. The REPL is a tab, *clojure-repl*, like the editor REPL:
-;;;; what is typed there goes to nREPL, and the connection's output and
-;;;; values come back as the same events Swank sends.
+;;;; Output page. The REPL is a tab, *clojure-repl* (language-repl.lisp).
 
 (in-package #:cadre-ui)
 
@@ -22,65 +20,20 @@
 
 (defvar *clojure-process* nil "The Clojure REPL Cadre started, or nil.")
 (defvar *clojure-waiting* '() "Functions waiting for the Clojure connection to be ready.")
-(defvar *clojure-repl-buffer* nil)
 
 (defun clojure-connection () (language-connection :clojure))
 
-;;; The REPL tab
+;;; The REPL tab (language-repl.lisp)
 
-(defun clojure-repl-prompt ()
-  (let ((connection (clojure-connection)))
-    (format nil "~a=> " (if connection (connection-package connection) "user"))))
+(define-language-repl :clojure :mode 'clojure-repl-mode :buffer-name "*clojure-repl*" :title "Clojure"
+                               :prompt-format "~a=> ")
 
-(defun clojure-repl ()
-  "The Clojure REPL's struct, made with its buffer the first time."
-  (unless (and *clojure-repl-buffer* (member *clojure-repl-buffer* (buffer-list)))
-    (let ((buffer (make-buffer :name "*clojure-repl*" :text (make-gtk-text) :major-mode 'clojure-repl-mode)))
-      (setf *clojure-repl-buffer* buffer)
-      (let ((*repl* (make-repl-for-buffer buffer :evaluator 'clojure-repl-evaluate
-                                                 :prompter 'clojure-repl-prompt)))
-        (repl-insert (format nil "; Clojure. Forms typed here go to the connected nREPL.~%") "cadre-repl-note"))))
-  (buffer-local *clojure-repl-buffer* :repl))
+(defun clojure-repl () (language-repl :clojure))
 
-(defun clojure-repl-evaluate (input)
-  (let ((repl (clojure-repl)))
-    (with-connection (connection :language :clojure)
-      (setf (repl-busy repl) t)
-      (request #'backend-repl-eval connection input
-               :on-ok (lambda (value)
-                        (declare (ignore value))
-                        (let ((*repl* repl))
-                          (setf (repl-busy *repl*) nil)
-                          (repl-show-prompt)))
-               :on-abort (lambda (reason)
-                           (let ((*repl* repl))
-                             (setf (repl-busy *repl*) nil)
-                             (repl-fresh-line)
-                             (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
-                             (repl-show-prompt)))))))
-
-(defun show-clojure-repl (&key (focus t))
-  (let* ((repl (clojure-repl))
-         (view (show-buffer *window* (repl-buffer repl))))
-    (gtk:text-view-set-wrap-mode (view-text-view view) :word-char)
-    (when focus
-      (gtk:text-buffer-place-cursor (view-gtk-buffer view) (gtk:text-buffer-get-end-iter (view-gtk-buffer view)))
-      (focus-view view))
-    view))
-
-;;; Events from the connection: Swank-shaped (nrepl/connection.lisp)
+(defun show-clojure-repl (&key (focus t)) (show-language-repl :clojure :focus focus))
 
 (defun handle-clojure-event (connection event)
-  (let ((*repl* (clojure-repl)))
-    (case (first event)
-      (:write-string (repl-output (second event) (third event)))
-      (:new-package (update-connection-status))
-      (:disconnected
-       (when (eq (gethash :clojure *connections*) connection)
-         (remhash :clojure *connections*))
-       (repl-disconnected (second event))
-       (update-connection-status)
-       (message "Clojure disconnected: ~a" (second event))))))
+  (handle-language-event :clojure connection event))
 
 ;;; Starting and connecting
 
@@ -97,8 +50,7 @@
 (defun clojure-ready (connection)
   (setf (gethash :clojure *connections*) connection
         *clojure-starting* nil)
-  (let ((*repl* (clojure-repl)))
-    (repl-connected connection))
+  (language-repl-connected :clojure connection)
   (update-connection-status)
   (message "Connected to ~a" (connection-implementation connection))
   (let ((waiting (reverse *clojure-waiting*)))
@@ -247,13 +199,6 @@ Lisps' code: call it at once."
       (request #'backend-set-package connection ns
                :on-ok (lambda (reply)
                         (declare (ignore reply))
-                        (let ((*repl* (clojure-repl)))
-                          (unless (repl-busy *repl*)
-                            (let ((input (repl-input)))
-                              (set-repl-input "")
-                              (repl-fresh-line)
-                              (repl-insert (format nil "; Namespace ~a~%" ns) "cadre-repl-note")
-                              (repl-show-prompt)
-                              (when (plusp (length input)) (set-repl-input input)))))
+                        (language-repl-note :clojure (format nil "; Namespace ~a~%" ns))
                         (update-connection-status)
                         (message "Clojure REPL in ~a" ns))))))

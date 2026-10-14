@@ -2999,8 +2999,10 @@ and the number of items MODEL itself shows."
          (equal '(("area" :function 1 0) ("point" :class 4 0)) (cadre-ui::outline-items (current-buffer)))
          (cadre-ui::outline-items (current-buffer)))
   (check "C-M-f moves over forms in Racket too" (eq 'cadre-ui::forward-sexp (key-binding "C-M-f")))
-  (check "but the keys that talk to Common Lisp aren't bound"
-         (not (eq 'cadre-ui::compile-or-eval-defun (key-binding "C-RET"))) (key-binding "C-RET"))
+  (check "C-RET evaluates, and F5 runs the file, in Racket"
+         (and (eq 'cadre-ui::compile-or-eval-defun (key-binding "C-RET"))
+              (eq 'cadre-ui::racket-run (key-binding "F5")))
+         (list (key-binding "C-RET") (key-binding "F5")))
   (screenshot "47-racket")
   (set-minor-mode (current-buffer) 'cadre-ui::paredit-mode t)
   (set-cursor 5 0)
@@ -3144,6 +3146,114 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-clojure*) (null (cadre-ui::clojure-connection))) :timeout 30)
   (when *have-clojure*
     (check "disconnecting stops the REPL Cadre started" (null (cadre-ui::clojure-connection)))))
+
+;;; Racket, through Cadre's back end (if Racket is installed)
+(section "racket")
+
+(defvar *have-racket* (ignore-errors (uiop:run-program '("racket" "--version") :output nil) t))
+
+(then 300
+  (unless *have-racket* (format t "~&(Racket isn't installed: skipping the Racket checks)~%"))
+  (when *have-racket*
+    (write-root-file "rkt-demo/info.rkt" (format nil "#lang info~%(define collection \"rkt-demo\")~%"))
+    (write-root-file "rkt-demo/demo.rkt"
+                     (format nil "#lang racket/base~%(require racket/list)~%~%(define (area w h)~%  (* w h))~%(area 3 4)~%(define (twice x) (area x (first (list 2))))~%"))
+    (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))))
+
+(then-when ((or (not *have-racket*) (and (find-buffer "demo.rkt") (eq (current-buffer) (find-buffer "demo.rkt")))))
+  (when *have-racket*
+    (check "a .rkt file opens in Racket mode" (eq 'racket-mode (buffer-major-mode (current-buffer))))
+    (set-cursor 3 1)
+    (call-command 'compile-or-eval-defun)))
+
+(then-when ((or (not *have-racket*) (cadre-ui::racket-connection)) :timeout 60)
+  (when *have-racket*
+    (check "compiling a Racket form starts Racket" (cadre-ui::racket-connection))
+    (check "the status bar shows Racket"
+           (search "Racket" (gtk:button-get-label (cadre-ui::window-status-connection *window*)))
+           (gtk:button-get-label (cadre-ui::window-status-connection *window*)))))
+
+(then-when ((or (not *have-racket*) (search "Compiled" (status-text))) :timeout 60)
+  (when *have-racket*
+    (check "the define compiles" (search "Compiled" (status-text)) (status-text))
+    (set-cursor 5 3)
+    (call-command 'compile-or-eval-defun)))
+
+(then-when ((or (not *have-racket*) (cadre-ui::buffer-local (current-buffer) :inline-result)) :timeout 60)
+  (when *have-racket*
+    (let ((shown (cadre-ui::buffer-local (current-buffer) :inline-result)))
+      (check "evaluating a call shows its value inline, in the file's module"
+             (and shown (search "⇒ 12" (gtk:label-get-text (cdr shown))))
+             (and shown (gtk:label-get-text (cdr shown)))))
+    (screenshot "51-racket-eval")
+    (set-cursor 5 8)                    ; (area 3 |4)
+    (cadre-ui::focus-view (current-view))
+    (cadre-ui::request-autodoc (current-view))))
+
+(then-when ((or (not *have-racket*) (search "area" (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))) :timeout 30)
+  (when *have-racket*
+    (check "the status bar shows the arglist, from the source"
+           (search "(area w h)" (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+           (gtk:label-get-text (cadre-ui::window-status-arglist *window*)))
+    (set-cursor 6 20)                   ; (define (twice x) (ar|ea …
+    (call-command 'edit-definition)))
+
+(then-when ((or (not *have-racket*) (equal '(3 9) (cursor))) :timeout 30)
+  (when *have-racket*
+    (check "M-. goes to the definition, from check-syntax" (equal '(3 9) (cursor)) (cursor))
+    (set-cursor 6 28)                   ; (fi|rst (list 2))
+    (call-command 'describe-symbol)))
+
+(then-when ((or (not *have-racket*)
+                (and (find-buffer "*Help*") (search "(first lst)" (buffer-string (find-buffer "*Help*")))))
+            :timeout 30)
+  (when *have-racket*
+    (check "describing shows the documented signature"
+           (search "(first lst)" (buffer-string (find-buffer "*Help*")))
+           (buffer-string (find-buffer "*Help*")))
+    (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))
+    (call-command 'cadre-ui::racket-run)))
+
+(then-when ((or (not *have-racket*) (search "Ran demo.rkt" (status-text))) :timeout 60)
+  (when *have-racket*
+    (check "Run File runs the module" (search "Ran demo.rkt" (status-text)) (status-text))
+    (call-command 'cadre-ui::racket-repl-tab)))
+
+(then 800
+  (when *have-racket*
+    (check "the Racket REPL is a tab" (eq 'cadre-ui::racket-repl-mode (buffer-major-mode (current-buffer))))
+    (check "the REPL is in the module it ran" (search "demo.rkt>" (buffer-string (current-buffer)))
+           (buffer-string (current-buffer)))
+    (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(area 6 7)"))
+    (call-command 'cadre-ui::repl-return)))
+
+(then-when ((or (not *have-racket*) (search "42" (buffer-string (current-buffer)))) :timeout 30)
+  (when *have-racket*
+    (check "the Racket REPL evaluates what is typed, in the module" (search "42" (buffer-string (current-buffer)))
+           (buffer-string (current-buffer)))
+    (screenshot "52-racket-repl")
+    (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))))
+
+(then 500
+  (when *have-racket*
+    (let ((text (buffer-text (current-buffer))))
+      (gtk:text-buffer-insert text (gtk:text-buffer-get-end-iter text) (format nil "(define (bad) (if))~%") -1))
+    (set-cursor 7 1)
+    (call-command 'compile-defun)))
+
+(then-when ((or (not *have-racket*) (search "failed" (status-text))) :timeout 60)
+  (when *have-racket*
+    (check "a syntax error fails the compile, with a note" (search "1 error" (status-text)) (status-text))
+    (call-command 'cadre-ui::racket-check-syntax)))
+
+(then-when ((or (not *have-racket*) (search "problem" (status-text))) :timeout 60)
+  (when *have-racket*
+    (check "Check Syntax finds the error without running the file" (search "1 problem" (status-text)) (status-text))
+    (call-command 'cadre-ui::racket-stop)))
+
+(then-when ((or (not *have-racket*) (null (cadre-ui::racket-connection))) :timeout 30)
+  (when *have-racket*
+    (check "stopping Racket disconnects" (null (cadre-ui::racket-connection)))))
 
 ;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
 (section "indentation")

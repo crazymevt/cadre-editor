@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R3 are built.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R4 are built.
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -254,6 +254,58 @@ in `vendor/cadre-racket/` (about 600–900 lines of Racket):
   this Mac: Racket 9.3 from Homebrew has `drracket/check-syntax`,
   `setup/xref`, `scribble/xref` and `syntax-color`).
 
+As built in R4 (2026-10-14):
+
+- `vendor/cadre-racket/main.rkt` (MIT, about 600 lines, standard
+  distribution only, its heavier libraries loaded lazily) and
+  `src/core/racket/backend.lisp`. A `racket-connection` is a
+  `framed-connection`, the Swank framing and reader split out of
+  `swank-connection`, so it reuses `swank-connect`, `swank-rex` and the safe
+  reader. Requests are `(:emacs-rex (:op arg …) package t id)`. The back end
+  writes its answers so Common Lisp's reader reads them (`#t` is `t`, `#f`
+  and `'()` are `nil`, strings escape only `"` and `\`), as plain data that
+  the methods put in Swank's shapes.
+- **Starting:** `start-inferior-lisp` gained `:arguments`, `:directory`,
+  `:server` and `:timeout`, so `start-racket` runs `racket main.rkt
+  --port-file …` in the file's package folder (the nearest with `info.rkt`)
+  the same way Swank starts. Any Racket command starts it, as for Clojure.
+  It exits when its connection or its standard input closes. Options
+  (Settings → Racket): `*racket-command*`, `*raco-command*`,
+  `*racket-startup-timeout*`.
+- **Modules:** a package is a module file's path. Code from a file is
+  evaluated in that module's namespace (`module->namespace`), and the module
+  is run from source first if it hasn't been (with
+  `compile-enforce-module-constants` off, so redefining a function changes
+  its callers). Run File (`racket-run`, `C-c C-k`, F5) runs the module
+  afresh, with its `main` submodule, and puts the REPL in it, as DrRacket's
+  Run does. The REPL starts in a plain `racket` namespace.
+- **Lookups:** arglists come from the documentation's signatures
+  (`scribble/blueboxes`), else the `define` in the binding's source file,
+  else the procedure's arity. Describe shows the signature, its contracts
+  and the docs' URL; Racket: Documentation (`C-c C-d`, F1) opens that page.
+  Completion lists the namespace's symbols, by kind.
+- **check-syntax**, on the buffer's text (saved or not), with nothing run:
+  go to definition (an arrow in the file, or an import's `define` in its
+  library); Find References (the binding's uses in the file); and Problems:
+  the first error (an unbound identifier, bad syntax) and unused requires,
+  checked on every save while Racket runs, or with Racket: Check Syntax.
+- **raco:** `raco-make` (the file) and `raco-test` (the package folder, or the
+  file) run like Build Project, on the Output page; the places they report
+  (`file.rkt:3:4:` and rackunit's `location:`) go to Problems.
+- **New Project** has a Racket package kind: `info.rkt`, `main.rkt` (with
+  `test` and `main` submodules), README, `.gitignore`, LICENSE.
+- **The REPL tab** (`*racket-repl*`) shares its code with Clojure's
+  (`ui/language-repl.lisp`). Output arrives a line at a time; entering a
+  module replaces the prompt with a note and the module's prompt.
+- **Not yet, moved to R5:** errortrace stack traces, the Debugger page,
+  rename by check-syntax, program input, and docs in a Docs page rather than
+  the browser.
+- **Tested:** `tests/racket.lisp` (the helpers, the New Project template with
+  `raco test` on it, and every request against a real Racket, skipped
+  without one) and the `racket` smoke section (starting, compiling, inline
+  values, argument hints, `M-.`, describe, Run File, the REPL in the module,
+  a syntax error, Check Syntax, stopping).
+
 ### 2.6 Indentation
 
 Each dialect has its own table and rules, in the same `indent.lisp` engine:
@@ -303,8 +355,8 @@ Each milestone ends with `make test` and the relevant smoke sections passing
 | R1 | **Modes and static editing** (built): `racket-mode`, `clojure-mode`, editing in all three Lisps, highlighting tables, paredit with brackets, indentation tables, outline and folding, comment toggling. Project detection and New Project templates moved to R3/R4 | `modes.lisp`, `paredit.lisp`, `indent.lisp`, `definitions.lisp`, `ui/highlight.lisp`, `ui/outline.lisp`, `new-project` | L |
 | R2 | **Connection protocol** (built): `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
 | R3 | **Clojure live** (built; see 2.4 for what moved to R5): pages and commands a connection can't do hidden; status bar, REPL and Debugger pages following the buffer's language; `gtk-thread-source` only for Common Lisp; project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
-| R4 | **Racket live:** project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/*.rkt`, `core/racket.lisp` | L |
-| R5 | **Polish:** Clojure stack traces on the Debugger page, a Tests page, the inspector, program input, clj-kondo, a Clojure New Project template; docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
+| R4 | **Racket live** (built; see 2.5 for what moved to R5): project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/main.rkt`, `core/racket/backend.lisp`, `ui/racket.lisp`, `ui/language-repl.lisp` | L |
+| R5 | **Polish:** Clojure stack traces and Racket errortrace on the Debugger page, a Tests page, the inspector, program input, clj-kondo, a Clojure New Project template; docs pages, Claude tools through the back end, `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
 
 R0 and R1 are useful alone: Racket and Clojure files edit well with no
 process running. R3 and R4 are independent of each other once R2 is done,
