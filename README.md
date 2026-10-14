@@ -414,6 +414,12 @@ committed, so Cadre doesn't need spec-browser. After rebuilding the docset
 there (`make export`), copy it over:
 `cp ../spec-browser/data/common-lisp/*.sexp data/docsets/common-lisp/`.
 
+![The HyperSpec entry for position-if beside the code that calls it](docs/screenshot-hyperspec-split.png)
+
+Drag the HyperSpec tab into the main tab bar to read it at full width:
+
+![The HyperSpec entry for position-if filling the editor](docs/screenshot-hyperspec.png)
+
 Other libraries' documentation shows too, and lookups follow the package a
 symbol is written with (`bt:make-thread`):
 - **[gtk4](https://github.com/crazymevt/gtk4) and [raylib](https://github.com/crazymevt/raylib)**, once they've built their docsets (`make docset` in each).
