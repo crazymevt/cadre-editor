@@ -93,7 +93,8 @@
                (:file "fuzzy")
                (:module "lisp"
                 :serial t
-                :components ((:file "lexer")
+                :components ((:file "dialect")
+                             (:file "lexer")
                              (:file "syntax")
                              (:file "indent")
                              (:file "faces")
@@ -135,6 +136,7 @@
                (:file "commands")
                (:file "keymaps")
                (:file "lisp")
+               (:file "dialects")
                (:file "editing")
                (:file "swank")
                (:file "claude")

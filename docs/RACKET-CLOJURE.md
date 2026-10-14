@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). Nothing here is built yet.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 is built.
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -51,25 +51,29 @@ read characters, so a **dialect** is a set of reader rules, not a new lexer:
 | Other | `#+`/`#-`, `\|sym\|` | `#lang` line, `#rx""`, `#px""`, here strings `#<<`, `#hash(…)` | `^meta`, `#"regex"`, `#inst`, tagged literals, `#:ns{…}` maps |
 | Symbols, case | Upcased | Case-sensitive | Case-sensitive, `ns/name` |
 
-Work in the lexer:
+As built in R0 (2026-10-14):
 
-- A `dialect` struct (`src/core/lisp/dialect.lisp`): bracket pairs, comment
-  rules, character syntax, the dispatch table for `#`, keyword syntax, the
-  symbol separator (`:` for CL, `/` for Clojure), the definer heads, the
-  indentation table and the built-in symbol table for highlighting.
-- `lex-line` takes the dialect. The line state's depth stays a count, and
-  each line state also records the brackets still open on that line (as a short
-  string such as `"(["`), so a `]` closing a `(` is shown as invalid. States
-  still compare with `equal`, so the line cache keeps working.
-- Tokens gain the bracket character, so paredit can wrap, splice and
-  change brackets (`[` ↔ `(` is common in Racket).
-- `:datum-comment` makes the next form show as a comment (`#;` / `#_`).
-  That form can span lines, so the line state records it too.
-- Clojure strings can be multi-line and have no `|…|` state, and Racket adds
-  here strings. Both fit the existing `(:string depth)` / `(:block …)` states.
-
-`lisp-mode` keeps the Common Lisp dialect, and the lexer tests stay as they
-are. New tests in `tests/` cover each dialect's reader corner cases.
+- A `dialect` struct (`src/core/lisp/dialect.lisp`) holds the reader rules:
+  which brackets open lists, what ends a symbol, whether a comma is whitespace,
+  `#| |#` and `|…|`, colon keywords, the namespace separator (`:` or `/`), and
+  the definer heads. The `#` dispatch differs most between the three, so the
+  lexer has one dispatch function per dialect. The indentation table and the
+  highlighting symbol table join the struct in R1.
+- `lex-line` and `make-lisp-syntax` take the dialect, which defaults to Common
+  Lisp, so every existing caller is unchanged.
+- The depth in the line state stays a count. Instead of recording which
+  brackets are open in the state, each `:open` and `:close` token carries its
+  bracket character in `token-subtype`, and `paren-match-at` reports a `]`
+  closing a `(` as not matched. This leaves the state shape alone, which the
+  indenter and the Markdown and REPL callers rely on.
+- `#;` and `#_` are `:datum-comment` tokens. They belong to the element after
+  them, as `#+` does, so form navigation steps over the pair. Showing that
+  element in the comment color is the highlighter's job in R1, because it
+  can span lines.
+- Racket here strings (`#<<END`) add a `(:here depth "END")` state. Clojure's
+  multi-line strings use the existing `(:string depth)` state.
+- New token types: `:constant` (`#t`, `#false`) and `:datum-comment`, both
+  mapped to faces in `faces.lisp`.
 
 ### 2.2 One "Lisp family" of modes
 

@@ -58,6 +58,7 @@
   (case (token-type token)
     ((:open :close) (list :paren (mod (token-depth token) *paren-face-count*)))
     (:symbol (symbol-face (subseq line (token-start token) (token-end token)) (token-subtype token)))
-    ((:comment :string :number :character :keyword :reader-conditional :invalid :quote)
+    ((:comment :string :number :character :keyword :constant :reader-conditional :invalid :quote)
      (token-type token))
+    (:datum-comment :comment)
     (:reader :quote)))

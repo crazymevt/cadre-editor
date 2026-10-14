@@ -52,7 +52,9 @@
    #:fuzzy-match #:fuzzy-filter
    ;; Lisp syntax
    #:lex-line #:terminating-char-p #:whitespace-char-p #:token #:token-type #:token-start #:token-end #:token-depth #:token-subtype
-   #:make-lisp-syntax #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
+   #:dialect #:dialect-name #:dialect-title #:find-dialect
+   #:*common-lisp-dialect* #:*racket-dialect* #:*clojure-dialect*
+   #:make-lisp-syntax #:syntax-dialect #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
    #:ensure-lexed #:line-tokens #:line-start-state #:line-end-state
    #:line-info #:line-info-highlighted #:line-info-tokens #:forget-highlighting
    #:depth-at #:context-at

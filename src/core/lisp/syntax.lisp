@@ -21,15 +21,17 @@
 
 (defclass lisp-syntax ()
   ((text :initarg :text :reader syntax-text)
+   (dialect :initarg :dialect :initform *common-lisp-dialect* :reader syntax-dialect)
    (lines :reader syntax-lines)
    (first-unchecked :initform 0 :accessor syntax-first-unchecked
                     :documentation "The first line whose start state may be stale, or nil.")
    (max-dirty :initform -1 :accessor syntax-max-dirty
               :documentation "The last dirty line, or -1.")))
 
-(defun make-lisp-syntax (text)
-  "A syntax cache for TEXT, an object implementing the text protocol."
-  (let ((syntax (make-instance 'lisp-syntax :text text)))
+(defun make-lisp-syntax (text &key (dialect *common-lisp-dialect*))
+  "A syntax cache for TEXT, an object implementing the text protocol, read
+by DIALECT's rules."
+  (let ((syntax (make-instance 'lisp-syntax :text text :dialect dialect)))
     (reset-syntax syntax)
     syntax))
 
@@ -88,7 +90,7 @@
                   (setf (syntax-first-unchecked syntax) nil (syntax-max-dirty syntax) -1)
                   (return))
                 (let ((string (text-line-string (syntax-text syntax) i)))
-                  (multiple-value-bind (tokens end) (lex-line string previous)
+                  (multiple-value-bind (tokens end) (lex-line string previous (syntax-dialect syntax))
                     (setf (line-info-start-state info) previous
                           (line-info-tokens info) (coerce tokens 'simple-vector)
                           (line-info-end-state info) end
@@ -160,11 +162,11 @@
         (previous-token syntax line 0))))
 
 (defun continued-mode-p (state)
-  (member (state-mode state) '(:string :bar :block)))
+  (member (state-mode state) '(:string :here :bar :block)))
 
 (defun continues-to-next-line-p (syntax line index)
   "True if the token at (LINE, INDEX) carries on into the next line (a
-multi-line string, |symbol| or block comment)."
+multi-line string, here string, |symbol| or block comment)."
   (let ((info (line-info syntax line)))
     (and (= index (1- (length (line-info-tokens info))))
          (continued-mode-p (line-info-end-state info))
@@ -174,8 +176,8 @@ multi-line string, |symbol| or block comment)."
   (and (zerop index) (plusp line)
        (continued-mode-p (line-start-state syntax line))))
 
-(defparameter *prefix-token-types* '(:quote :reader-conditional :reader)
-  "Tokens that belong to the element after them: ' ` , #' #+ and such.")
+(defparameter *prefix-token-types* '(:quote :reader-conditional :reader :datum-comment)
+  "Tokens that belong to the element after them: ' ` , #' #+ #_ and such.")
 
 ;;; Positions inside the text
 
@@ -201,7 +203,7 @@ multi-line string, |symbol| or block comment)."
                   (and last (= (token-end last) column)
                        (case (token-type last)
                          (:comment :comment)
-                         (:string (and (eq (state-mode (line-end-state syntax line)) :string)
+                         (:string (and (member (state-mode (line-end-state syntax line)) '(:string :here))
                                        :string)))))))
           (t :code))))
 
@@ -263,7 +265,7 @@ the end of a list or of the text."
       (unless l (return nil))
       (let ((tk (token-ref syntax l i)))
         (case (token-type tk)
-          ((:comment :invalid :quote :reader-conditional :reader)
+          ((:comment :invalid :quote :reader-conditional :reader :datum-comment)
            (multiple-value-setq (l i) (next-token syntax l i)))
           (:close (return nil))
           (t (return (element-end syntax l i))))))))
@@ -276,7 +278,7 @@ nil at the start of a list or of the text."
       (unless l (return nil))
       (let ((tk (token-ref syntax l i)))
         (case (token-type tk)
-          ((:comment :invalid :quote :reader-conditional :reader)
+          ((:comment :invalid :quote :reader-conditional :reader :datum-comment)
            (multiple-value-setq (l i) (previous-token syntax l i)))
           (:open (return nil))
           (t (multiple-value-bind (sl si) (element-start-place syntax l i)
@@ -349,10 +351,16 @@ at it if INCLUSIVE."
                   (return (element-end syntax l i))))
               (multiple-value-setq (l i) (next-token syntax l i))))))))
 
+(defun brackets-pair-p (open close)
+  "True if the :close token CLOSE closes the kind of bracket the :open token OPEN opened."
+  (eql (closing-bracket (token-subtype open)) (token-subtype close)))
+
 (defun paren-match-at (syntax line column)
   "For a cursor at (LINE, COLUMN) just after a close paren or just before an
 open paren: the column ranges of both parens, as (values l1 c1 l2 c2 matched),
-where (l2, c2) is the paren next to the cursor. Nil if the cursor is not at a paren."
+where (l2, c2) is the paren next to the cursor. MATCHED is false when no
+paren matches, or a bracket of another kind does (a ] closing a (). Nil if
+the cursor is not at a paren."
   (let* ((tokens (line-tokens syntax line))
          (before (find-if (lambda (tk) (and (= (token-end tk) column)
                                             (member (token-type tk) '(:close :invalid))
@@ -366,10 +374,12 @@ where (l2, c2) is the paren next to the cursor. Nil if the cursor is not at a pa
                  (values line (token-start before) line (token-start before) nil)
                  (multiple-value-bind (l i) (matching-open syntax line (position before tokens))
                    (if l
-                       (values l (paren-column (token-ref syntax l i)) line (token-start before) t)
+                       (values l (paren-column (token-ref syntax l i)) line (token-start before)
+                               (brackets-pair-p (token-ref syntax l i) before))
                        (values line (token-start before) line (token-start before) nil)))))
             (after
              (multiple-value-bind (l i) (matching-close syntax line (position after tokens))
                (if l
-                   (values l (token-start (token-ref syntax l i)) line (paren-column after) t)
+                   (values l (token-start (token-ref syntax l i)) line (paren-column after)
+                           (brackets-pair-p after (token-ref syntax l i)))
                    (values line (paren-column after) line (paren-column after) nil))))))))

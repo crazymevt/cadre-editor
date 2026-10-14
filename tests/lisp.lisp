@@ -3,8 +3,8 @@
 (defun syntax-of (string)
   (c:make-lisp-syntax (c:make-string-text string)))
 
-(defun token-summary (line state)
-  (multiple-value-bind (tokens end) (c:lex-line line state)
+(defun token-summary (line state &optional (dialect c:*common-lisp-dialect*))
+  (multiple-value-bind (tokens end) (c:lex-line line state dialect)
     (values (mapcar (lambda (tk) (list (c:token-type tk) (subseq line (c:token-start tk) (c:token-end tk))))
                     tokens)
             end)))
