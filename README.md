@@ -609,7 +609,8 @@ Lisp commands work on Clojure code, in the file's namespace:
 
 The status bar shows the Clojure connection while a Clojure tab is selected.
 This needs the Clojure CLI (or Leiningen, or Babashka). The first start
-downloads nREPL and cider-nrepl.
+downloads nREPL and cider-nrepl. New Project makes a Clojure project too
+(`deps.edn`, with tests run by `clojure -M:test`).
 
 **Racket runs too**, through Cadre's own back end (`vendor/cadre-racket/`,
 needing only an installed Racket). The first command that needs it starts

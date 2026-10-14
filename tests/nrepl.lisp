@@ -142,3 +142,24 @@ the process; nil if there is no Clojure CLI."
           (c:nrepl-disconnect conn)
           (c:stop-clojure process)
           (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
+
+;;; A new Clojure project (New Project)
+
+(define-test clojure-new-project :parent cadre-tests
+  (let ((files (c:project-files-for "my-app" :kind :clojure-project :author "Pat")))
+    (is equal '("deps.edn" "src/my_app/core.clj" "test/my_app/core_test.clj" "README.md" ".gitignore" "LICENSE")
+        (mapcar #'car files))
+    (true (search "(ns my-app.core" (cdr (assoc "src/my_app/core.clj" files :test #'string=))))
+    (is string= "src/my_app/core.clj" (c:project-main-file :clojure-project "my-app")))
+  ;; Its own tests pass, if the Clojure CLI is here to run them.
+  (if (ignore-errors (uiop:run-program '("clojure" "-Sdescribe") :output nil) t)
+      (let ((dir (c:create-lisp-project (uiop:temporary-directory) (format nil "my-app~d" (random 1000000))
+                                        :kind :clojure-project)))
+        (unwind-protect
+             (multiple-value-bind (output error code)
+                 (uiop:run-program '("clojure" "-M:test") :directory dir
+                                   :output :string :error-output :string :ignore-error-status t)
+               (is eql 0 code (format nil "~a~a" output error))
+               (true (search "0 failures, 0 errors" output)))
+          (uiop:delete-directory-tree dir :validate t)))
+      (skip "The Clojure CLI isn't installed" (true nil))))

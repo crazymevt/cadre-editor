@@ -12,7 +12,9 @@
 ;;;;   README.md, .gitignore, and LICENSE (MIT or BSD 2-Clause)
 ;;;;
 ;;;; A Racket package is info.rkt, main.rkt (with test and main submodules),
-;;;; README.md, .gitignore and LICENSE.
+;;;; README.md, .gitignore and LICENSE. A Clojure project is deps.edn (with a
+;;;; :test alias), src/NAME/core.clj, test/NAME/core_test.clj, README.md,
+;;;; .gitignore and LICENSE.
 ;;;;
 ;;;; CREATE-LISP-PROJECT writes them into a new folder.
 
@@ -376,36 +378,108 @@ keywords and strings."
         (cons "README.md" *racket-readme-template*)
         (cons ".gitignore" *racket-gitignore-template*)))
 
-(defun project-main-file (kind)
-  "The file a new project of KIND opens with."
-  (if (eq kind :racket-package) "main.rkt" "src/main.lisp"))
+;;; A Clojure project (the Clojure CLI's deps.edn)
+
+(defparameter *clojure-deps-template*
+  (template-lines
+   "{:paths [\"src\"]"
+   " :deps {org.clojure/clojure {:mvn/version \"1.12.0\"}}"
+   " :aliases"
+   " {:test {:extra-paths [\"test\"]"
+   "         :extra-deps {io.github.cognitect-labs/test-runner {:git/tag \"v0.5.1\" :git/sha \"dfb30dd\"}}"
+   "         :main-opts [\"-m\" \"cognitect.test-runner\"]}}}"))
+
+(defparameter *clojure-core-template*
+  (template-lines
+   "(ns {{name}}.core"
+   "  \"{{description}}\")"
+   ""
+   "(defn hello"
+   "  ([] (hello \"World\"))"
+   "  ([who] (str \"Hello, \" who \"!\")))"
+   ""
+   "(defn -main [& args]"
+   "  (println (apply hello args)))"))
+
+(defparameter *clojure-test-template*
+  (template-lines
+   "(ns {{name}}.core-test"
+   "  (:require [clojure.test :refer [deftest is]]"
+   "            [{{name}}.core :refer [hello]]))"
+   ""
+   "(deftest hello-test"
+   "  (is (= \"Hello, Clojure!\" (hello \"Clojure\"))))"))
+
+(defparameter *clojure-readme-template*
+  (template-lines
+   "# {{name}}"
+   ""
+   "{{description}}"
+   ""
+   "## Running"
+   ""
+   "```"
+   "clojure -M -m {{name}}.core"
+   "```"
+   ""
+   "## Tests"
+   ""
+   "```"
+   "clojure -M:test"
+   "```"))
+
+(defparameter *clojure-gitignore-template*
+  (template-lines ".cpcache/" ".nrepl-port" ".clj-kondo/.cache/" ".lsp/" "target/" "*~" ".DS_Store"))
+
+(defun clojure-source-path (name)
+  "The file path of NAME as a namespace segment: hyphens become underscores."
+  (substitute #\_ #\- name))
+
+(defun clojure-project-files (name)
+  (let ((dir (clojure-source-path name)))
+    (list (cons "deps.edn" *clojure-deps-template*)
+          (cons (format nil "src/~a/core.clj" dir) *clojure-core-template*)
+          (cons (format nil "test/~a/core_test.clj" dir) *clojure-test-template*)
+          (cons "README.md" *clojure-readme-template*)
+          (cons ".gitignore" *clojure-gitignore-template*))))
+
+(defun project-main-file (kind &optional name)
+  "The file a new project NAME of KIND opens with."
+  (case kind
+    (:racket-package "main.rkt")
+    (:clojure-project (format nil "src/~a/core.clj" (clojure-source-path name)))
+    (t "src/main.lisp")))
 
 (defun project-files-for (name &key (description "") (author "") (license "MIT")
                                     (kind :library) (tests :parachute))
   "The files of a new project NAME, as (relative-path . contents). KIND is
-:library, :application, :gtk-application or :racket-package; TESTS is
-:parachute or :fiveam (a Racket package's are rackunit); LICENSE is a key of
+:library, :application, :gtk-application, :racket-package or
+:clojure-project; TESTS is :parachute or :fiveam (a Racket package's are
+rackunit, a Clojure project's clojure.test); LICENSE is a key of
 *license-templates*, or nil for none."
   (unless (valid-project-name-p name)
     (editor-error "A project name is lower-case letters, digits and hyphens, starting with a letter"))
   (let* ((values (list :name name
                        :description (substitute #\' #\" (cond ((string/= description "") description)
                                                              ((eq kind :racket-package) "A Racket package.")
+                                                             ((eq kind :clojure-project) "A Clojure project.")
                                                              (t "A Common Lisp project.")))
                        :author (substitute #\' #\" author)
                        :license (or license "Proprietary")
                        :depends (if (eq kind :gtk-application) "\"gtk4\"" "")
                        :app-id (format nil "org.example.~a" (substitute #\_ #\- name))
                        :year (princ-to-string (nth-value 5 (decode-universal-time (get-universal-time))))))
-         (files (if (eq kind :racket-package)
-                    (racket-project-files license)
+         (files (case kind
+                  (:racket-package (racket-project-files license))
+                  (:clojure-project (clojure-project-files name))
+                  (t
                     (list (cons (format nil "~a.asd" name) (asd-template kind tests))
                           (cons "src/package.lisp" (package-template kind))
                           (cons "src/main.lisp" (main-template kind))
                           (cons "tests/main.lisp" (tests-template tests))
                           (cons "Makefile" (makefile-template kind tests))
                           (cons "README.md" (readme-template kind))
-                          (cons ".gitignore" *gitignore-template*)))))
+                          (cons ".gitignore" *gitignore-template*))))))
     (when license
       (let ((text (cdr (assoc license *license-templates* :test #'string=))))
         (unless text (editor-error "Unknown license: ~a" license))
