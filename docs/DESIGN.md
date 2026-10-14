@@ -873,8 +873,10 @@ it in `Cadre.app` with Cadre's own files in `Contents/Resources/cadre/`,
 which `resource-pathname` (core `resources.lisp`) uses instead of ASDF.
 Started outside a terminal (no `TERM`), the app copies a login shell's
 environment, as VS Code does, and reseeds `*random-state*`, which the image
-would otherwise freeze. GTK stays Homebrew's; bundling it (gtk4's
-`macos-app.sh --bundle-gtk`), Flatpak and Windows wait. Agent mode is the same chat with a different appended prompt,
+would otherwise freeze. Packaging (2026-10-14): the core is saved apart from the runtime so the app
+can be signed and notarized; `make release-macos` bundles GTK, `make
+release-linux` makes a tarball and .deb; see docs/RELEASING.md. Flatpak and
+Windows wait. Agent mode is the same chat with a different appended prompt,
 `TodoWrite` and `Task` allowed, the agent model, and five more editor tools
 (`compile_defun`, `load_system`, `run_tests`, `open_file`, `save_file`);
 switching modes restarts the CLI with `--resume`, so the conversation goes

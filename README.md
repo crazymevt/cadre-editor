@@ -7,7 +7,7 @@ interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4)
 
 ![Cadre editing Lisp, with Claude explaining the code in the side panel](docs/screenshot.png)
 
-**Status:** milestone M6 (without packaging, which waits until Cadre is more complete). See [docs/DESIGN.md](docs/DESIGN.md)
+**Status:** milestone M6, with release packages for macOS and Linux ([docs/RELEASING.md](docs/RELEASING.md)). See [docs/DESIGN.md](docs/DESIGN.md)
 for the design and the milestones.
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
@@ -167,6 +167,10 @@ optional tools still come from Homebrew, so it's for Macs set up as in
 the rest of the environment from your login shell, as a terminal would, so
 it finds `sbcl`, `git` and `claude` the same way. Rebuild it (`make
 install-app`, a few seconds once Cadre is compiled) to pick up changes.
+
+Release packages that carry their own GTK (macOS) or use the system's
+(Linux): `make release-macos`, `make release-linux`; see
+[docs/RELEASING.md](docs/RELEASING.md).
 
 To open folders and files from a terminal, link the launcher onto your
 `PATH`:
@@ -886,7 +890,7 @@ SBCL's statistical profile.
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |
 | `tests/` | Parachute tests for `src/core/` |
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `perf.lisp`; the app: `build-app.lisp`, `make-app.sh`, the `cadre` launcher |
-| `packaging/macos/` | The app icon (`Cadre.svg`) |
+| `packaging/` | The app icon (`Cadre.svg`), the macOS launcher, entitlements and disk image, the Linux package, notices, pinned versions (see [docs/RELEASING.md](docs/RELEASING.md)) |
 | `icons/` | Cadre's own symbolic icons |
 
 ## License
