@@ -419,12 +419,12 @@ symbol is written with (`bt:make-thread`):
 - **[gtk4](https://github.com/crazymevt/gtk4) and [raylib](https://github.com/crazymevt/raylib)**, once they've built their docsets (`make docset` in each).
 - **Any docset in `~/.local/share/docsets/`.** The
   [docsets](https://github.com/crazymevt/docsets) project writes them for
-  other libraries: bordeaux-threads has full pages, and any library can be
-  documented from its docstrings. To add bordeaux-threads:
+  other libraries: bordeaux-threads, alexandria and uiop so far, and any
+  library can be documented from its docstrings. To add them:
 
   ```sh
   git clone https://github.com/crazymevt/docsets.git ~/projects/lisp/docsets
-  make -C ~/projects/lisp/docsets docset LIBRARY=bordeaux-threads
+  make -C ~/projects/lisp/docsets all
   ```
 
   It needs the docset library linked into Quicklisp's local projects, as in
