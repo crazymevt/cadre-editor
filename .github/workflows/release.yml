@@ -1,0 +1,186 @@
+# Builds the release packages (docs/RELEASING.md): the macOS app as a disk
+# image, with its own GTK and the source of its GPL and LGPL libraries, and the Linux tarball and .deb, which use the
+# system's GTK. Each is started once to check that it runs.
+#
+# Pushing a tag vX.Y.Z (matching :version in cadre.asd) also makes a draft
+# GitHub release with the packages and their checksums, to publish by
+# hand. Started from the Actions tab, it only builds them (as artifacts).
+#
+# Signing and notarizing the macOS app needs these repository secrets;
+# without them the app is signed ad hoc and Gatekeeper warns about it.
+#   MACOS_CERTIFICATE           base64 of the Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD  its password
+#   MACOS_SIGNING_IDENTITY      e.g. "Developer ID Application: Name (TEAMID)"
+#   NOTARY_KEY                  an App Store Connect API key (.p8 contents)
+#   NOTARY_KEY_ID, NOTARY_ISSUER
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        name: Check the tag against cadre.asd
+        run: |
+          version=$(sed -n 's/.*:version "\([^"]*\)".*/\1/p' cadre.asd | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME but cadre.asd says $version"
+            exit 1
+          fi
+
+  macos:
+    needs: version
+    # Homebrew builds its libraries for the macOS they're installed on, and
+    # the app needs at least that one: the oldest runner sets the minimum.
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      NOTARY_KEY_CONTENTS: ${{ secrets.NOTARY_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SBCL, GTK and the tools
+        # The runner comes with some of their dependencies installed, maybe
+        # older than their formulae; the source archive must match.
+        run: |
+          brew update --quiet
+          brew install sbcl gtk4 libadwaita vte3 librsvg
+          # shellcheck disable=SC2046
+          brew upgrade --formula $(brew deps --formula gtk4 libadwaita vte3 librsvg) gtk4 libadwaita vte3 librsvg || true
+          brew outdated --formula
+
+      - name: Set up Quicklisp, gtk4 and docset (packaging/versions.env)
+        run: scripts/ci-setup-lisp.sh
+
+      - name: Import the signing certificate
+        if: env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          keychain=$RUNNER_TEMP/signing.keychain-db
+          password=$(openssl rand -hex 24)
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          read -r -a keychains <<< "$(security list-keychains -d user | tr -d '"')"
+          security list-keychains -d user -s "$keychain" "${keychains[@]}"
+          rm "$RUNNER_TEMP/certificate.p12"
+          echo "CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Set up notarization
+        if: env.NOTARY_KEY_CONTENTS != ''
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          printf '%s' "$NOTARY_KEY_CONTENTS" > "$RUNNER_TEMP/notary.p8"
+          {
+            echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8"
+            echo "NOTARY_KEY_ID=$NOTARY_KEY_ID"
+            echo "NOTARY_ISSUER=$NOTARY_ISSUER"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the app and the disk image
+        run: make release-macos
+
+      - name: Start the app, and check it uses only its own libraries
+        run: |
+          rm -f ~/.local/state/cadre/cadre.log
+          env -u TERM CADRE_QUIT_AFTER=20 build/Cadre.app/Contents/MacOS/Cadre &
+          sleep 12
+          pid=$(pgrep -f 'Cadre.app/Contents/MacOS/sbcl' | head -1)
+          if [ -z "$pid" ]; then echo "::error::Cadre isn't running"; cat ~/.local/state/cadre/cadre.log || true; exit 1; fi
+          if vmmap "$pid" | grep -o '/opt/homebrew[^ ]*\.dylib' | sort -u | grep .; then
+            echo "::error::The app loaded Homebrew's libraries"; exit 1
+          fi
+          wait
+          cat ~/.local/state/cadre/cadre.log
+          grep -q 'Cadre exited normally' ~/.local/state/cadre/cadre.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadre-macos
+          path: dist/*
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SBCL and GTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            sbcl make curl git python3 xvfb xauth dbus dbus-x11 \
+            libgtk-4-1 libadwaita-1-0 libvte-2.91-gtk4-0 adwaita-icon-theme fonts-dejavu-core
+
+      - name: Set up Quicklisp, gtk4 and docset (packaging/versions.env)
+        run: scripts/ci-setup-lisp.sh
+
+      - name: Build the tarball and the .deb
+        run: make release-linux
+
+      - name: Start the packaged Cadre
+        run: |
+          dir=$(ls -d build/linux/cadre-*/)
+          rm -f ~/.local/state/cadre/cadre.log
+          env -u TERM CADRE_QUIT_AFTER=15 timeout 120 dbus-run-session -- xvfb-run -a "$dir/bin/cadre" "$PWD"
+          cat ~/.local/state/cadre/cadre.log
+          grep -q 'Cadre exited normally' ~/.local/state/cadre/cadre.log
+          if grep -qE 'Unhandled|fatal error|debugger invoked' ~/.local/state/cadre/cadre.log; then exit 1; fi
+
+      - name: Install the .deb
+        run: sudo apt-get install -y ./dist/cadre_*.deb && test -x /usr/bin/cadre
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadre-linux
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [version, macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Make a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          cat ./*.sha256 > SHA256SUMS
+          files=()
+          for file in ./*; do case "$file" in *.sha256) ;; *) files+=("$file") ;; esac; done
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "Cadre ${{ needs.version.outputs.version }}" --generate-notes "${files[@]}"
