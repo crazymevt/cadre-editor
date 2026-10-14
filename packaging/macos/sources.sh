@@ -37,7 +37,8 @@ brew info --json=v2 $formulae | python3 -c '
 import json, sys
 for f in json.load(sys.stdin)["formulae"]:
     stable = f["versions"]["stable"] + ("_%d" % f["revision"] if f.get("revision") else "")
-    installed = f["installed"][0]["version"] if f["installed"] else ""
+    # The linked version is the one in lib/, which the app bundles.
+    installed = f.get("linked_keg") or (f["installed"][-1]["version"] if f["installed"] else "")
     print(f["name"], installed, stable, (f.get("license") or "").replace(" ", "_"), f.get("tap_git_head") or "-")
 ' > "$work/info.txt"
 

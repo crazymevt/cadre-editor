@@ -85,7 +85,7 @@ Package: cadre
 Version: $version
 Architecture: $deb_arch
 Maintainer: Jessie Hughart <https://github.com/crazymevt/cadre-editor>
-Depends: libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5), libzstd1, libc6
+Depends: libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5), libharfbuzz-gobject0, libgraphene-1.0-0, libzstd1, libc6
 Recommends: sbcl, git, libvte-2.91-gtk4-0
 Suggests: libtree-sitter0, build-essential
 Section: devel
