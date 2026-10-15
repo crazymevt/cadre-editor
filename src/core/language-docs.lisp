@@ -183,19 +183,19 @@ CLOJUREDOCS (from clojuredocs-index) merged in when given."
     (remove-if-not (lambda (v) (and (consp v) (stringp (first v)) (stringp (second v)))) data)))
 
 (defun write-clojure-docset (vars &key clojuredocs version (id "clojure") (title "Clojure") source
+                                          (from "Clojure's standard namespaces")
                                           (directory (language-docset-directory id)))
   "Write the Clojure docset for VARS; CLOJUREDOCS is ClojureDocs' parsed export, or nil."
   (let ((entries (clojure-docset-entries vars (and clojuredocs (clojuredocs-index clojuredocs)))))
     (docset:write-docset directory
                          (list :id id :title title
-                               :subtitle (if clojuredocs
-                                             "Docstrings from the connected Clojure, with ClojureDocs' examples"
-                                             "Docstrings from the connected Clojure")
+                               :subtitle (format nil "Docstrings from ~a~:[~;, with ClojureDocs' examples~]"
+                                                 from clojuredocs)
                                :version (or version "") :packages (remove-duplicates (mapcar #'first vars) :test #'string=)
                                :source (or source "Clojure's standard namespaces")
                                :attribution (if clojuredocs
                                                 "Docstrings from the Clojure libraries' authors. Examples, see-alsos and notes from ClojureDocs (clojuredocs.org), by its contributors, downloaded on this machine and not part of Cadre."
-                                                "Docstrings from the Clojure libraries' authors, read from the connected Clojure on this machine.")
+                                                (format nil "Docstrings from their authors, read from ~a on this machine." from))
                                :license "As each library's"
                                :toc '())
                          entries)
@@ -286,5 +286,5 @@ their source without running them. Returns the number of entries."
   "Write ROOT's Clojure project's docset from VARS (its namespaces')."
   (let ((id (project-docset-id root)))
     (write-clojure-docset vars :id id :title (or title (car (last (pathname-directory root))))
-                               :source (uiop:native-namestring root)
+                               :source (uiop:native-namestring root) :from "the project's namespaces"
                                :directory (language-docset-directory id))))
