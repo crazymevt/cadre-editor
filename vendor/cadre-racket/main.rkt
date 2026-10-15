@@ -490,6 +490,26 @@
                  #:when (and (= (first a) (first binder)) (= (second a) (second binder))))
         (cons (line-text text (third a)) (location-at path text (third a))))))
 
+(define (binding-spans path text offset)
+  ;; For renaming: the (start end) of the binding the identifier at OFFSET
+  ;; refers to and of each use of it in TEXT, last first; or an error if it
+  ;; is imported (it's defined, and renamed, elsewhere).
+  (define found (check-syntax path text))
+  (define binder (binder-at found offset))
+  (cond
+    [binder
+     (sort (remove-duplicates
+            (cons binder
+                  (for/list ([a (hash-ref found 'arrows)]
+                             #:when (and (= (first a) (first binder)) (= (second a) (second binder))))
+                    (list (third a) (fourth a)))))
+           > #:key first)]
+    [(findf (λ (j) (covers? j offset)) (hash-ref found 'jumps))
+     => (λ (j) (error 'rename "~a is imported from ~a: rename it there" (third j) (fourth j)))]
+    [(hash-ref found 'error)
+     => (λ (e) (error 'rename "the file doesn't expand: ~a" (second e)))]
+    [else (error 'rename "that isn't defined in this file (it's imported, or a primitive)")]))
+
 (define (documentation-url ns name path text offset)
   (define found (and path text offset (check-syntax path text)))
   (define doc (and found (findf (λ (d) (covers? d offset)) (hash-ref found 'docs))))
@@ -613,6 +633,7 @@
     [(:find-definitions)
      (apply find-definitions (ns) (map nil->false args))]
     [(:references) (apply references args)]
+    [(:binding-spans) (apply binding-spans args)]
     [(:documentation) (apply documentation-url (ns) (map nil->false args))]
     [(:problems) (apply problems args)]
     [(:macroexpand) (macroexpand (ns) (first args) (eq? (second args) 't))]

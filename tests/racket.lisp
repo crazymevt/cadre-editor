@@ -165,6 +165,17 @@ nil if there is no Racket."
                                              :package path :text text :offset (offset-of text "first (")))
                         (location (c:parse-location (second (first defs)))))
                    (true (search "list.rkt" (getf location :file)) "an import's definition is in its library"))
+                 ;; Renaming: the binding and its uses, last first; not another x.
+                 (let* ((text (format nil "#lang racket/base~%(define (f x) (+ x 1))~%(define (g x) x)~%"))
+                        (spans (backend-value #'c:racket-binding-spans conn path text (search "x 1" text))))
+                   (is equal (list (list (search "x 1" text) (1+ (search "x 1" text)))
+                                   (list (search "x)" text) (1+ (search "x)" text))))
+                       spans)
+                   (let ((outcome (handler-case (progn (backend-value #'c:racket-binding-spans conn path text
+                                                                    (search "+" text))
+                                                     "")
+                                  (error (e) (princ-to-string e)))))
+                     (true (search "imported" outcome) outcome)))
                  ;; Problems: errors and unused requires, without running anything.
                  (let ((notes (backend-value #'c:racket-problems conn path
                                              (concatenate 'string text (format nil "(define (bad) (nosuch 1))~%")))))

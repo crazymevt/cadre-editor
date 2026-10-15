@@ -335,7 +335,10 @@
 
 (define-command rename-symbol ()
   "Rename the symbol at the cursor in every Lisp file of the project: review
-the places in the Search page, then Rename."
+the places in the Search page, then Rename. In Racket, the binding at the
+cursor and its uses in the file (racket-rename-symbol)."
+  (when (eq (buffer-major-mode (current-buffer)) 'racket-mode)
+    (return-from rename-symbol (racket-rename-symbol)))
   (let ((name (or (let ((view (selected-view *window*))) (and view (symbol-at-cursor view)))
                   (editor-error "No symbol at the cursor"))))
     (setf (ps-symbol *project-search*) (subseq name (symbol-name-part name)))

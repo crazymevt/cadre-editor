@@ -3263,6 +3263,22 @@ and the number of items MODEL itself shows."
 
 (then 500
   (when *have-racket*
+    (set-cursor 3 14)                   ; (define (area |w h)
+    (call-command 'cadre-ui::rename-symbol)))
+
+(then-when ((or (not *have-racket*) (and (picker) (gtk:widget-get-visible (cadre-ui::picker-popover (picker))))))
+  (when *have-racket*
+    (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "width")
+    (cadre-ui::choose (picker))))
+
+(then 500
+  (when *have-racket*
+    (let ((text (buffer-string (current-buffer))))
+      (check "Rename Symbol in Racket renames the binding and its uses"
+             (and (search "(define (area width h)" text) (search "(* width h)" text)) text))))
+
+(then 500
+  (when *have-racket*
     (let ((text (buffer-text (current-buffer))))
       (gtk:text-buffer-insert text (gtk:text-buffer-get-end-iter text) (format nil "(define (bad) (if))~%") -1))
     (set-cursor 7 1)

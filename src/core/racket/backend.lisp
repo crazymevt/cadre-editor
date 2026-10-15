@@ -264,6 +264,12 @@ gets compiler notes for its errors and unused requires."
                                                                  (parse-location (racket-location path line column)))))))
                   on-abort))
 
+(defun racket-binding-spans (connection path text offset &key on-ok on-abort)
+  "For renaming: ON-OK gets the (start end) character spans, last first, of
+the binding the identifier at OFFSET in TEXT (the source of PATH) refers to
+and of its uses there. Imported names abort, with where they come from."
+  (racket-request connection :binding-spans (list path text offset) nil on-ok on-abort))
+
 ;;; Projects
 
 (defun racket-project (start)

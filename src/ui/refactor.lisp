@@ -161,6 +161,7 @@ everyday commands, and the rest in submenus."
       (when (eq mode 'racket-mode)
         (let ((racket-menu (gio:menu-new)))
           (command-item racket-menu "Run File" 'racket-run)
+          (command-item racket-menu "Rename Here…" 'racket-rename-symbol)
           (command-item racket-menu "Macroexpand" 'expand-macro-once)
           (command-item racket-menu "Check Syntax" 'racket-check-syntax)
           (command-item racket-menu "raco test" 'raco-test)

@@ -105,7 +105,7 @@
    #:style-indent-names
    ;; Racket, through Cadre's back end (racket/)
    #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
-   #:racket-problems #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:racket-problems #:racket-binding-spans #:racket-project #:racket-arglist-with-current #:racket-backend-file
    #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p

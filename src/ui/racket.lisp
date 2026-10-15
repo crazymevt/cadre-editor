@@ -262,3 +262,40 @@ and the folder to run raco in."
   (:title "Racket: raco test")
   (multiple-value-bind (target root) (raco-target)
     (run-raco root (list "test" target) "raco test")))
+
+;;; Renaming, exactly: the binding at the cursor and its uses in the file
+
+(defun replace-spans (view spans name)
+  "Replace each (start end) in SPANS (last first) of VIEW's text with NAME, as one undo step."
+  (let ((gtk-buffer (view-gtk-buffer view)))
+    (with-user-action (gtk-buffer)
+      (loop for (start end) in spans
+            do (gtk:text-buffer-delete gtk-buffer (iter-at gtk-buffer start) (iter-at gtk-buffer end))
+               (gtk:text-buffer-insert gtk-buffer (iter-at gtk-buffer start) name -1)))))
+
+(define-command racket-rename-symbol ()
+  "Rename the binding at the cursor and its uses in this file (from
+check-syntax, so other bindings of the same name are left alone)."
+  (:modes racket-mode)
+  (:title "Racket: Rename Here")
+  (let* ((view (current-view))
+         (buffer (view-buffer view))
+         (name (or (symbol-at-cursor view) (editor-error "No identifier at the cursor")))
+         (text (text-string (buffer-text buffer)))
+         (offset (text-point (view-gtk-buffer view))))
+    (unless (buffer-file buffer) (editor-error "Save the buffer to a file first"))
+    (with-connection (connection :language :racket)
+      (request #'racket-binding-spans connection (uiop:native-namestring (buffer-file buffer)) text offset
+               :on-ok (lambda (spans)
+                        (open-picker (window-picker *window*)
+                                     :placeholder (format nil "Rename ~a (~d place~:p in this file) to" name (length spans))
+                                     :text name
+                                     :on-choose (lambda (new)
+                                                  (let ((new (string-trim " " new)))
+                                                    (cond ((or (string= new "") (string= new name)))
+                                                          ((string/= text (text-string (buffer-text buffer)))
+                                                           (message "The file changed; rename again"))
+                                                          (t (replace-spans view spans new)
+                                                             (message "Renamed ~a to ~a in ~d place~:p"
+                                                                      name new (length spans))))))))
+               :on-abort (lambda (reason) (message "Can't rename: ~a" reason))))))
