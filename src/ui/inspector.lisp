@@ -6,6 +6,10 @@
 ;;;; Right-clicking offers Copy Value and Open in New Tab, for the value
 ;;;; under the pointer or else the object inspected.
 ;;;; Back and Forward walk the objects inspected.
+;;;;
+;;;; Clojure values are inspected through cider-nrepl's inspector, whose
+;;;; replies core/nrepl/ puts in Swank's shape: values are links the same
+;;;; way, Back pops, and Refresh looks again (it has no Forward).
 
 (in-package #:cadre-ui)
 
@@ -13,7 +17,8 @@
   text-view title back forward
   (links '())                           ; (start end kind index), offsets into the text
   (next 0) (more nil)
-  (thread t))                           ; the thread to ask: a debugger's, for frame values
+  (thread t)                            ; the thread to ask: a debugger's, for frame values
+  (clojure nil))                        ; the Clojure connection, while inspecting a Clojure value
 
 (defvar *inspector* nil)
 
@@ -131,10 +136,12 @@
                                        (gtk:text-buffer-get-end-iter gtk-buffer))
     (push (list start (text-length gtk-buffer) :more nil) (ins-links *inspector*))))
 
-(defun show-inspection (reply &key (thread t))
-  "Show swank's inspector REPLY on the Inspector page."
+(defun show-inspection (reply &key (thread t) clojure)
+  "Show swank's inspector REPLY on the Inspector page (from CLOJURE, a
+connection, when it is cider-nrepl's)."
   (let ((inspection (parse-inspection reply)))
     (unless inspection (editor-error "Nothing more to show"))
+    (setf (ins-clojure *inspector*) clojure)
     (setf (ins-links *inspector*) '()
           (ins-next *inspector*) (inspection-next inspection)
           (ins-more *inspector*) (inspection-more inspection)
@@ -149,6 +156,13 @@
     (set-panel-visible *window* t)
     (panel-show (window-panel *window*) "inspector")))
 
+(defun clojure-inspector-op (op &key index (on-ok #'show-inspection))
+  "Do cider-nrepl's inspector OP on the Clojure value being inspected."
+  (let ((connection (ins-clojure *inspector*)))
+    (unless (connection-open-p connection) (editor-error "Clojure isn't connected"))
+    (request #'nrepl-inspect-op connection op :index index
+             :on-ok (lambda (reply) (funcall on-ok reply :thread t :clojure connection)))))
+
 (defun inspector-rex (form &key (on-ok #'show-inspection))
   (with-connection (connection)
     (let ((thread (ins-thread *inspector*)))
@@ -158,6 +172,9 @@
 (defun follow-inspector-link (link)
   (destructuring-bind (start end kind index) link
     (declare (ignore start end))
+    (when (ins-clojure *inspector*)
+      (return-from follow-inspector-link
+        (when (eq kind :value) (clojure-inspector-op "inspect-push" :index index))))
     (ecase kind
       (:value (inspector-rex (swank-call "swank:inspect-nth-part" index)))
       (:action (inspector-rex (swank-call "swank:inspector-call-nth-action" index)
@@ -189,17 +206,24 @@
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
       (if has
           (gtk:text-buffer-get-text gtk-buffer start end t)
-          (let ((syntax (buffer-syntax (view-buffer view))))
+          (let ((syntax (buffer-sexp-syntax (view-buffer view))))
             (when syntax
               (multiple-value-bind (line column) (cursor-line-column view)
                 (or (symbol-at syntax line column)
                     (multiple-value-bind (sl sc) (backward-sexp-position syntax line column)
                       (and sl (view-region-text view sl sc line column)))))))))))
 
-(defun inspect-string (string package)
-  (with-connection (connection)
-    (rex connection (swank-call "swank:init-inspector" string) :package package
-         :on-ok (lambda (reply) (show-inspection reply)))))
+(defun inspect-string (string package &optional (language :common-lisp))
+  (case language
+    (:clojure
+     (with-connection (connection :language :clojure)
+       (request #'nrepl-inspect connection string package
+                :on-ok (lambda (reply) (show-inspection reply :clojure connection)))))
+    (:racket (editor-error "Racket values can't be inspected yet"))
+    (t
+     (with-connection (connection)
+       (rex connection (swank-call "swank:init-inspector" string) :package package
+            :on-ok (lambda (reply) (show-inspection reply)))))))
 
 (define-command inspect-value ()
   "Inspect the value of an expression (at first, the one at the cursor)."
@@ -210,20 +234,26 @@
                  :placeholder "Inspect the value of" :text initial
                  :on-choose (lambda (text)
                               (unless (string= (string-trim " " text) "")
-                                (inspect-string text package))))))
+                                (inspect-string text package (if view (view-language view) :common-lisp)))))))
 
 (define-command inspector-back ()
   "Inspect the object inspected before this one."
+  (when (ins-clojure *inspector*)
+    (return-from inspector-back (clojure-inspector-op "inspect-pop")))
   (inspector-rex (swank-call "swank:inspector-pop")
                  :on-ok (lambda (reply &key thread)
                           (if reply (show-inspection reply :thread thread) (message "This is the first object")))))
 
 (define-command inspector-forward ()
   "Inspect the object inspected after this one."
+  (when (ins-clojure *inspector*)
+    (editor-error "Clojure's inspector goes back, not forward"))
   (inspector-rex (swank-call "swank:inspector-next")
                  :on-ok (lambda (reply &key thread)
                           (if reply (show-inspection reply :thread thread) (message "This is the last object")))))
 
 (define-command inspector-refresh ()
   "Inspect the current object again, to see changes."
+  (when (ins-clojure *inspector*)
+    (return-from inspector-refresh (clojure-inspector-op "inspect-refresh")))
   (inspector-rex (swank-call "swank:inspector-reinspect")))

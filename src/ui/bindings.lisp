@@ -293,6 +293,8 @@
   "C-c M-j" 'clojure-jack-in
   "C-c M-c" 'clojure-connect
   "C-c M-n n" 'clojure-set-namespace
+  "C-c M-i" 'inspect-value
+  "C-c C-t n" 'clojure-run-tests
   "M-." 'edit-definition
   "M-," 'pop-definition
   "C-c C-d d" 'describe-symbol
@@ -322,7 +324,9 @@
   "S-F12" 'find-references
   "C-k C-m" 'expand-macro-once
   "C-k C-a" 'expand-macro-all
-  "C-k n" 'clojure-set-namespace)
+  "C-k n" 'clojure-set-namespace
+  "C-k i" 'inspect-value
+  "C-k t" 'clojure-run-tests)
 
 ;;; Racket: the same commands, sent to Cadre's Racket back end. Emacs keys
 ;;; follow racket-mode's.

@@ -270,6 +270,18 @@ the binding the identifier at OFFSET in TEXT (the source of PATH) refers to
 and of its uses there. Imported names abort, with where they come from."
   (racket-request connection :binding-spans (list path text offset) nil on-ok on-abort))
 
+(defun raco-places (line)
+  "A compiler note for a place LINE (raco's output) names, \"/p/f.rkt:3:4: …\"
+or rackunit's \"location: /p/f.rkt:3:4\", or nil."
+  (multiple-value-bind (match groups) (ppcre:scan-to-strings "(/[^:\\s]+\\.(?:rkt|scrbl|rktl)):(\\d+):(\\d+)" line)
+    (when match
+      (make-compiler-note (if (search "location:" line) :warning :error)
+                          (let ((text (string-trim " " line)))
+                            (if (search "location:" text) "Test failure (see the Output page)" text))
+                          (list :file (aref groups 0)
+                                :line (max 0 (1- (parse-integer (aref groups 1))))
+                                :column (parse-integer (aref groups 2)))))))
+
 ;;; Projects
 
 (defun racket-project (start)

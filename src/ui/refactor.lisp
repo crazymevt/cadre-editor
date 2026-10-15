@@ -157,6 +157,8 @@ everyday commands, and the rest in submenus."
           (command-item clojure-menu "Macroexpand" 'expand-macro-once)
           (command-item clojure-menu "Switch the REPL to This Namespace" 'clojure-set-namespace)
           (command-item clojure-menu "Load File" 'compile-and-load-file)
+          (command-item clojure-menu "Run Tests in Namespace" 'clojure-run-tests)
+          (command-item clojure-menu "Inspect…" 'inspect-value)
           (gio:menu-append-submenu more "Clojure" clojure-menu)))
       (when (eq mode 'racket-mode)
         (let ((racket-menu (gio:menu-new)))

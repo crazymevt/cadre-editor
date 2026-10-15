@@ -208,18 +208,6 @@ requires go to the Problems page."
 
 ;;; raco
 
-(defun raco-places (line)
-  "A compiler note for a place LINE (raco's output) names, \"/p/f.rkt:3:4: …\"
-or rackunit's \"location: /p/f.rkt:3:4\", or nil."
-  (multiple-value-bind (match groups) (ppcre:scan-to-strings "(/[^:\\s]+\\.(?:rkt|scrbl|rktl)):(\\d+):(\\d+)" line)
-    (when match
-      (make-compiler-note (if (search "location:" line) :warning :error)
-                          (let ((text (string-trim " " line)))
-                            (if (search "location:" text) "Test failure (see the Output page)" text))
-                          (list :file (aref groups 0)
-                                :line (max 0 (1- (parse-integer (aref groups 1))))
-                                :column (parse-integer (aref groups 2)))))))
-
 (defun run-raco (root arguments what)
   (when *build* (editor-error "~a is already running (Stop Build ends it)" (getf *build* :what)))
   (let ((notes '()))

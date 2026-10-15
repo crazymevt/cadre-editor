@@ -408,3 +408,82 @@ jar: URL) at LINE and COLUMN, or an :error one for code inside a jar."
                                           (if failed
                                               (when on-abort (funcall on-abort (eval-error-reason error-output)))
                                               (when on-ok (funcall on-ok (clojure-read-string (or (car (last values)) ""))))))))))
+
+;;; The inspector (cider-nrepl): its replies put in the shape of Swank's,
+;;; (:title … :content (parts length start end)), for the Inspector page
+
+(defun clojure-printed-sexp (text)
+  "TEXT, a list Clojure printed, read as data: strings' \\n and \\t become
+the characters they stand for."
+  (read-sexp
+   (with-output-to-string (out)
+     (loop with in-string = nil
+           for i from 0 below (length text)
+           for c = (char text i)
+           do (cond ((and in-string (char= c #\\) (< (1+ i) (length text)))
+                     (let ((next (char text (1+ i))))
+                       (case next
+                         (#\n (write-char #\Newline out))
+                         (#\t (write-char #\Tab out))
+                         (t (write-char c out) (write-char next out))))
+                     (incf i))
+                    (t (when (char= c #\") (setf in-string (not in-string)))
+                       (write-char c out)))))))
+
+(defun cider-inspection (value)
+  "cider-nrepl's rendered inspector VALUE as a Swank inspector reply."
+  (let* ((parts (loop for part in (clojure-printed-sexp value)
+                      collect (if (equal part '(:newline)) (string #\Newline) part)))
+         (class (second (find-if (lambda (p) (and (consp p) (eq (first p) :value))) parts))))
+    (list :title (or class "") :id 0 :content (list parts (length parts) 0 (length parts)))))
+
+(defun nrepl-inspect-request (connection message on-ok on-abort)
+  (nrepl-send connection message
+              :on-abort on-abort
+              :on-done (lambda (responses)
+                         (let ((value (some (lambda (m) (dict-get m "value")) responses))
+                               (error-output (some (lambda (m) (dict-get m "err")) responses)))
+                           (cond (value (when on-ok (funcall on-ok (cider-inspection value))))
+                                 (on-abort (funcall on-abort (eval-error-reason (or error-output "")))))))))
+
+(defun nrepl-inspect (connection code ns &key on-ok on-abort)
+  "Evaluate CODE in NS and inspect its value: ON-OK gets a Swank inspector reply."
+  (nrepl-inspect-request connection (list (cons "op" "eval") (cons "code" code) (cons "ns" (or ns "user"))
+                                          (cons "inspect" "true"))
+                         on-ok on-abort))
+
+(defun nrepl-inspect-op (connection op &key index on-ok on-abort)
+  "Do the inspector's OP (\"inspect-push\" with INDEX, \"inspect-pop\",
+\"inspect-refresh\"): ON-OK gets the object then inspected."
+  (nrepl-inspect-request connection (append (list (cons "op" op)) (and index (list (cons "idx" index))))
+                         on-ok on-abort))
+
+;;; Tests (cider-nrepl's test-var-query)
+
+(defun nrepl-run-tests (connection ns &key on-done on-abort)
+  "Run the tests in NS. ON-DONE gets the summary, a plist (:test :pass :fail
+:error), and the failures and errors as plists (:var :type :message
+:expected :actual :line)."
+  (nrepl-send connection
+              (if (nrepl-op-p connection "test-var-query")
+                  (list (cons "op" "test-var-query")
+                        (cons "var-query" (list (cons "ns-query" (list (cons "exactly" (list ns)))))))
+                  (list (cons "op" "test") (cons "ns" ns)))
+              :on-abort on-abort
+              :on-done (lambda (responses)
+                         (let ((reply (find-if (lambda (m) (dict-get m "summary")) responses)))
+                           (when on-done
+                             (funcall on-done
+                                      (loop for key in '("test" "pass" "fail" "error")
+                                            append (list (intern (string-upcase key) :keyword)
+                                                         (or (dict-get (dict-get reply "summary") key) 0)))
+                                      (loop for (nil . vars) in (dict-get reply "results")
+                                            append (loop for (var . results) in vars
+                                                         append (loop for r in results
+                                                                      for type = (dict-get r "type")
+                                                                      unless (equal type "pass")
+                                                                        collect (list :var var :type type
+                                                                                      :message (dict-get r "message")
+                                                                                      :expected (dict-get r "expected")
+                                                                                      :actual (dict-get r "actual")
+                                                                                      :line (dict-get r "line")))))))))))

@@ -144,6 +144,25 @@ the process; nil if there is no Clojure CLI."
                               :package "user")
                (true (wait-for (lambda () (gethash "with-probe" c:*clojure-indent-rules*)) 20)
                      "learned from :style/indent")
+               ;; The inspector: cider-nrepl's replies in Swank's shape.
+               (let ((inspection (c:parse-inspection (backend-value #'c:nrepl-inspect conn "{:a 1 :b [1 2]}" "user"))))
+                 (is string= "clojure.lang.PersistentArrayMap" (c:inspection-title inspection))
+                 (true (find '(:value ":a" 1) (c:inspection-parts inspection) :test #'equal)))
+               (let ((inspection (c:parse-inspection (backend-value #'c:nrepl-inspect-op conn "inspect-push" :index 2))))
+                 (is string= "java.lang.Long" (c:inspection-title inspection)))
+               (let ((inspection (c:parse-inspection (backend-value #'c:nrepl-inspect-op conn "inspect-pop"))))
+                 (is string= "clojure.lang.PersistentArrayMap" (c:inspection-title inspection)))
+               ;; Tests: the summary, and each failure with its line.
+               (backend-value #'c:backend-eval conn
+                              "(ns probe.t (:require [clojure.test :refer [deftest is]])) (deftest ok (is (= 1 1))) (deftest bad (is (= 1 2)))"
+                              :package "user")
+               (let ((done (sb-thread:make-semaphore)) (summary nil) (failures nil))
+                 (c:nrepl-run-tests conn "probe.t" :on-done (lambda (s f) (setf summary s failures f)
+                                                              (sb-thread:signal-semaphore done)))
+                 (true (sb-thread:wait-on-semaphore done :timeout 30))
+                 (is equal '(:test 2 :pass 1 :fail 1 :error 0) summary)
+                 (is string= "bad" (getf (first failures) :var))
+                 (is string= "fail" (getf (first failures) :type)))
                ;; Input: the program asks for a line, and gets what is typed.
                (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
                (let ((done (sb-thread:make-semaphore)) (value nil))

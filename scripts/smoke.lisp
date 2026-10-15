@@ -3176,6 +3176,26 @@ and the number of items MODEL itself shows."
            (and (equal "java.lang.ArithmeticException" (second (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))
                 (cadre-ui::dl-frames (first cadre-ui::*debug-levels*))))
     (call-command 'cadre-ui::debugger-abort)
+    (write-root-file "clj-demo/src/demo/probe_test.clj"
+                     (format nil "(ns demo.probe-test~%  (:require [clojure.test :refer [deftest is]]))~%~%(deftest passes (is (= 1 1)))~%~%(deftest fails~%  (is (= 1 2)))~%"))
+    (open-file-path (merge-pathnames "clj-demo/src/demo/probe_test.clj" *root*))))
+
+(then 800
+  (when *have-clojure*
+    (call-command 'cadre-ui::clojure-run-tests)))
+
+(then-when ((or (not *have-clojure*) (search "tests," (status-text))) :timeout 60)
+  (when *have-clojure*
+    (check "Run Tests reports the namespace's results" (search "2 tests, 1 passed, 1 failed" (status-text)) (status-text))
+    (check "and the failure is a note at its line"
+           (find-if (lambda (s) (search "fails fail" (compiler-note-message (cadre-ui::sn-note s)))) cadre-ui::*notes*))
+    (cadre-ui::inspect-string "{:a 1 :b [1 2]}" "user" :clojure)))
+
+(then-when ((or (not *have-clojure*) (cadre-ui::ins-clojure cadre-ui::*inspector*)) :timeout 30)
+  (when *have-clojure*
+    (check "the Inspector shows a Clojure value"
+           (string= "clojure.lang.PersistentArrayMap" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
+    (screenshot "54-clojure-inspector")
     (call-command 'cadre-ui::clojure-disconnect)))
 
 (then-when ((or (not *have-clojure*) (null (cadre-ui::clojure-connection))) :timeout 30)
@@ -3311,6 +3331,13 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) (search "problem" (status-text))) :timeout 60)
   (when *have-racket*
     (check "Check Syntax finds the error without running the file" (search "1 problem" (status-text)) (status-text))
+    (call-command 'cadre-ui::raco-test)))
+
+(then-when ((or (not *have-racket*) (and (null cadre-ui::*build*) (search "raco test" (status-text)))) :timeout 120)
+  (when *have-racket*
+    (check "raco test runs, and the error it reports goes to Problems"
+           (find-if (lambda (s) (search "if: bad syntax" (compiler-note-message (cadre-ui::sn-note s)))) cadre-ui::*notes*)
+           (status-text))
     ;; Claude's tools ask the current file's language: they wait on the GTK
     ;; thread, so they are called from another.
     (setf *racket-tool-results* nil)
@@ -3324,7 +3351,7 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) *racket-tool-results*) :timeout 30)
   (when *have-racket*
     (destructuring-bind (describe context apropos-failed) *racket-tool-results*
-      (check "Claude's describe_symbol asks Racket in a Racket file" (search "(area w h)" describe) describe)
+      (check "Claude's describe_symbol asks Racket in a Racket file" (search "area: procedure" describe) describe)
       (check "current_context names the language and the Racket connection"
              (and (search "Language: Racket" context) (search "Racket: Racket 9" context)) context)
       (check "Swank-only tools say so in Racket" apropos-failed))

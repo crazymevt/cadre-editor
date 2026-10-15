@@ -242,3 +242,44 @@ findings on the Problems page."
 (add-hook '*buffer-created-hook* (lambda (buffer)
                                    (when (and (eq (buffer-major-mode buffer) 'clojure-mode) (buffer-file buffer))
                                      (ignore-errors (load-cljfmt-indentation (buffer-file buffer))))))
+
+;;; Tests: the file's namespace's, through cider-nrepl; failures go to Problems
+
+(define-command clojure-run-tests ()
+  "Load the file and run its namespace's tests; failures and errors go to the
+Problems page, at their lines."
+  (:modes clojure-mode)
+  (:title "Clojure: Run Tests in Namespace")
+  (let* ((view (current-view))
+         (buffer (view-buffer view))
+         (ns (view-package view))
+         (file (buffer-file buffer)))
+    (unless file (editor-error "Save the buffer to a file first"))
+    (flet ((run (connection)
+             (unless (or (nrepl-op-p connection "test-var-query") (nrepl-op-p connection "test"))
+               (editor-error "Running tests needs cider-nrepl"))
+             (request #'backend-load-file connection (uiop:native-namestring file)
+                      :on-ok (lambda (v)
+                               (declare (ignore v))
+                               (nrepl-run-tests connection ns
+                                        :on-abort (lambda (reason) (message "The tests didn't run: ~a" reason))
+                                        :on-done
+                                        (lambda (summary failures)
+                                          (show-notes
+                                           (loop for f in failures
+                                                 collect (make-compiler-note
+                                                          (if (equal (getf f :type) "error") :error :warning)
+                                                          (format nil "~a ~a~@[: ~a~]~@[~%expected: ~a~]~@[~%actual: ~a~]"
+                                                                  (getf f :var) (getf f :type)
+                                                                  (let ((m (getf f :message))) (and (plusp (length m)) m))
+                                                                  (and (getf f :expected) (string-trim '(#\Newline) (getf f :expected)))
+                                                                  (and (getf f :actual) (string-trim '(#\Newline) (getf f :actual))))
+                                                          (list :file (uiop:native-namestring file)
+                                                                :line (max 0 (1- (or (getf f :line) 1))) :column 0)))
+                                           :buffer buffer :replace-lines :all)
+                                          (message "~a: ~d test~:p, ~d passed, ~d failed, ~d error~:p"
+                                                   ns (getf summary :test) (getf summary :pass)
+                                                   (getf summary :fail) (getf summary :error))))))))
+      (if (buffer-modified-p buffer)
+          (write-buffer buffer file (lambda (ok) (when ok (with-connection (c :language :clojure) (run c)))))
+          (with-connection (c :language :clojure) (run c))))))

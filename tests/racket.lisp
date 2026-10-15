@@ -217,3 +217,13 @@ nil if there is no Racket."
             (c:backend-disconnect conn)
             (c:kill-inferior-lisp process)
             (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))))
+
+;;; raco's output, as notes
+
+(define-test raco-places :parent cadre-tests
+  (let ((note (c:raco-places "/p/a.rkt:3:4: f: unbound identifier")))
+    (is eq :error (c:compiler-note-severity note))
+    (is equal '(:file "/p/a.rkt" :line 2 :column 4) (c:compiler-note-location note)))
+  (let ((note (c:raco-places "location:   /p/a_test.rkt:10:2")))
+    (is eq :warning (c:compiler-note-severity note)))
+  (is eq nil (c:raco-places "raco test: \"main.rkt\"")))

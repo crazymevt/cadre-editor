@@ -102,10 +102,10 @@
    #:*clojure-command* #:*leiningen-command* #:*babashka-command* #:*clojure-aliases*
    #:*cider-nrepl* #:*nrepl-version* #:*cider-nrepl-version* #:*clj-kondo-command* #:clj-kondo-arguments #:clj-kondo-notes
    #:*clojure-indent-rules* #:learn-clojure-indentation #:cljfmt-indented-names #:load-cljfmt-indentation
-   #:style-indent-names
+   #:style-indent-names #:clojure-printed-sexp #:cider-inspection #:nrepl-inspect #:nrepl-inspect-op #:nrepl-run-tests
    ;; Racket, through Cadre's back end (racket/)
    #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
-   #:racket-problems #:racket-binding-spans #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:racket-problems #:racket-binding-spans #:raco-places #:racket-project #:racket-arglist-with-current #:racket-backend-file
    #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p
@@ -119,7 +119,7 @@
    #:*lisp-command* #:*swank-source* #:*swank-startup-timeout*
    #:start-inferior-lisp #:kill-inferior-lisp #:inferior-alive-p #:inferior-process
    #:buffer-package-name #:symbol-at #:symbol-prefix-at #:raw-form-at #:parse-location
-   #:compiler-note #:compiler-note-severity #:compiler-note-message #:compiler-note-location
+   #:compiler-note #:make-compiler-note #:compiler-note-severity #:compiler-note-message #:compiler-note-location
    #:parse-compiler-notes #:parse-compilation-result #:severity-rank
    ;; inspector, cross-references, debugger
    #:inspection #:inspection-title #:inspection-parts #:inspection-next #:inspection-more
