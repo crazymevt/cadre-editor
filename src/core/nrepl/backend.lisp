@@ -460,6 +460,35 @@ the characters they stand for."
 
 ;;; Tests (cider-nrepl's test-var-query)
 
+(defun nrepl-test-message (result)
+  "A failed or erring clojure.test RESULT (a dict) as text."
+  (format nil "~a~@[ (line ~a)~]~@[: ~a~]~@[~%expected: ~a~]~@[~%actual: ~a~]~@[~%~a~]"
+          (dict-get result "type") (dict-get result "line")
+          (let ((m (dict-get result "message"))) (and (plusp (length m)) m))
+          (let ((e (dict-get result "expected"))) (and e (string-trim '(#\Newline) e)))
+          (let ((a (dict-get result "actual"))) (and a (string-trim '(#\Newline) a)))
+          (dict-get result "err")))
+
+(defun nrepl-test-var-results (reply)
+  "(ns name status messages) for each test in a test-var-query REPLY."
+  (loop for (ns-name . tests) in (dict-get reply "results")
+        append (loop for (var . results) in tests
+                     collect (let ((bad (remove "pass" results :test #'equal :key (lambda (r) (dict-get r "type")))))
+                               (list ns-name var (if bad :failed :passed) (mapcar #'nrepl-test-message bad))))))
+
+(defun nrepl-test-vars (connection vars &key on-done on-abort)
+  "Run the tests VARS (\"ns/name\" strings), with cider-nrepl's
+test-var-query. ON-DONE gets (ns name status messages) for each test that
+ran, STATUS :passed or :failed."
+  (nrepl-send connection
+              (list (cons "op" "test-var-query")
+                    (cons "var-query" (list (cons "exactly" vars))))
+              :on-abort on-abort
+              :on-done (lambda (responses)
+                         (when on-done
+                           (funcall on-done
+                                    (nrepl-test-var-results (find-if (lambda (m) (dict-get m "results")) responses)))))))
+
 (defun nrepl-run-tests (connection ns &key on-done on-abort)
   "Run the tests in NS, or with NS :project in every namespace of the
 project (loading them first). ON-DONE gets the summary, a plist (:test :pass

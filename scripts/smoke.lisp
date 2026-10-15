@@ -188,6 +188,14 @@ smoke test starts it without one), and wait for it."
                      :on-ok (lambda (v) (declare (ignore v)) (setf *quicklisp-loaded* t)))))
   (then-when (*quicklisp-loaded* :timeout 120)))
 
+(defun use-root-project ()
+  "A step that opens *root* again if an earlier section opened another folder
+\(new-project, gtk-app): sections whose files are under *root* need it to be
+the project."
+  (then 50
+    (unless (equal (namestring (truename (cadre-ui::window-project *window*))) (namestring (truename *root*)))
+      (cadre-ui::set-window-project *window* *root*))))
+
 (defun connect-lisp ()
   "Steps that start a Lisp unless one is connected, and wait for it."
   (then 50
@@ -3184,6 +3192,7 @@ and the number of items MODEL itself shows."
   (check "and code in @racket[…] is still code" (has-face-p 2 10 :definer)))
 
 (section "clojure")
+(use-root-project)
 
 ;; clj-kondo on save, with a stand-in that reports one finding.
 (then 300
@@ -3321,6 +3330,28 @@ and the number of items MODEL itself shows."
     (check "Run Tests reports the namespace's results" (search "2 tests, 1 passed, 1 failed" (status-text)) (status-text))
     (check "and the failure is a note at its line"
            (find-if (lambda (s) (search "fails fail" (compiler-note-message (cadre-ui::sn-note s)))) cadre-ui::*notes*))
+    ;; The same tests on the Tests page
+    (call-command 'cadre-ui::show-test-explorer)
+    (let ((tests (remove :clojure (cadre-ui::tsp-tests cadre-ui::*tests-page*)
+                         :key #'source-test-framework :test-not #'eq)))
+      (check "the Tests page finds Clojure's deftests"
+             (equal '("passes" "fails") (mapcar #'source-test-name tests)) (mapcar #'source-test-name tests))
+      (cadre-ui::run-tests-of tests))))
+
+(then-when ((or (not *have-clojure*)
+                (and (not (cadre-ui::tsp-running cadre-ui::*tests-page*))
+                     (find :clojure (cadre-ui::tsp-tests cadre-ui::*tests-page*) :key #'source-test-framework)))
+            :timeout 60)
+  (when *have-clojure*
+    (let ((tests (remove :clojure (cadre-ui::tsp-tests cadre-ui::*tests-page*)
+                         :key #'source-test-framework :test-not #'eq)))
+      (check "and runs them through nREPL, each passed or failed"
+             (equal '(:passed :failed) (mapcar #'source-test-status tests))
+             (list (status-text)
+                   (mapcar (lambda (test) (list (source-test-name test) (source-test-status test) (source-test-messages test))) tests)))
+      (check "with the failure's expected and actual" (let ((m (or (first (source-test-messages (second tests))) "")))
+                                                         (and (search "expected: 1" m) (search "actual: 2" m)))
+             (source-test-messages (second tests))))
     (cadre-ui::inspect-string "{:a 1 :b [1 2]}" "user" :clojure)))
 
 (then-when ((or (not *have-clojure*) (cadre-ui::ins-clojure cadre-ui::*inspector*)) :timeout 30)
@@ -3355,6 +3386,7 @@ and the number of items MODEL itself shows."
 
 ;;; Racket, through Cadre's back end (if Racket is installed)
 (section "racket")
+(use-root-project)
 
 (defvar *racket-tool-results* nil)
 (defvar *have-racket* (ignore-errors (uiop:run-program '("racket" "--version") :output nil) t))
@@ -3550,6 +3582,33 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) (null (cadre-ui::racket-connection))) :timeout 30)
   (when *have-racket*
     (check "stopping Racket disconnects" (null (cadre-ui::racket-connection)))))
+
+;; The Tests page runs rackunit tests with raco test, a file at a time.
+(then 300
+  (when *have-racket*
+    (write-root-file "rkt-demo/arith-test.rkt"
+                     (format nil "#lang racket/base~%(module+ test~%  (require rackunit)~%  (test-case \"adds\"~%    (check-equal? (+ 1 1) 2))~%  (test-case \"broken\"~%    (check-equal? (+ 1 1) 3)))~%"))
+    (open-file-path (merge-pathnames "rkt-demo/arith-test.rkt" *root*))))
+
+(then-when ((or (not *have-racket*) (find-buffer "arith-test.rkt")) :timeout 10)
+  (when *have-racket*
+    (call-command 'cadre-ui::show-test-explorer)
+    (let ((tests (remove :rackunit (cadre-ui::tsp-tests cadre-ui::*tests-page*)
+                         :key #'source-test-framework :test-not #'eq)))
+      (check "the Tests page finds rackunit's test-cases"
+             (equal '("adds" "broken") (mapcar #'source-test-name tests)) (mapcar #'source-test-name tests))
+      (cadre-ui::run-tests-of tests))))
+
+(then-when ((or (not *have-racket*)
+                (and (not (cadre-ui::tsp-running cadre-ui::*tests-page*))
+                     (find :rackunit (cadre-ui::tsp-tests cadre-ui::*tests-page*) :key #'source-test-framework)))
+            :timeout 90)
+  (when *have-racket*
+    (let ((tests (remove :rackunit (cadre-ui::tsp-tests cadre-ui::*tests-page*)
+                         :key #'source-test-framework :test-not #'eq)))
+      (check "and runs them with raco test, each passed or failed"
+             (equal '(:passed :failed) (mapcar #'source-test-status tests))
+             (mapcar (lambda (test) (list (source-test-name test) (source-test-status test) (source-test-messages test))) tests)))))
 
 ;;; The Project page: a Racket package and a Clojure project, with their dependencies
 (section "projects")
@@ -4247,10 +4306,9 @@ and the number of items MODEL itself shows."
 (connect-lisp)
 (load-quicklisp)
 
+(use-root-project)
+
 (then 100
-  ;; Earlier sections open other folders: this one's project is under *root*.
-  (unless (equal (namestring (truename (cadre-ui::window-project *window*))) (namestring (truename *root*)))
-    (cadre-ui::set-window-project *window* *root*))
   (ensure-directories-exist (test-project))
   (with-open-file (o (merge-pathnames "smoke-tests.asd" (test-project)) :direction :output :if-exists :supersede)
     (format o "(defsystem \"smoke-tests\" :depends-on (\"parachute\") :components ((:file \"tests\")))~%"))

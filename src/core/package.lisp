@@ -106,7 +106,7 @@
    #:*clojure-command* #:*leiningen-command* #:*babashka-command* #:*clojure-aliases*
    #:*cider-nrepl* #:*nrepl-version* #:*cider-nrepl-version* #:*clj-kondo-command* #:clj-kondo-arguments #:clj-kondo-notes
    #:*clojure-indent-rules* #:learn-clojure-indentation #:cljfmt-indented-names #:load-cljfmt-indentation
-   #:style-indent-names #:clojure-printed-sexp #:cider-inspection #:nrepl-inspect #:nrepl-inspect-op #:nrepl-run-tests
+   #:style-indent-names #:clojure-printed-sexp #:cider-inspection #:nrepl-inspect #:nrepl-inspect-op #:nrepl-run-tests #:nrepl-test-vars
    ;; Racket, through Cadre's back end (racket/)
    #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
    #:racket-problems #:racket-binding-spans #:raco-places
@@ -173,7 +173,8 @@
    #:+test-runner-helper+ #:source-test #:make-source-test #:source-test-name #:source-test-key
    #:source-test-framework #:source-test-package #:source-test-parent #:source-test-line #:source-test-file
    #:source-test-status #:source-test-messages #:test-key #:source-tests #:parse-test-results
-   #:apply-test-results #:test-roots #:test-run-groups #:fiveam-source-p
+   #:apply-test-results #:test-roots #:test-run-groups #:fiveam-source-p #:source-test-end-line
+   #:clojure-source-tests #:racket-source-tests #:mode-source-tests #:parse-raco-test-output #:apply-raco-results
    ;; what the image knows
    #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
    #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p
