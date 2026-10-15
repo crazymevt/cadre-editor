@@ -270,6 +270,7 @@
   "S-F8" 'previous-note
   "S-F12" 'find-references
   "C-k i" 'inspect-value
+  "C-k h" 'look-up-documentation
   "C-k C-m" 'expand-macro-once
   "C-k C-a" 'expand-macro-all
   "C-k C-f" 'find-symbol-in-project
@@ -294,6 +295,7 @@
   "C-c M-c" 'clojure-connect
   "C-c M-n n" 'clojure-set-namespace
   "C-c M-i" 'inspect-value
+  "C-c C-d h" 'look-up-documentation
   "C-c C-t n" 'clojure-run-tests
   "M-." 'edit-definition
   "M-," 'pop-definition
@@ -350,6 +352,7 @@
   "C-c C-e f" 'expand-macro-once
   "C-c C-e a" 'expand-macro-all
   "C-c C-t" 'raco-test
+  "C-c C-h" 'look-up-documentation
   "M-?" 'find-references)
 
 (bind-keys (mode-profile-keymap 'racket-mode :standard)
@@ -367,7 +370,8 @@
   "S-F12" 'find-references
   "C-k C-m" 'expand-macro-once
   "C-k C-a" 'expand-macro-all
-  "C-k t" 'raco-test)
+  "C-k t" 'raco-test
+  "C-k h" 'look-up-documentation)
 
 (defparameter *emacs-structural-keys*
   '("C-)" slurp-forward "C-Right" slurp-forward "C-}" barf-forward "C-Left" barf-forward

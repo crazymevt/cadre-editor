@@ -3210,6 +3210,25 @@ and the number of items MODEL itself shows."
     (check "the Inspector shows a Clojure value"
            (string= "clojure.lang.PersistentArrayMap" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
     (screenshot "54-clojure-inspector")
+    (sb-posix:setenv "XDG_DATA_HOME" (namestring (merge-pathnames "xdg-data/" *root*)) 1)
+    (call-command 'cadre-ui::clojure-build-docs)))
+
+(then-when ((or (not *have-clojure*) (search "docs are ready" (status-text))) :timeout 120)
+  (when *have-clojure*
+    (check "Clojure: Build Docs makes the Clojure docset" (search "Clojure docs are ready" (status-text)) (status-text))
+    (open-file-path (merge-pathnames "clj-demo/src/demo/core.clj" *root*))))
+
+(then 500
+  (when *have-clojure*
+    (set-cursor 3 3)                    ; (|* w h)
+    (call-command 'cadre-ui::look-up-documentation)))
+
+(then-when ((or (not *have-clojure*) (find-buffer "Clojure: *")) :timeout 30)
+  (when *have-clojure*
+    (check "Look Up in Docs shows clojure.core's docstring"
+           (and (find-buffer "Clojure: *") (search "Returns the product" (buffer-string (find-buffer "Clojure: *")))))
+    (sb-posix:unsetenv "XDG_DATA_HOME")
+    (cadre-ui::reload-docsets)
     (call-command 'cadre-ui::clojure-disconnect)))
 
 (then-when ((or (not *have-clojure*) (null (cadre-ui::clojure-connection))) :timeout 30)
@@ -3345,6 +3364,29 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) (search "problem" (status-text))) :timeout 60)
   (when *have-racket*
     (check "Check Syntax finds the error without running the file" (search "1 problem" (status-text)) (status-text))
+    ;; The docs go to a data folder of the run's own, not ~/.local/share.
+    (sb-posix:setenv "XDG_DATA_HOME" (namestring (merge-pathnames "xdg-data/" *root*)) 1)
+    (call-command 'cadre-ui::racket-build-docs)))
+
+(then-when ((or (not *have-racket*) (search "docs are ready" (status-text))) :timeout 120)
+  (when *have-racket*
+    (check "Racket: Build Docs makes the Racket docset" (search "docs are ready" (status-text)) (status-text))
+    (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))))
+
+(then 500
+  (when *have-racket*
+    (set-cursor 6 28)                   ; (fi|rst (list 2))
+    (call-command 'cadre-ui::look-up-documentation)))
+
+(then-when ((or (not *have-racket*) (find-if #'cadre-ui::hyperspec-buffer-p (buffer-list))) :timeout 30)
+  (when *have-racket*
+    (let ((docs (find-if #'cadre-ui::hyperspec-buffer-p (buffer-list))))
+      (check "Look Up in Docs shows the identifier's signature"
+             (and docs (search "(first lst)" (buffer-string docs)))
+             (and docs (subseq (buffer-string docs) 0 (min 200 (length (buffer-string docs)))))))
+    (screenshot "55-racket-docs")
+    (sb-posix:unsetenv "XDG_DATA_HOME")
+    (cadre-ui::reload-docsets)
     (call-command 'cadre-ui::raco-test)))
 
 (then-when ((or (not *have-racket*) (and (null cadre-ui::*build*) (search "raco test" (status-text)))) :timeout 120)

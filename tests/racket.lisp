@@ -227,3 +227,25 @@ nil if there is no Racket."
   (let ((note (c:raco-places "location:   /p/a_test.rkt:10:2")))
     (is eq :warning (c:compiler-note-severity note)))
   (is eq nil (c:raco-places "raco test: \"main.rkt\"")))
+
+;;; The Racket docset, made from the installed documentation
+
+(define-test racket-docset :parent cadre-tests
+  (let ((entry (first (c:racket-docset-entries
+                       (format nil "(\"first\" (\"racket/list\" \"racket\") \"procedure\" (\"(first lst) -> any/c\" \"  lst : list?\") \"file:///d/pairs.html#first\")~%")))))
+    (is string= "first@racket/list" (second entry))
+    (is eq :function (getf (cddr entry) :kind))
+    (is string= "(first lst) -> any/c" (getf (cddr entry) :summary))
+    (is equal '("Signature" "Provided by" "Documentation") (mapcar #'first (getf (cddr entry) :sections))))
+  (if (ignore-errors (uiop:run-program (list c:*racket-command* "--version") :output nil) t)
+      (let ((dir (merge-pathnames (format nil "cadre-docset-~d/" (random 1000000)) (uiop:temporary-directory))))
+        (unwind-protect
+             (progn
+               (true (> (c:build-racket-docset :directory dir) 10000) "thousands of entries")
+               (let* ((docset (docset:open-docset dir))
+                      (record (first (docset:find-records docset "string-join"))))
+                 (is string= "racket" (docset:docset-id docset))
+                 (true record)
+                 (true (search "(string-join" (docset:record-summary record)))))
+          (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
+      (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))

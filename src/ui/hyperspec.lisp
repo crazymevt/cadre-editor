@@ -314,6 +314,15 @@
           ((null (group-pages group)) group)
           (t (preview-group win group)))))
 
+(defun docs-tab-name (docset entry)
+  "\"HyperSpec: mapcar\" for Common Lisp and its libraries; \"Racket: first\"
+or \"Clojure: map\" for the docs Cadre builds for those."
+  (format nil "~a: ~a"
+          (if (member (docset:docset-id docset) '("racket" "clojure") :test #'equal)
+              (docset:docset-title docset)
+              "HyperSpec")
+          (first (docset:entry-names entry))))
+
 (defun show-hyperspec-entry (docset-id entry-id &key (record t) focus)
   "Show the entry ENTRY-ID of the docset DOCSET-ID in the HyperSpec tab.
 RECORD puts the entry shown now in the history, so Back returns to it."
@@ -330,7 +339,7 @@ RECORD puts the entry shown now in the history, so Back returns to it."
     (setf (sp-docset-id page) docset-id
           (sp-entry-id page) entry-id)
     (draw-hyperspec-page buffer docset entry)
-    (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (docset:entry-names entry))))
+    (setf (buffer-name buffer) (docs-tab-name docset entry))
     (when win
       (let ((view (show-buffer win buffer :group (hyperspec-group win) :focus focus)))
         (update-tab-titles win buffer)
@@ -523,5 +532,5 @@ the selection), in a HyperSpec tab beside the code."
         (setf (sp-docset-id page) docset-id
               (sp-entry-id page) entry-id)
         (draw-hyperspec-page buffer docset entry)
-        (setf (buffer-name buffer) (format nil "HyperSpec: ~a" (first (docset:entry-names entry))))
+        (setf (buffer-name buffer) (docs-tab-name docset entry))
         buffer))))

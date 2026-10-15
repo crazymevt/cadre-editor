@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R4 are built, and R5 except docs pages and shadow-cljs (3.1).
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R5 are built, except ClojureScript through shadow-cljs (3.1).
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -394,11 +394,22 @@ so they can be built in parallel (in separate sessions or branches).
 - **Scribble:** a Scribble dialect lexes @-expressions, their bodies as
   prose. Multi-line strings and block comments inside an @-expression's
   code drop back to plain Racket lexing at the line's end.
+- **Docs (decided 2026-10-14):** Look Up in Docs (`C-c C-d h`, `C-c C-h`
+  in Racket, `C-k h`) shows Racket's and Clojure's docs in the HyperSpec
+  tab, from docsets made on the user's machine in `~/.local/share/docsets/`,
+  nothing shipped with Cadre:
+  - **Racket: Build Docs:** `vendor/cadre-racket/docs.rkt` lists every
+    documented export of the installed Racket with its signature and
+    contracts (the docs' blue boxes, about 22,800 in 11 seconds). Each entry
+    links to its full page.
+  - **Clojure: Build Docs:** the arglists and docstrings of every public
+    var in the namespaces the connected Clojure has loaded.
+  - **Clojure: Build Docs with ClojureDocs Examples:** the same, plus
+    ClojureDocs' examples, see-alsos and notes, from its public export
+    (`clojuredocs-export.json`), downloaded by the user's machine. The
+    export states no license, so it is never bundled; the docset credits
+    ClojureDocs and its contributors.
 - **Not done:**
-  - **Docs pages.** Racket's docs are HTML, and the HyperSpec tab draws
-    docsets. Describe already shows the signature, contracts and the
-    installed page's link. A Racket docset generator is its own project.
-    A Clojure docset from ClojureDocs needs its license checked first.
   - **ClojureScript through shadow-cljs.** It needs Node, which this
     machine doesn't have to test against, and a second connection per
     project (CIDER's clj and cljs REPLs side by side).

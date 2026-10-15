@@ -70,6 +70,7 @@
                (:file "new-project")
                (:file "build")
                (:file "racket")
+               (:file "language-docs")
                (:file "gtk-app")
                (:file "run-app")
                (:file "bindings")
@@ -135,7 +136,8 @@
                 :components ((:file "json")
                              (:file "cli")
                              (:file "mcp")
-                             (:file "diff")))))
+                             (:file "diff")))
+               (:file "language-docs")))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."

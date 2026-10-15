@@ -163,6 +163,17 @@ the process; nil if there is no Clojure CLI."
                  (is equal '(:test 2 :pass 1 :fail 1 :error 0) summary)
                  (is string= "bad" (getf (first failures) :var))
                  (is string= "fail" (getf (first failures) :type)))
+               ;; The Clojure docset: every public var's arglists and docstring.
+               (let ((vars (backend-value #'c:request-clojure-docs-vars conn))
+                     (dir (merge-pathnames (format nil "cadre-cljdocs-~d/" (random 1000000)) (uiop:temporary-directory))))
+                 (true (find-if (lambda (v) (and (equal (first v) "clojure.core") (equal (second v) "map"))) vars))
+                 (unwind-protect
+                      (progn
+                        (true (> (c:write-clojure-docset vars :directory dir) 500))
+                        (let ((record (find "clojure.core" (docset:find-records (docset:open-docset dir) "map")
+                                            :key #'docset:record-package :test #'equal)))
+                          (true (search "lazy seq" (docset:record-summary record)) (docset:record-summary record))))
+                   (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
                ;; Input: the program asks for a line, and gets what is typed.
                (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
                (let ((done (sb-thread:make-semaphore)) (value nil))
@@ -240,3 +251,25 @@ the process; nil if there is no Clojure CLI."
       (is eql 12 (indent) "a call lines up under its first argument")
       (c:learn-clojure-indentation '("my.ns/frobnicate"))
       (is eql 2 (indent) "a learned body form indents 2"))))
+
+;;; The Clojure docset, from docstrings and (when downloaded) ClojureDocs
+
+(define-test clojure-docset-entries :parent cadre-tests
+  (let* ((vars '(("clojure.core" "map" "function" ("[f coll]" "[f c1 c2]") "Returns a lazy sequence.")
+                 ("clojure.core" "map-indexed" "function" ("[f coll]") "")))
+         (export (c:parse-json "{\"vars\": [{\"ns\": \"clojure.core\", \"name\": \"map\", \"href\": \"/clojure.core/map\",
+                                \"examples\": [{\"body\": \"(map inc [1 2])\\n;;=> (2 3)\"}],
+                                \"see-alsos\": [{\"to-var\": {\"ns\": \"clojure.core\", \"name\": \"map-indexed\"}}],
+                                \"notes\": []}]}"))
+         (plain (first (c:clojure-docset-entries vars)))
+         (merged (first (c:clojure-docset-entries vars (c::clojuredocs-index export)))))
+    (is string= "clojure.core/map" (second plain))
+    (is equal '("Syntax" "Description") (mapcar #'first (getf (cddr plain) :sections)))
+    (is equal (list :code-block "lisp" (format nil "(map f coll)~%(map f c1 c2)"))
+        (second (assoc "Syntax" (getf (cddr plain) :sections) :test #'string=)))
+    (is equal '("Syntax" "Description" "Examples (ClojureDocs)" "See Also (ClojureDocs)" "ClojureDocs")
+        (mapcar #'first (getf (cddr merged) :sections)))
+    (true (find '(:ref "clojure.core/map-indexed" "clojure.core/map-indexed")
+                (second (assoc "See Also (ClojureDocs)" (getf (cddr merged) :sections) :test #'string=))
+                :test #'equal)
+          "a see-also in the docset is a link")))

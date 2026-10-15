@@ -610,6 +610,9 @@ Lisp commands work on Clojure code, in the file's namespace:
   (failures in Problems), and the Inspector
 - clj-kondo's findings on save when it's installed, and indentation from the
   project's `.cljfmt.edn` and macros' `:style/indent`
+- Look Up in Docs (`C-c C-d h`) after Clojure: Build Docs, which makes docs
+  from the loaded namespaces' docstrings (and, if you choose, ClojureDocs'
+  examples, downloaded to your machine)
 
 The status bar shows the Clojure connection while a Clojure tab is selected.
 This needs the Clojure CLI (or Leiningen, or Babashka). The first start
@@ -634,12 +637,14 @@ module and puts the REPL in it, as DrRacket's Run does. Then:
 - Rename Symbol for a binding and its uses in the file, and run-time errors
   with their stack on the Debugger page
 - Scribble files (`.scrbl`) with their @-expressions' text read as prose
+- Look Up in Docs (`C-c C-h`) after Racket: Build Docs, which makes docs of
+  every documented name's signature from your installed Racket
 - a Racket package in New Project
 
 Programs reading their input get the lines typed in the language's REPL
 tab, and Claude's tools work in Racket and Clojure files too.
 [docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md) has the plan and what is
-still to come (docs pages, ClojureScript).
+still to come (ClojureScript).
 
 ### JavaScript, TypeScript, JSON, HTML, CSS and XML (tree-sitter)
 

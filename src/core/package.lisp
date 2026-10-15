@@ -105,7 +105,11 @@
    #:style-indent-names #:clojure-printed-sexp #:cider-inspection #:nrepl-inspect #:nrepl-inspect-op #:nrepl-run-tests
    ;; Racket, through Cadre's back end (racket/)
    #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
-   #:racket-problems #:racket-binding-spans #:raco-places #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:racket-problems #:racket-binding-spans #:raco-places
+   ;; Racket and Clojure docsets, made on this machine (language-docs.lisp)
+   #:language-docset-directory #:racket-docset-entries #:build-racket-docset
+   #:*clojure-docs-code* #:clojure-docs-vars #:clojure-docset-entries #:write-clojure-docset
+   #:*clojuredocs-export-url* #:download-clojuredocs #:request-clojure-docs-vars #:racket-project #:racket-arglist-with-current #:racket-backend-file
    #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p
