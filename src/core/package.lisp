@@ -217,4 +217,4 @@
    #:http-response-content-type #:http-response-url #:http-response-error #:response-body-text #:response-body-mode
    #:http-request-curl-command #:shell-words #:parse-curl-command #:base64-string
    #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters
-   #:json-path-value #:capture-response-values))
+   #:json-path-value #:capture-response-values #:http-request-auth #:auth-header #:*api-key-headers*))

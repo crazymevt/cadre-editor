@@ -930,6 +930,11 @@ Content-Type: application/json
   in `~/.config/cadre/secrets/`, readable only by you, so they're never
   committed (🔑 edits them). `{{$guid}}`, `{{$timestamp}}`,
   `{{$isoTimestamp}}` and `{{$randomInt}}` are made up when sent.
+- **Auth** sets up authentication: a Bearer token, Basic (username and
+  password) or an API key header. **Use** keeps the secret in this project's
+  secrets and gives the request the header with a `{{variable}}`
+  (`Authorization: Bearer {{token}}`); the tab recognizes such headers in
+  requests you open.
 - **Capture** values from a response for the requests after it, such as a
   login's token: in a request's Options, or in the file as
   `# @capture token = $.token` (a JSON path like `$.data[0].id`,

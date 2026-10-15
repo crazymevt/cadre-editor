@@ -12,7 +12,7 @@ they still lack, in the order it's being built. Tick an item when it lands.
    secrets store, outside the project.
 3. [x] **SQL highlighting and completion**: a tree-sitter SQL grammar for
    `.sql` files and consoles; table and column names from the connection.
-4. [ ] **API: an Auth tab**: Bearer, Basic and API key, writing the header
+4. [x] **API: an Auth tab**: Bearer, Basic and API key, writing the header
    with the secret in a `{{variable}}`.
 5. [ ] **Databases: MySQL / MariaDB.**
 6. [ ] **API: form and multipart bodies**, with file uploads (curl `-F`).

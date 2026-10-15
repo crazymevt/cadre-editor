@@ -320,6 +320,36 @@ environment's own (each an alist)."
     (format nil "~a-~(~{~2,'0x~}~).json" (or name "project")
             (coerce (subseq (sb-md5:md5sum-string path :external-format :utf-8) 0 6) 'list))))
 
+;;; Authentication, as headers
+
+(defparameter *api-key-headers* '("x-api-key" "api-key" "apikey" "x-auth-token" "x-access-token"))
+
+(defun http-request-auth (request)
+  "How REQUEST authenticates, from its headers: :bearer, :basic or :api-key
+(or nil), the {{variable}} holding the secret (nil if the value is typed
+in), and the header it's in."
+  (let ((authorization (http-request-header request "Authorization")))
+    (flet ((variable (value)
+             (multiple-value-bind (m g) (ppcre:scan-to-strings "^\\s*\\{\\{\\s*([$\\w.-]+)\\s*\\}\\}\\s*$" value)
+               (and m (aref g 0)))))
+      (cond (authorization
+             (multiple-value-bind (m g) (ppcre:scan-to-strings "(?i)^(bearer|basic)\\s+(.*)$" authorization)
+               (if m
+                   (values (if (string-equal (aref g 0) "basic") :basic :bearer) (variable (aref g 1)) "Authorization")
+                   (values nil nil nil))))
+            (t (let ((header (find-if (lambda (h) (member (car h) *api-key-headers* :test #'string-equal))
+                                      (http-request-headers request))))
+                 (if header
+                     (values :api-key (variable (cdr header)) (car header))
+                     (values nil nil nil))))))))
+
+(defun auth-header (type variable &key (header "X-API-Key"))
+  "The header (name . value) for TYPE (:bearer, :basic, :api-key) with its secret in {{VARIABLE}}."
+  (ecase type
+    (:bearer (cons "Authorization" (format nil "Bearer {{~a}}" variable)))
+    (:basic (cons "Authorization" (format nil "Basic {{~a}}" variable)))
+    (:api-key (cons header (format nil "{{~a}}" variable)))))
+
 ;;; Secrets left in a request
 
 (defparameter *secret-header-names*

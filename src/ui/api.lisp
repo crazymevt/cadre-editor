@@ -31,7 +31,8 @@
   buffer method url headers-box params-box captures-box body-view send-button status response-stack
   (syncing nil)                         ; true while the URL and the Params rows update each other
   response-view                         ; an editor view of the response body, highlighted by its type
-  response-headers pretty-button copy-body-button run response loading)
+  response-headers pretty-button copy-body-button run response loading
+  (auth '()))                           ; the Auth tab's widgets, a plist
 
 ;;; Where things are kept
 
@@ -352,6 +353,102 @@ ON-CHANGE is called after either changes, or the row goes."
   (pair-row (ap-captures-box page) name path :what "capture" :on-change (lambda () (api-changed page))
                                               :placeholders '("Variable" "$.path, header Name, or status")))
 
+;;; Auth: a form over the headers. Use puts the secret in this project's
+;;; secrets and the header, with a {{variable}}, in the request.
+
+(defparameter *auth-types* '((nil . "None") (:bearer . "Bearer token") (:basic . "Basic") (:api-key . "API key")))
+
+(defun set-page-header (page name value)
+  "Set header NAME in PAGE's Headers rows (adding a row if there's none)."
+  (let ((row (find-if (lambda (row) (string-equal (string-trim " " (gtk:editable-get-text (gtk:widget-get-first-child row))) name))
+                      (box-rows (ap-headers-box page)))))
+    (if row
+        (gtk:editable-set-text (gtk:widget-get-next-sibling (gtk:widget-get-first-child row)) value)
+        (add-header-row page name value))))
+
+(defun remove-auth-headers (page)
+  (dolist (row (box-rows (ap-headers-box page)))
+    (let ((name (string-trim " " (gtk:editable-get-text (gtk:widget-get-first-child row)))))
+      (when (or (string-equal name "Authorization") (member name *api-key-headers* :test #'string-equal))
+        (gtk:box-remove (ap-headers-box page) row)))))
+
+(defun make-auth-widget (page request)
+  (multiple-value-bind (type variable header) (http-request-auth request)
+    (let* ((group (make-instance 'adw:preferences-group :margin-start 8 :margin-end 8 :margin-top 8))
+           (kind (make-instance 'adw:combo-row :title "Type" :model (gtk:string-list-new (mapcar #'cdr *auth-types*))))
+           (header-row (make-instance 'adw:entry-row :title "Header" :text (if (eq type :api-key) header "X-API-Key")))
+           (variable-row (make-instance 'adw:entry-row :title "Variable ({{name}} in the request)"
+                                                       :text (or variable "")))
+           (user (make-instance 'adw:entry-row :title "Username"))
+           (secret (make-instance 'adw:password-entry-row :title "Token"))
+           (note (make-instance 'gtk:label :xalign 0.0 :wrap t :margin-start 12 :margin-end 12 :margin-top 8
+                                           :css-classes '("dim-label" "caption")))
+           (use (make-instance 'gtk:button :label "Use" :css-classes '("suggested-action") :halign :start
+                                           :margin-start 12 :margin-top 8
+                                           :tooltip-text "Keep the secret outside the project and set the request's header")))
+      (labels ((chosen () (car (nth (adw:combo-row-get-selected kind) *auth-types*)))
+               (default-variable (type) (case type (:basic "basic_auth") (:api-key "api_key") (:bearer "token")))
+               (type-changed ()
+                 ;; A new type: its usual variable, unless one was typed in.
+                 (let ((now (gtk:editable-get-text variable-row)))
+                   (when (and (chosen) (or (string= now "") (member now '("basic_auth" "api_key" "token") :test #'string=)))
+                     (gtk:editable-set-text variable-row (default-variable (chosen)))))
+                 (update))
+               (update ()
+                 (let ((type (chosen)))
+                   (gtk:widget-set-visible header-row (eq type :api-key))
+                   (gtk:widget-set-visible user (eq type :basic))
+                   (dolist (row (list variable-row secret)) (gtk:widget-set-visible row (and type t)))
+                   (adw:preferences-row-set-title secret (case type (:basic "Password") (:api-key "Key") (t "Token")))
+                   (gtk:label-set-text note
+                                       (if type
+                                           (format nil "Use keeps what you type here in this project's secrets~@[ (~a environment)~], outside the project, and sends ~a. Leave it empty to keep the value already stored."
+                                                   *api-environment*
+                                                   (let ((h (auth-header type (let ((v (gtk:editable-get-text variable-row)))
+                                                                                (if (string= v "") "…" v))
+                                                                         :header (gtk:editable-get-text header-row))))
+                                                     (format nil "~a: ~a" (car h) (cdr h))))
+                                           "No authentication: Use takes the Authorization header out.")))))
+        (adw:combo-row-set-selected kind (or (position type *auth-types* :key #'car) 0))
+        (dolist (row (list kind header-row variable-row user secret)) (adw:preferences-group-add group row))
+        (gobject:connect kind "notify::selected" (lambda (r p) (declare (ignore r p)) (type-changed)))
+        (dolist (row (list variable-row header-row)) (gobject:connect row :changed (lambda (e) (declare (ignore e)) (update))))
+        (gobject:connect use :clicked (lambda (b) (declare (ignore b)) (use-auth page)))
+        (setf (ap-auth page) (list :kind kind :header header-row :variable variable-row :user user :secret secret
+                                   :note note :chosen #'chosen))
+        (update)
+        (gtk:build
+          (gtk:scrolled-window :hscrollbar-policy :never
+            (gtk:box :orientation :vertical
+              group note use)))))))
+
+(defun use-auth (page)
+  "Do what the Auth tab says: keep its secret, set the header."
+  (let* ((auth (ap-auth page))
+         (type (funcall (getf auth :chosen)))
+         (variable (string-trim " {}" (gtk:editable-get-text (getf auth :variable))))
+         (secret (gtk:editable-get-text (getf auth :secret)))
+         (user (gtk:editable-get-text (getf auth :user)))
+         (value (case type
+                  (:basic (and (or (plusp (length user)) (plusp (length secret)))
+                               (base64-string (format nil "~a:~a" user secret))))
+                  (t (and (plusp (length secret)) secret)))))
+    (cond ((null type)
+           (remove-auth-headers page)
+           (api-changed page)
+           (message "The request sends no authentication"))
+          ((string= variable "") (message "Name the variable the secret is kept in"))
+          (t
+           (when value
+             (store-api-secrets (list (list :variable variable :value value)) :quietly t)
+             (gtk:editable-set-text (getf auth :secret) ""))
+           (remove-auth-headers page)
+           (let ((header (auth-header type variable :header (string-trim " " (gtk:editable-get-text (getf auth :header))))))
+             (set-page-header page (car header) (cdr header))
+             (api-changed page)
+             (message "~@[Kept {{~a}} in the secrets; ~]the request sends ~a: ~a"
+                      (and value variable) (car header) (cdr header)))))))
+
 ;;; Params: the URL's query, as rows. Each follows the other.
 
 (defun add-param-row (page &optional (name "") (value ""))
@@ -490,6 +587,7 @@ ON-CHANGE is called after either changes, or the row goes."
                                 (gtk:label :xalign 0.0 :css-classes '("dim-label" "caption")
                                            :label "Set a Content-Type header to match (application/json, …)"))))
                           "body" "Body")
+    (gtk:stack-add-titled request-stack (make-auth-widget page request) "auth" "Auth")
     (gtk:stack-add-titled request-stack
                           (gtk:build
                             (gtk:scrolled-window :hscrollbar-policy :never
@@ -802,15 +900,16 @@ ON-CHANGE is called after either changes, or the row goes."
         ((string= response "keep") (funcall continuation (write-api-request page file request)))
         (t (funcall continuation nil))))
 
-(defun store-api-secrets (secrets)
-  "Put SECRETS (from FIND-LITERAL-SECRETS) in this project's secrets file, in the current environment."
+(defun store-api-secrets (secrets &key quietly)
+  "Put SECRETS (from FIND-LITERAL-SECRETS: plists with :variable and :value) in this project's secrets file, in the current environment."
   (let ((file (api-secrets-file))
         (env (or *api-environment* "$shared")))
     (write-http-environments file
                              (reduce (lambda (envs s) (set-http-environment-variable envs env (getf s :variable) (getf s :value)))
                                      secrets :initial-value (read-http-environments file))
                              :private t)
-    (message "Moved ~d secret~:p to ~a" (length secrets) (uiop:native-namestring file))))
+    (unless quietly
+      (message "Moved ~d secret~:p to ~a" (length secrets) (uiop:native-namestring file)))))
 
 (defun load-request-fields (page request)
   "Show REQUEST's URL, headers and body in PAGE's fields."

@@ -141,6 +141,17 @@ POST https://x.test/login
         (getf (c:http-request-options (first (c:parse-http-file (c:render-http-request request)))) :captures)))
   (is string= "new" (funcall (c:http-variable-lookup :captured '(("token" . "new")) :secrets '(("token" . "old"))) "token")))
 
+(define-test http-auth :parent cadre-tests
+  (flet ((auth (&rest headers)
+           (multiple-value-list (c:http-request-auth (c:make-http-request :headers headers)))))
+    (is equal '(:bearer "token" "Authorization") (auth '("Authorization" . "Bearer {{token}}")))
+    (is equal '(:basic "basic_auth" "Authorization") (auth '("authorization" . "basic {{ basic_auth }}")))
+    (is equal '(:bearer nil "Authorization") (auth '("Authorization" . "Bearer abc")))
+    (is equal '(:api-key "key" "X-Api-Key") (auth '("Accept" . "*/*") '("X-Api-Key" . "{{key}}")))
+    (is equal '(nil nil nil) (auth '("Accept" . "*/*"))))
+  (is equal '("Authorization" . "Bearer {{t}}") (c:auth-header :bearer "t"))
+  (is equal '("X-Token" . "{{k}}") (c:auth-header :api-key "k" :header "X-Token")))
+
 (define-test query-parameters :parent cadre-tests
   (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
       (c:url-query-parameters "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"))

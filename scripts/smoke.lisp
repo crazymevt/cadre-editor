@@ -4356,6 +4356,49 @@ create table later (x)")
   (check "a captured value wins over the secret of the same name"
          (search "Bearer fresh123" (buffer-string (api-response-buffer))) (buffer-string (api-response-buffer))))
 
+(then 100
+  (let ((auth (cadre-ui::ap-auth (api-tab-page))))
+    (check "the Auth tab sees a request's Bearer {{token}}"
+           (and (eq :bearer (funcall (getf auth :chosen)))
+                (string= "token" (gtk:editable-get-text (getf auth :variable))))))
+  (cadre-ui::open-api-request (make-http-request :method "POST" :url (format nil "http://127.0.0.1:~d/auth" *api-port*))))
+
+(then 300
+  (let* ((page (api-tab-page))
+         (auth (cadre-ui::ap-auth page)))
+    (adw:combo-row-set-selected (getf auth :kind) 1)
+    (gtk:editable-set-text (getf auth :variable) "api_token")
+    (gtk:editable-set-text (getf auth :secret) "tok999")
+    (cadre-ui::use-auth page)
+    (check "Use sets the header with a {{variable}}"
+           (equal '(("Authorization" . "Bearer {{api_token}}")) (cadre-ui::box-pairs (cadre-ui::ap-headers-box page)))
+           (cadre-ui::box-pairs (cadre-ui::ap-headers-box page)))
+    (check "and keeps the token in the secrets, not the request"
+           (string= "tok999" (cdr (assoc "api_token" (http-environment-variables
+                                                      (read-http-environments (cadre-ui::api-secrets-file)) "dev")
+                                         :test #'string=))))
+    (check "clearing the field" (string= "" (gtk:editable-get-text (getf auth :secret))))
+    (adw:combo-row-set-selected (getf auth :kind) 2)
+    (gtk:editable-set-text (getf auth :variable) "basic_auth")
+    (gtk:editable-set-text (getf auth :user) "ann")
+    (gtk:editable-set-text (getf auth :secret) "pw")
+    (cadre-ui::use-auth page)
+    (check "Basic replaces it, keeping user:password encoded"
+           (and (equal '(("Authorization" . "Basic {{basic_auth}}")) (cadre-ui::box-pairs (cadre-ui::ap-headers-box page)))
+                (string= (base64-string "ann:pw")
+                         (cdr (assoc "basic_auth" (http-environment-variables
+                                                   (read-http-environments (cadre-ui::api-secrets-file)) "dev")
+                                     :test #'string=)))))
+    (cadre-ui::send-api-request page)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "and the request sends it" (search (format nil "Basic ~a" (base64-string "ann:pw")) (buffer-string (api-response-buffer)))
+         (buffer-string (api-response-buffer)))
+  (let ((stack (loop for w = (cadre-ui::ap-headers-box (api-tab-page)) then (gtk:widget-get-parent w)
+                     until (typep w 'gtk:stack) finally (return w))))
+    (gtk:stack-set-visible-child-name stack "auth"))
+  (screenshot "api-04-auth"))
+
 ;;; PostgreSQL on the Databases page, against a server started here (skipped
 ;;; where PostgreSQL isn't installed)
 (section "postgres" :needs ("databases"))
