@@ -2507,7 +2507,7 @@ d" 0 0)
 (then 300
   (check "Unfold All shows everything" (and (null (folds)) (not (line-hidden-p 13)))))
 
-;;; A new Lisp project
+;;; A new project
 (section "new-project")
 
 (defun np (key) (getf cadre-ui::*new-project-dialog* key))
@@ -2516,10 +2516,11 @@ d" 0 0)
 (then 300
   (ensure-directories-exist *new-parent*)
   (setf (cadre-ui::setting :new-project-folder) (namestring *new-parent*))
-  (call-command 'cadre-ui::new-lisp-project))
+  (call-command 'cadre-ui::new-project))
 
 (then 600
-  (check "New Lisp Project opens its dialog" (np :dialog))
+  (check "New Project opens its dialog, titled New Project"
+         (and (np :dialog) (equal "New Project" (adw:dialog-get-title (np :dialog)))))
   (gtk:editable-set-text (np :name) "Bad Name"))
 
 (then 200

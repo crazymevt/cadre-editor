@@ -160,7 +160,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
    '(:section
      (:submenu "File"
       (:section ("New File" new-file) ("Open File…" open-file) ("Open Folder…" open-folder)
-                ("New Lisp Project…" new-lisp-project))
+                ("New Project…" new-project))
       (:section ("Open Recent Folder…" open-recent-project) ("Open Recent File…" open-recent-file))
       (:section ("Save" save-buffer) ("Save As…" save-buffer-as) ("Close Tab" close-tab)))
      (:submenu "Edit"

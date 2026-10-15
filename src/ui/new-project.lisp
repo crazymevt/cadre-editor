@@ -1,4 +1,4 @@
-;;;; new-project.lisp — the New Lisp Project dialog
+;;;; new-project.lisp — the New Project dialog
 ;;;;
 ;;;; Asks for a name, a description, the author, where to put it, whether it
 ;;;; is a library or an application, the test framework, the license and
@@ -49,11 +49,12 @@ Returns the project's folder."
 (defun combo-choice (row choices)
   (car (nth (adw:combo-row-get-selected row) choices)))
 
-(define-command new-lisp-project ()
-  "Make a new Lisp project: its folder, .asd, src and tests folders, main and
+(define-command new-project ()
+  "Make a new project (Common Lisp, a Racket package or a Clojure project): for
+Common Lisp, its folder, .asd, src and tests folders, main and
 test files, Makefile, README, .gitignore and license; then open it."
   (let* ((parent (default-project-parent))
-         (dialog (make-instance 'adw:dialog :title "New Lisp Project" :content-width 520))
+         (dialog (make-instance 'adw:dialog :title "New Project" :content-width 520))
          (name (make-instance 'adw:entry-row :title "Name"))
          (description (make-instance 'adw:entry-row :title "Description"))
          (author (make-instance 'adw:entry-row :title "Author" :text (default-project-author)))

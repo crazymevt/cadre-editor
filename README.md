@@ -146,7 +146,7 @@ you what's missing when you use a feature that needs it.
 | Format Document for JavaScript, TypeScript and HTML ([below](#format-document)) | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS, XML and Lisp need nothing. |
 | The Terminal page ([below](#terminal)) | VTE, GNOME's terminal widget, for GTK 4 | `brew install vte3`. On Debian or Ubuntu: `sudo apt install libvte-2.91-gtk4-0` |
 | Claude ([below](#claude)) | The [Claude Code](https://claude.com/claude-code) CLI, signed in | Install it from its site, then `claude auth login` |
-| Run GTK App, and GTK projects from New Lisp Project | The gtk4 bindings, which you already have from setup | — |
+| Run GTK App, and GTK projects from New Project | The gtk4 bindings, which you already have from setup | — |
 
 Some things need nothing extra:
 - **Swank** is bundled (SLIME 2.32 in `vendor/slime/`).
@@ -572,9 +572,10 @@ git's message if those can't supply one.
 | Diff this file | `M-x git-diff-file` | `C-x v =` |
 | Stage this file | `M-x git-stage-file` | `C-x v s` |
 
-### New Lisp projects
+### New projects
 
-**New Lisp Project…** (in the main menu, or `M-x new-lisp-project`) asks for:
+**New Project…** (in the main menu, or `M-x new-project`) makes a Common Lisp
+project, a Racket package or a Clojure project. It asks for:
 - the project's name, description and author
 - where to put it
 - whether it's a library or an application
@@ -788,7 +789,7 @@ in: the nearest folder above it with an `.asd`, `info.rkt`, `deps.edn`,
 several projects open, switching to a file in another project switches them
 to that project.
 
-When a project's `.asd` has an `:entry-point` (as New Lisp Project's
+When a project's `.asd` has an `:entry-point` (as New Project's
 application kinds write), a **▶** button appears in the header bar. **Run
 App** (the button, `Ctrl+F5`, Emacs `C-x p r`, or the main menu) saves the
 project's files, loads its system in the connected Lisp (recompiling what
@@ -838,7 +839,7 @@ menu) handles this:
   starts it again. **Stop GTK App** (■, `Ctrl+Shift+F5`, `C-x p k`) quits it.
 
 It needs a Lisp that Cadre started (`M-x lisp`), not one it connected to.
-New Lisp Project's **GTK application** kind starts a project ready for this:
+New Project's **GTK application** kind starts a project ready for this:
 - it depends on `gtk4`, with a window and an entry point to start from;
 - its Makefile has `make run`, `make dev` (a Swank server on port 4005 and the
   app, for another editor's REPL) and `make build` (an executable, with

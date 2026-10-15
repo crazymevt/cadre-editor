@@ -1,4 +1,4 @@
-;;;; new-project.lisp — the files of a new Lisp project
+;;;; new-project.lisp — the files of a new project (Common Lisp, Racket or Clojure)
 ;;;;
 ;;;; PROJECT-FILES-FOR describes a project as (relative-path . contents):
 ;;;;

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- New Lisp Project is now **New Project** (`M-x new-project`), since it
+  makes Racket packages and Clojure projects too.
+
 ## 1.0.0
 
 The first release of Cadre: a Lisp editor written in Common Lisp, with
