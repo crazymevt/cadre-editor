@@ -236,3 +236,9 @@ findings on the Problems page."
 (add-hook '*after-save-hook* (lambda (buffer)
                                (when (eq (buffer-major-mode buffer) 'clojure-mode)
                                  (lint-clojure-buffer buffer))))
+
+;;; The project's own indentation (.cljfmt.edn), when a Clojure file opens
+
+(add-hook '*buffer-created-hook* (lambda (buffer)
+                                   (when (and (eq (buffer-major-mode buffer) 'clojure-mode) (buffer-file buffer))
+                                     (ignore-errors (load-cljfmt-indentation (buffer-file buffer))))))

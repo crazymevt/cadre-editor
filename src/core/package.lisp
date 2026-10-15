@@ -101,6 +101,8 @@
    #:clojure-process-directory #:nrepl-port-file #:clojure-error-location #:arglist-with-current
    #:*clojure-command* #:*leiningen-command* #:*babashka-command* #:*clojure-aliases*
    #:*cider-nrepl* #:*nrepl-version* #:*cider-nrepl-version* #:*clj-kondo-command* #:clj-kondo-arguments #:clj-kondo-notes
+   #:*clojure-indent-rules* #:learn-clojure-indentation #:cljfmt-indented-names #:load-cljfmt-indentation
+   #:style-indent-names
    ;; Racket, through Cadre's back end (racket/)
    #:framed-connection #:racket-connection #:start-racket #:racket-connect #:racket-documentation-url
    #:racket-problems #:racket-project #:racket-arglist-with-current #:racket-backend-file

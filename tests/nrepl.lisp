@@ -131,6 +131,14 @@ the process; nil if there is no Clojure CLI."
                               *events*))
                (is equal '("probe.core" "probe.core") (backend-value #'c:backend-set-package conn "probe.core"))
                (is string= "probe.core" (c:connection-package conn))
+               ;; A macro's :style/indent arrives in cider-nrepl's state and
+               ;; makes its forms indent as body forms.
+               (remhash "with-probe" c:*clojure-indent-rules*)
+               (backend-value #'c:backend-eval conn
+                              "(defmacro with-probe {:style/indent 1} [x & body] `(do ~x ~@body))"
+                              :package "user")
+               (true (wait-for (lambda () (gethash "with-probe" c:*clojure-indent-rules*)) 20)
+                     "learned from :style/indent")
                ;; Input: the program asks for a line, and gets what is typed.
                (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
                (let ((done (sb-thread:make-semaphore)) (value nil))
@@ -189,3 +197,22 @@ the process; nil if there is no Clojure CLI."
     (is equal '(:file "/p/src/a.clj" :line 2 :column 4) (c:compiler-note-location (first notes)))
     (is eq :error (c:compiler-note-severity (second notes))))
   (is equal '("--lint" "-" "--filename" "/p/a.clj") (c:clj-kondo-arguments "/p/a.clj")))
+
+;;; Indentation from .cljfmt.edn and :style/indent
+
+(define-test clojure-indent-rules :parent cadre-tests
+  (is equal '("my-macro" "my.ns/with-thing" "frob")
+      (c:cljfmt-indented-names
+       "{:indents {my-macro [[:block 1]], my.ns/with-thing [[:inner 0]], #\"^def\" [[:inner 0]]}
+         :extra-indents {frob [[:block 0]]}}"))
+  ;; A cider-nrepl state message: namespace → interns → var → metadata.
+  (let* ((deffoo '("deffoo" . (("style/indent" . "1"))))
+         (plain '("plain" . (("arglists" . "([x])"))))
+         (changed (list (cons "demo.core" (list (cons "interns" (list deffoo plain)))))))
+    (is equal '("deffoo") (c:style-indent-names changed)))
+  (let ((c:*clojure-indent-rules* (make-hash-table :test 'equal))
+        (text (format nil "(frobnicate a~%b)")))
+    (flet ((indent () (c:lisp-indentation (c:make-lisp-syntax (c:make-string-text text) :dialect c:*clojure-dialect*) 1)))
+      (is eql 12 (indent) "a call lines up under its first argument")
+      (c:learn-clojure-indentation '("my.ns/frobnicate"))
+      (is eql 2 (indent) "a learned body form indents 2"))))

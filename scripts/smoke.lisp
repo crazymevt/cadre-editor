@@ -3063,6 +3063,7 @@ and the number of items MODEL itself shows."
                    (format nil "#!/bin/sh~%cat > /dev/null~%echo '<stdin>:1:2: warning: fake finding'~%"))
   (sb-posix:chmod (namestring (merge-pathnames "kondo/fake-clj-kondo" *root*)) #o755)
   (write-root-file "kondo/lint.clj" (format nil "(ns lint)~%(def x 1)~%"))
+  (write-root-file "kondo/.cljfmt.edn" "{:indents {smoke-block [[:block 1]]}}")
   (setf cadre:*clj-kondo-command* (namestring (merge-pathnames "kondo/fake-clj-kondo" *root*))
         cadre-ui::*clj-kondo-found* :unknown)
   (open-file-path (merge-pathnames "kondo/lint.clj" *root*)))
@@ -3075,6 +3076,8 @@ and the number of items MODEL itself shows."
 (then-when ((find "fake finding" cadre-ui::*notes* :key (lambda (s) (compiler-note-message (cadre-ui::sn-note s)))
                   :test #'string=)
             :timeout 20)
+  (check "opening a Clojure file learns the project's .cljfmt.edn indentation"
+         (gethash "smoke-block" cadre:*clojure-indent-rules*))
   (check "saving a Clojure file shows clj-kondo's findings in Problems"
          (find "fake finding" cadre-ui::*notes* :key (lambda (s) (compiler-note-message (cadre-ui::sn-note s)))
                :test #'string=))

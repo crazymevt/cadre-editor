@@ -79,6 +79,11 @@ ON-ABORT with a reason if the connection closes first. Returns the id."
   (member status (dict-get message "status") :test #'string=))
 
 (defun nrepl-dispatch (connection message)
+  ;; cider-nrepl's state messages say what each namespace defines: learn
+  ;; the indentation of the macros with :style/indent.
+  (let ((changed (dict-get message "changed-namespaces")))
+    (when (consp changed)
+      (learn-clojure-indentation (style-indent-names changed))))
   (let* ((id (dict-get message "id"))
          (request (and id (gethash id (nrepl-requests connection)))))
     (cond (request

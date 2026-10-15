@@ -168,3 +168,34 @@ file lints it and its findings go to the Problems page."
                                       (list :file file
                                             :line (max 0 (1- (parse-integer (aref match 1))))
                                             :column (max 0 (1- (parse-integer (aref match 2))))))))
+
+;;; Indentation a project asks for: cljfmt's .cljfmt.edn
+
+(defun cljfmt-indented-names (text)
+  "The names .cljfmt.edn TEXT gives :block or :inner rules, in its :indents
+or :extra-indents map, such as {my-macro [[:block 1]]}. Read with a
+pattern, not an EDN reader: a name followed by a [[:block n]] or [[:inner n]]."
+  (let ((names '()))
+    (ppcre:do-register-groups (name) ("([^\\s{}\\[\\],]+)\\s+\\[\\[\\s*:(?:block|inner)\\s" text)
+      ;; Not keys, and not #"regex" patterns.
+      (unless (or (char= (char name 0) #\:) (find #\" name))
+        (push (string-left-trim "#'" name) names)))
+    (nreverse names)))
+
+(defun load-cljfmt-indentation (start)
+  "Learn the indentation in the .cljfmt.edn (or cljfmt.edn) of the Clojure
+project START (a file or folder) is in, if it has one."
+  (let ((dir (or (clojure-project start) (uiop:pathname-directory-pathname start))))
+    (dolist (name '(".cljfmt.edn" "cljfmt.edn"))
+      (let ((file (probe-file (merge-pathnames name dir))))
+        (when file
+          (learn-clojure-indentation (cljfmt-indented-names (uiop:read-file-string file)))
+          (return file))))))
+
+(defun style-indent-names (changed-namespaces)
+  "The vars with :style/indent metadata in cider-nrepl's CHANGED-NAMESPACES
+(a state message's dictionary: namespace → interns → var → metadata)."
+  (loop for (nil . ns) in changed-namespaces
+        append (loop for (var . meta) in (dict-get ns "interns")
+                     when (and (consp meta) (or (dict-get meta "style/indent") (dict-get meta "indent")))
+                       collect var)))

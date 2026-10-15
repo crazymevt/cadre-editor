@@ -222,11 +222,22 @@ it continues the forms of a DO (or similar) clause; else nil."
     "specify" "specify!" "add-watch" "bound-fn" "areduce" "amap" "struct-map")
   "Clojure heads whose arguments indent 2 (cljfmt's block and inner forms).")
 
+(defvar *clojure-indent-rules* (make-hash-table :test 'equal)
+  "More Clojure heads (names without their namespace) whose arguments indent
+2: from the project's .cljfmt.edn, and the :style/indent metadata of the
+connected Clojure's macros.")
+
+(defun learn-clojure-indentation (names)
+  "Indent the forms headed by NAMES (with or without a namespace) as body forms."
+  (dolist (name names)
+    (setf (gethash (base-symbol-name name #\/) *clojure-indent-rules*) t)))
+
 (defun clojure-body-form-p (name)
-  "True for a Clojure head whose arguments all indent 2: def…, with-…, and
-the forms in *clojure-body-forms*."
+  "True for a Clojure head whose arguments all indent 2: def…, with-…, the
+forms in *clojure-body-forms*, and those in *clojure-indent-rules*."
   (let ((base (base-symbol-name name #\/)))
     (or (member base *clojure-body-forms* :test #'string=)
+        (gethash base *clojure-indent-rules*)
         (string= base "def")
         (name-starts-with-p "def" base)
         (name-starts-with-p "with-" base))))
