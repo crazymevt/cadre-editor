@@ -202,3 +202,37 @@ Lisps' code: call it at once."
                         (language-repl-note :clojure (format nil "; Namespace ~a~%" ns))
                         (update-connection-status)
                         (message "Clojure REPL in ~a" ns))))))
+
+;;; clj-kondo on save, when it is installed
+
+(defun clj-kondo-available-p ()
+  (and (plusp (length *clj-kondo-command*))
+       (ignore-errors (uiop:run-program (list *clj-kondo-command* "--version") :output nil) t)))
+
+(defvar *clj-kondo-found* :unknown "Whether clj-kondo is installed, once looked for.")
+
+(defun lint-clojure-buffer (buffer)
+  "Lint BUFFER's text with clj-kondo, in the background, and show its
+findings on the Problems page."
+  (when (eq *clj-kondo-found* :unknown)
+    (setf *clj-kondo-found* (clj-kondo-available-p)))
+  (when (and *clj-kondo-found* (buffer-file buffer))
+    (let ((file (uiop:native-namestring (buffer-file buffer)))
+          (text (text-string (buffer-text buffer)))
+          (directory (uiop:pathname-directory-pathname (buffer-file buffer))))
+      (sb-thread:make-thread
+       (lambda ()
+         (let ((output (ignore-errors
+                        (with-input-from-string (in text)
+                          (uiop:run-program (cons *clj-kondo-command* (clj-kondo-arguments file))
+                                            :input in :output :string :ignore-error-status t
+                                            :directory directory)))))
+           (when output
+             (deliver-to-gui (lambda ()
+                               (when (member buffer (buffer-list))
+                                 (show-notes (clj-kondo-notes output file) :buffer buffer :replace-lines :all)))))))
+       :name "clj-kondo"))))
+
+(add-hook '*after-save-hook* (lambda (buffer)
+                               (when (eq (buffer-major-mode buffer) 'clojure-mode)
+                                 (lint-clojure-buffer buffer))))

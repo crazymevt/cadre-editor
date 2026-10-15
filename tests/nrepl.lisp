@@ -175,3 +175,17 @@ the process; nil if there is no Clojure CLI."
                (true (search "0 failures, 0 errors" output)))
           (uiop:delete-directory-tree dir :validate t)))
       (progn (require-language "The Clojure CLI") (skip "The Clojure CLI isn't installed" (true nil)))))
+
+;;; clj-kondo's findings
+
+(define-test clj-kondo-findings :parent cadre-tests
+  (let ((notes (c:clj-kondo-notes (format nil "<stdin>:3:5: warning: unused binding x~%~
+                                               <stdin>:7:1: error: Unresolved symbol: frob~%~
+                                               linting took 12ms, errors: 1, warnings: 1~%")
+                                  "/p/src/a.clj")))
+    (is eql 2 (length notes))
+    (is eq :warning (c:compiler-note-severity (first notes)))
+    (is string= "unused binding x" (c:compiler-note-message (first notes)))
+    (is equal '(:file "/p/src/a.clj" :line 2 :column 4) (c:compiler-note-location (first notes)))
+    (is eq :error (c:compiler-note-severity (second notes))))
+  (is equal '("--lint" "-" "--filename" "/p/a.clj") (c:clj-kondo-arguments "/p/a.clj")))

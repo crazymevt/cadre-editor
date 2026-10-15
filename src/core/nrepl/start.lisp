@@ -143,3 +143,28 @@ ON-EXIT with a message if it exits first or takes too long."
 (defun nrepl-port-file (directory)
   "The port in DIRECTORY's .nrepl-port (written by a running nREPL), or nil."
   (read-port-file (merge-pathnames ".nrepl-port" directory)))
+
+;;; clj-kondo, when it is installed
+
+(define-option *clj-kondo-command* "clj-kondo" string
+  "clj-kondo, the Clojure linter. When it is installed, saving a Clojure
+file lints it and its findings go to the Problems page."
+  :category "Clojure")
+
+(defun clj-kondo-arguments (file)
+  "The arguments that lint a Clojure file's text, given on standard input as FILE."
+  (list "--lint" "-" "--filename" file))
+
+(defun clj-kondo-notes (output file)
+  "Compiler notes for the findings in clj-kondo's OUTPUT, lines such as
+\"src/a.clj:3:5: warning: unused binding x\", about FILE."
+  (loop for line in (uiop:split-string output :separator '(#\Newline))
+        for match = (nth-value 1 (ppcre:scan-to-strings "^(.*):(\\d+):(\\d+): (error|warning|info): (.*)$" line))
+        when match
+          collect (make-compiler-note (cdr (assoc (aref match 3) '(("error" . :error) ("warning" . :warning)
+                                                                   ("info" . :note))
+                                                  :test #'string=))
+                                      (aref match 4)
+                                      (list :file file
+                                            :line (max 0 (1- (parse-integer (aref match 1))))
+                                            :column (max 0 (1- (parse-integer (aref match 2))))))))

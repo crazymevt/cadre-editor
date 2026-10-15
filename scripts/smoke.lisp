@@ -3057,6 +3057,29 @@ and the number of items MODEL itself shows."
 ;;; the first run downloads nREPL and cider-nrepl.
 (section "clojure")
 
+;; clj-kondo on save, with a stand-in that reports one finding.
+(then 300
+  (write-root-file "kondo/fake-clj-kondo"
+                   (format nil "#!/bin/sh~%cat > /dev/null~%echo '<stdin>:1:2: warning: fake finding'~%"))
+  (sb-posix:chmod (namestring (merge-pathnames "kondo/fake-clj-kondo" *root*)) #o755)
+  (write-root-file "kondo/lint.clj" (format nil "(ns lint)~%(def x 1)~%"))
+  (setf cadre:*clj-kondo-command* (namestring (merge-pathnames "kondo/fake-clj-kondo" *root*))
+        cadre-ui::*clj-kondo-found* :unknown)
+  (open-file-path (merge-pathnames "kondo/lint.clj" *root*)))
+
+(then 500
+  (let ((text (buffer-text (current-buffer))))
+    (gtk:text-buffer-insert text (gtk:text-buffer-get-end-iter text) (format nil "(def y 2)~%") -1))
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((find "fake finding" cadre-ui::*notes* :key (lambda (s) (compiler-note-message (cadre-ui::sn-note s)))
+                  :test #'string=)
+            :timeout 20)
+  (check "saving a Clojure file shows clj-kondo's findings in Problems"
+         (find "fake finding" cadre-ui::*notes* :key (lambda (s) (compiler-note-message (cadre-ui::sn-note s)))
+               :test #'string=))
+  (setf cadre:*clj-kondo-command* "clj-kondo" cadre-ui::*clj-kondo-found* :unknown))
+
 (defvar *have-clojure* (ignore-errors (uiop:run-program '("clojure" "-Sdescribe") :output nil) t))
 
 (then 300
