@@ -521,8 +521,32 @@
 
 (define running (make-hash))            ; threads evaluating code → #t
 
+;; Input: code that reads from its standard input asks Cadre for a line,
+;; (:read-string t tag), and waits for (:emacs-return-string t tag text).
+(define input-waiting (make-hash))      ; tag → a function taking the text
+(define next-input-tag 0)
+
+(define (asking-input-port)
+  (define-values (in out) (make-pipe))
+  (define asked? #f)
+  (make-input-port
+   'cadre-input
+   (λ (bs)
+     (define n (read-bytes-avail!* bs in))
+     (cond [(and (number? n) (> n 0)) n]
+           [else
+            (unless asked?
+              (set! asked? #t)
+              (set! next-input-tag (add1 next-input-tag))
+              (define tag next-input-tag)
+              (hash-set! input-waiting tag (λ (text) (set! asked? #f) (write-string text out)))
+              (send `(:read-string t ,tag)))
+            (wrap-evt in (λ (_) 0))]))
+   #f
+   void))
+
 (define (call-evaluating thunk)
-  ;; Call THUNK with output going to Cadre and no input, so it can be interrupted.
+  ;; Call THUNK with output going to Cadre, and input asked of it, so it can be interrupted.
   (define out (remote-output-port))
   (hash-set! running (current-thread) #t)
   (dynamic-wind
@@ -530,7 +554,7 @@
    (λ ()
      (parameterize ([current-output-port out]
                     [current-error-port out]
-                    [current-input-port (open-input-string "")])
+                    [current-input-port (asking-input-port)])
        (thunk)))
    (λ ()
      (flush-output out)
@@ -613,6 +637,11 @@
               (send `(:return ,reply ,id))))]
           [(:emacs-interrupt)
            (for ([t (hash-keys running)]) (break-thread t))]
+          [(:emacs-return-string)
+           (define give (hash-ref input-waiting (third message) #f))
+           (when give
+             (hash-remove! input-waiting (third message))
+             (give (fourth message)))]
           [else (void)]))
       (loop))))
 

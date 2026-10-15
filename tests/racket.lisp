@@ -173,6 +173,18 @@ nil if there is no Racket."
                  (let ((notes (backend-value #'c:racket-problems conn path
                                              (format nil "#lang racket/base~%(require racket/string)~%(define x 1)~%"))))
                    (true (search "Unused require" (c:compiler-note-message (first notes)))))
+                 ;; Input: the program asks for a line, and gets what is typed.
+                 (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
+                 (let ((done (sb-thread:make-semaphore)) (value nil))
+                   (c:backend-eval conn "(string-upcase (read-line))" 
+                                     :on-ok (lambda (v) (setf value v) (sb-thread:signal-semaphore done))
+                                     :on-abort (lambda (r) (setf value r) (sb-thread:signal-semaphore done)))
+                   (let ((ask (progn (wait-for (lambda () (find :read-string *events* :key #'first)))
+                                       (find :read-string *events* :key #'first))))
+                     (true ask "it asks for input")
+                     (when ask (c:backend-send-input conn (second ask) (third ask) (format nil "typed here~%"))))
+                   (true (sb-thread:wait-on-semaphore done :timeout 20))
+                   (is string= "=> \"TYPED HERE\"" value))
                  ;; Interrupting a long evaluation.
                  (let ((done (sb-thread:make-semaphore)) (outcome nil))
                    (c:backend-eval conn "(sleep 60)"

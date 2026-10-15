@@ -110,7 +110,7 @@
    #:backend-eval #:backend-eval-region #:backend-compile-form #:backend-compile-file
    #:backend-load-file #:backend-describe #:backend-arglist #:backend-autodoc
    #:backend-completions #:backend-find-definitions #:backend-xref #:backend-macroexpand
-   #:backend-repl-eval #:backend-set-package #:backend-interrupt #:backend-disconnect
+   #:backend-repl-eval #:backend-set-package #:backend-send-input #:backend-interrupt #:backend-disconnect
    #:connection-open-p #:connection-info #:connection-package #:connection-prompt
    #:connection-handler #:connection-state #:connection-process #:connection-implementation
    #:connection-host #:connection-port #:*swank-contribs*

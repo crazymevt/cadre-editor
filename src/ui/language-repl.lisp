@@ -90,6 +90,10 @@ prompt (another module's or namespace's, perhaps), keeping what is typed there."
   (let ((*repl* (language-repl language)))
     (case (first event)
       (:write-string (repl-output (second event) (third event)))
+      (:read-string
+       (repl-start-reading connection (second event) (third event))
+       (show-language-repl language)
+       (message "The program is reading input: type a line in the ~a REPL" (lrs-title (language-repl-spec language))))
       (:new-package
        (setf (connection-package connection) (second event)
              (connection-prompt connection) (third event))

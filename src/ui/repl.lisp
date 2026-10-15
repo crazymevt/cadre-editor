@@ -252,11 +252,14 @@ package of that code (from the file's IN-PACKAGE)."
     (repl-fresh-line)
     (repl-insert (format nil "; Disconnected: ~a~%" reason) "cadre-repl-note")))
 
+(defun repl-start-reading (connection thread tag)
+  "CONNECTION's program wants a line of input: the next RET sends it."
+  (setf (repl-reading *repl*) (list connection thread tag))
+  (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-input-mark *repl*) (gtk:text-buffer-get-end-iter (repl-gtk-buffer))))
+
 (defun repl-read-string (connection thread tag)
   "The Lisp wants a line of input: the next RET sends it."
-  (declare (ignore connection))
-  (setf (repl-reading *repl*) (list thread tag))
-  (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-input-mark *repl*) (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
+  (repl-start-reading connection thread tag)
   (show-repl-page :focus t))
 
 (defun repl-read-aborted ()
@@ -271,10 +274,10 @@ package of that code (from the file's IN-PACKAGE)."
    (let ((input (repl-input)))
     (cond
       ((repl-reading *repl*)
-       (destructuring-bind (thread tag) (repl-reading *repl*)
+       (destructuring-bind (connection thread tag) (repl-reading *repl*)
          (setf (repl-reading *repl*) nil)
          (repl-freeze-input)
-         (swank-send *connection* (list :emacs-return-string thread tag (format nil "~a~%" input)))))
+         (backend-send-input connection thread tag (format nil "~a~%" input))))
       ((repl-busy *repl*)
        (message "The Lisp is busy; interrupt it with the stop button"))
       ((complete-form-p input (or (mode-dialect (buffer-major-mode (repl-buffer *repl*))) *common-lisp-dialect*))

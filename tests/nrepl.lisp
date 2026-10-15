@@ -131,6 +131,18 @@ the process; nil if there is no Clojure CLI."
                               *events*))
                (is equal '("probe.core" "probe.core") (backend-value #'c:backend-set-package conn "probe.core"))
                (is string= "probe.core" (c:connection-package conn))
+               ;; Input: the program asks for a line, and gets what is typed.
+               (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
+               (let ((done (sb-thread:make-semaphore)) (value nil))
+                 (c:backend-eval conn "(clojure.string/upper-case (read-line))" :package "user"
+                                 :on-ok (lambda (v) (setf value v) (sb-thread:signal-semaphore done))
+                                 :on-abort (lambda (r) (setf value r) (sb-thread:signal-semaphore done)))
+                 (let ((ask (progn (wait-for (lambda () (find :read-string *events* :key #'first)))
+                                   (find :read-string *events* :key #'first))))
+                   (true ask "it asks for input")
+                   (when ask (c:backend-send-input conn (second ask) (third ask) (format nil "typed here~%"))))
+                 (true (sb-thread:wait-on-semaphore done :timeout 20))
+                 (is string= "=> \"TYPED HERE\"" value))
                ;; Interrupting a long evaluation.
                (let ((done (sb-thread:make-semaphore)) (outcome nil))
                  (c:backend-eval conn "(Thread/sleep 60000)"

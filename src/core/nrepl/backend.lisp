@@ -53,6 +53,9 @@ the error output, and whether it failed."
                                (setf (connection-package connection) new-ns (connection-prompt connection) new-ns)
                                (nrepl-event connection (list :new-package new-ns new-ns)))
                              (when (nrepl-status-p message "eval-error") (setf failed t))
+                             ;; The code reads *in*: ask the REPL for a line.
+                             (when (nrepl-status-p message "need-input")
+                               (nrepl-event connection (list :read-string nil nil)))
                              (when (nrepl-status-p message "namespace-not-found")
                                (setf failed t)
                                (format err "Namespace ~a isn't loaded: evaluate its ns form, or load the file." ns))))
@@ -174,6 +177,10 @@ the values, the error output and whether it failed."
                                      (progn
                                        (setf (connection-package connection) name (connection-prompt connection) name)
                                        (when on-ok (funcall on-ok (list name name))))))))
+
+(defmethod backend-send-input ((connection nrepl-connection) thread tag string)
+  (declare (ignore thread tag))
+  (nrepl-send connection (list (cons "op" "stdin") (cons "stdin" string))))
 
 (defmethod backend-interrupt ((connection nrepl-connection))
   (dolist (id (nrepl-eval-ids connection))

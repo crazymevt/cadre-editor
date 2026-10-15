@@ -85,6 +85,10 @@
 (defmethod backend-set-package ((connection swank-connection) name &key on-ok on-abort)
   (swank-request connection (swank-call "swank:set-package" name) nil on-ok on-abort :thread :repl-thread))
 
+(defmethod backend-send-input ((connection framed-connection) thread tag string)
+  ;; Swank's answer to :read-string, which Cadre's Racket back end takes too.
+  (swank-send connection (list :emacs-return-string thread tag string)))
+
 (defmethod backend-interrupt ((connection swank-connection))
   (swank-interrupt connection))
 

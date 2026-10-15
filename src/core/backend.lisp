@@ -108,6 +108,13 @@ shown through the connection's events.")
 (define-backend-request backend-set-package (connection name) "change packages"
   "Make the package (or namespace) NAME the REPL's. ON-OK gets (name prompt).")
 
+(defgeneric backend-send-input (connection thread tag string)
+  (:documentation "Send STRING, a line typed at the REPL, to the program that
+asked for input with a (:read-string THREAD TAG) event.")
+  (:method (connection thread tag string)
+    (declare (ignore thread tag string))
+    (backend-unsupported connection "read input")))
+
 (defgeneric backend-interrupt (connection)
   (:documentation "Interrupt what the Lisp is doing for the REPL.")
   (:method (connection) (backend-unsupported connection "be interrupted")))
