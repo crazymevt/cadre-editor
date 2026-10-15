@@ -37,6 +37,7 @@
   "C-w" 'close-tab
   "C-k S-RET" 'toggle-pin-tab
   "C-S-o" 'go-to-symbol
+  "C-t" 'go-to-symbol-in-project
   "C-i" 'claude-edit
   "C-=" 'zoom-in
   "C-+" 'zoom-in
@@ -197,6 +198,7 @@
   "M-g n" 'next-note
   "M-g p" 'previous-note
   "M-g i" 'go-to-symbol
+  "M-g I" 'go-to-symbol-in-project
   "M-g g" 'go-to-line
   "M-g M-g" 'go-to-line
   "C-g" 'keyboard-quit)

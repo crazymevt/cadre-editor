@@ -978,6 +978,16 @@ The Outline page in the sidebar (the list icon) shows what the current file
 defines, or a Markdown file's headings, with the one around the cursor
 selected; click one to go there. `Ctrl+Shift+O` (`M-g i`) picks one by name.
 
+**Project** shows every definition in the project's Lisp, Racket and Clojure
+files instead, grouped by package (from `in-package`) or namespace (from
+`ns`), with Racket files and files that name neither grouped by file; or,
+choosing **File**, by file. The groups start closed but for the current
+file's; click one to open it, or type in the filter to find definitions by
+name in all of them. It's read again when shown and after you save.
+**Sort by name** lists definitions alphabetically, in both views, instead of
+in the order the files have them (Markdown headings keep their order).
+`Ctrl+T` (`M-g I`) picks a definition from the whole project by name.
+
 ### Tabs
 
 Right-click a tab to pin it (`Ctrl+K Shift+Enter`): pinned tabs stay at the

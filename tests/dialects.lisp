@@ -234,3 +234,27 @@ indentation Cadre would change, as (line wanted)."
           (fourth lines) "[…] and (…) after @ are code")
       (is equal '((:text "lines") (:close "}")) (sixth lines) "a body can span lines")
       (is equal '(:text 0 ((:text 0 :top))) state "and the file ends back in its top-level prose"))))
+
+;;; The project outline's groups (core lisp/definitions.lisp)
+
+(define-test file-outline :parent cadre-tests
+  (let ((cl (c:file-outline "(defun before () 1)
+(in-package #:my-app)
+(defun start () 2)
+(eval-when (:compile-toplevel) (defmacro m () 3))
+(in-package :other)
+(defvar *x* 4)
+" 'c:lisp-mode)))
+    (is equal '((nil . "before") ("my-app" . "start") ("my-app" . "m") ("other" . "*x*"))
+        (mapcar (lambda (e) (cons (car e) (c:definition-name (cdr e)))) cl)))
+  (let ((clj (c:file-outline "(ns app.core
+  (:require [clojure.string :as s]))
+(defn greet [n] n)
+(def answer 42)
+" 'c:clojure-mode)))
+    (is equal '(("app.core" . "greet") ("app.core" . "answer"))
+        (mapcar (lambda (e) (cons (car e) (c:definition-name (cdr e)))) clj)))
+  (let ((rkt (c:file-outline "#lang racket
+(define (f x) x)
+" 'c:racket-mode)))
+    (is equal '((nil . "f")) (mapcar (lambda (e) (cons (car e) (c:definition-name (cdr e)))) rkt))))

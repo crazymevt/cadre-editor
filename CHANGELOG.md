@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Outline: the whole project.** The Outline page's Project view lists every
+  Lisp, Racket and Clojure definition in the project, grouped by package or
+  namespace (or by file), with a filter and Sort by name; Go to Symbol in
+  Project (`Ctrl+T`) picks one by name.
 - **Databases**: a page of database connections (SQLite, PostgreSQL, MySQL and MariaDB), saved with
   the project or for you alone. Tables open in tabs with a filter above each
   column, sorting and paging, and can be edited (changes are saved in one

@@ -10,7 +10,8 @@
 (in-package #:cadre)
 
 (defstruct (definition (:conc-name definition-))
-  name kind arglist documentation line)
+  name kind arglist documentation line
+  package)                              ; Common Lisp: the package an IN-PACKAGE before it named
 
 (defparameter *definition-kinds*
   '(("defun" . :function) ("defmacro" . :macro) ("defgeneric" . :generic) ("defmethod" . :method)
@@ -146,9 +147,15 @@ search over the newlines found once, rather than counting them each time."
           while i do (vector-push-extend i positions))
     positions))
 
+(defun outline-package-name (string)
+  "The package an IN-PACKAGE argument names (:foo, #:foo, \"FOO\", foo), down-cased, for the outline."
+  (string-downcase (string-trim "\"" (string-left-trim "#:" string))))
+
 (defun source-definitions (text)
-  "The definitions in TEXT (Lisp source), in order."
+  "The definitions in TEXT (Lisp source), in order, each with the package
+the last (in-package …) before it named."
   (let ((definitions '())
+        (package nil)
         (*newline-positions* (cons text (newline-positions text))))
     (labels ((walk (nodes depth)
                (dolist (node nodes)
@@ -156,9 +163,14 @@ search over the newlines found once, rather than counting them each time."
                    (let* ((elements (form-elements node text))
                           (head (operator-name (first elements)))
                           (entry (and head (assoc head *definition-kinds* :test #'string=))))
-                     (cond (entry
+                     (cond ((and head (string= head "in-package") (second elements)
+                                 (eq (node-kind (second elements)) :atom))
+                            (setf package (outline-package-name (node-text (second elements)))))
+                           (entry
                             (let ((definition (read-definition head (cdr entry) elements text)))
-                              (when definition (push definition definitions))))
+                              (when definition
+                                (setf (definition-package definition) package)
+                                (push definition definitions))))
                            ((and head (< depth 4) (member head *definition-containers* :test #'string=))
                             (walk (rest elements) (1+ depth)))))))))
       (walk (read-form-tree text) 0))
@@ -336,6 +348,22 @@ as DEFINITION structs with their name, kind and line."
                                   definitions))
                           (setf head nil))))))
     (nreverse definitions)))
+
+;;; A project's outline: every file's definitions, grouped
+
+(defun file-outline (text mode)
+  "The definitions in TEXT, a file in MODE, each as (group . definition):
+the group is a Common Lisp definition's package, a Clojure one's namespace,
+or nil (the file is the group: Racket, or no package or namespace named)."
+  (case mode
+    (lisp-mode (mapcar (lambda (d) (cons (definition-package d) d)) (source-definitions text)))
+    ((clojure-mode racket-mode)
+     (let ((syntax (make-lisp-syntax (make-string-text text) :dialect (mode-dialect mode))))
+       (loop for d in (dialect-definitions syntax)
+             for group = (and (eq mode 'clojure-mode) (clojure-namespace-at syntax (definition-line d)))
+             ;; The (ns …) form itself is the group, not one of its definitions.
+             unless (and group (string= group (definition-name d)))
+               collect (cons group d))))))
 
 (defun clojure-namespace-at (syntax line)
   "The namespace Clojure code at LINE is in: from the last (ns …) or

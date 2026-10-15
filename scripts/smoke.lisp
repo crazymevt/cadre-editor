@@ -1905,6 +1905,90 @@ d" 0 0)
 (then 500
   (check "for Markdown, the headings" (member "Usage" (outline-labels) :test #'string=) (outline-labels)))
 
+(defun project-outline-labels ()
+  (mapcar (lambda (row) (if (eq (first row) :group) (format nil "[~a]" (second row)) (definition-name (third (second row)))))
+          (cadre-ui::ol-rows cadre-ui::*outline*)))
+
+(then 100
+  (ensure-directories-exist (merge-pathnames "pkg/" *root*))
+  (with-open-file (o (merge-pathnames "pkg/app.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(in-package #:my-app)~%(defun start () 1)~%(defvar *mode* :dev)~%"))
+  (with-open-file (o (merge-pathnames "pkg/more.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(in-package :my-app)~%(defun stop () 2)~%"))
+  (with-open-file (o (merge-pathnames "pkg/core.clj" *root*) :direction :output :if-exists :supersede)
+    (format o "(ns app.core)~%(defn greet [n] n)~%"))
+  (open-file-path (merge-pathnames "pkg/app.lisp" *root*)))
+
+(then 300
+  (gtk:toggle-button-set-active
+   (find-if (lambda (w) (and (typep w 'gtk:toggle-button) (equal "Project" (gtk:button-get-label w))))
+            (find-widgets (cadre-ui::ol-widget cadre-ui::*outline*) (constantly t)))
+   t))
+
+(then-when ((member "[my-app]" (project-outline-labels) :test #'string=) :timeout 15)
+  (let ((labels (project-outline-labels)))
+    (check "Project groups the definitions by package and namespace"
+           (and (member "[app.core]" labels :test #'string=) (member "[my-app]" labels :test #'string=)) labels)
+    (check "a package's definitions from all its files, its group open for the current file"
+           (let ((at (position "[my-app]" labels :test #'string=)))
+             (subsetp '("start" "*mode*" "stop") (subseq labels (1+ at)) :test #'string=))
+           labels)
+    (check "other groups start closed" (not (member "greet" labels :test #'string=)) labels))
+  (screenshot "30b-project-outline")
+  (gtk:editable-set-text (cadre-ui::ol-filter cadre-ui::*outline*) "gre"))
+
+(then 400
+  (let ((labels (project-outline-labels)))
+    (check "the filter finds definitions in any group" (equal '("[app.core]" "greet") labels) labels))
+  (gtk:widget-activate (gtk:list-box-get-row-at-index (cadre-ui::ol-project-list cadre-ui::*outline*) 1)))
+
+(then 400
+  (check "clicking one opens its file at it" (and (string= "core.clj" (buffer-name (current-buffer))) (equal '(1 0) (cursor)))
+         (list (buffer-name (current-buffer)) (cursor)))
+  (gtk:editable-set-text (cadre-ui::ol-filter cadre-ui::*outline*) "")
+  (gtk:drop-down-set-selected (cadre-ui::ol-group-dropdown cadre-ui::*outline*) 1))
+
+(then 400
+  (check "or groups them by file" (member "[pkg/more.lisp]" (project-outline-labels) :test #'string=)
+         (project-outline-labels))
+  (call-command 'go-to-symbol-in-project))
+
+(then 300
+  (check "Go to Symbol in Project offers every definition"
+         (find "stop" (cadre-ui::picker-items (picker)) :key (lambda (e) (definition-name (third e))) :test #'string=))
+  (cadre-ui::close-picker (picker)))
+
+(then 100
+  (gtk:drop-down-set-selected (cadre-ui::ol-group-dropdown cadre-ui::*outline*) 0)
+  (setf (gethash "my-app" (cadre-ui::ol-expanded cadre-ui::*outline*)) t)
+  (gtk:check-button-set-active
+   (find-if (lambda (w) (and (typep w 'gtk:check-button) (equal "Sort by name" (gtk:check-button-get-label w))))
+            (find-widgets (cadre-ui::ol-widget cadre-ui::*outline*) (constantly t)))
+   t))
+
+(then 300
+  (let* ((labels (project-outline-labels))
+         (at (position "[my-app]" labels :test #'string=)))
+    (check "Sort by name puts a package's definitions in order, across its files"
+           (equal '("*mode*" "start" "stop") (subseq labels (1+ at) (+ at 4))) labels))
+  (check "and is remembered" (eq t (cadre-ui::setting :outline-sort-by-name)))
+  (gtk:toggle-button-set-active
+   (find-if (lambda (w) (and (typep w 'gtk:toggle-button) (equal "This File" (gtk:button-get-label w))))
+            (find-widgets (cadre-ui::ol-widget cadre-ui::*outline*) (constantly t)))
+   t)
+  (open-file-path (merge-pathnames "pkg/app.lisp" *root*)))
+
+(then 400
+  (check "the file's outline is sorted too" (equal '("*mode*" "start") (outline-labels)) (outline-labels))
+  (set-cursor 1 3)
+  (cadre-ui::refresh-outline))
+
+(then 200
+  (check "with the definition at the cursor still the one selected"
+         (let ((row (gtk:list-box-get-selected-row (cadre-ui::ol-list cadre-ui::*outline*))))
+           (and row (string= "start" (first (nth (gtk:list-box-row-get-index row) (cadre-ui::ol-items cadre-ui::*outline*)))))))
+  (setf (cadre-ui::setting :outline-sort-by-name) nil))
+
 ;;; Claude edit
 (section "claude-edit")
 (defvar *chat-bottom* nil)

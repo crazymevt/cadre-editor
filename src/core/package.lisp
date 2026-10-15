@@ -160,7 +160,7 @@
    ;; what the image knows
    #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
    #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p
-   #:symbol-base-name #:token-text
+   #:symbol-base-name #:token-text #:definition-package #:file-outline
    ;; JSON
    #:jobj #:jget #:jtrue-p #:jlist #:jobject-p #:read-json #:parse-json #:write-json #:json-string
    #:json-error
