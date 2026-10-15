@@ -157,6 +157,12 @@
    #:trace-call-results #:trace-call-state #:trace-call-children #:trace-spec-name #:parse-trace-call
    #:trace-tree #:make-trace-tree #:trace-tree-calls #:trace-tree-roots #:trace-tree-key
    #:trace-tree-add #:trace-tree-count #:trace-tree-lines #:trace-call-text
+   ;; the profiler
+   #:+profiler-helper+ #:profile #:make-profile #:profile-samples #:profile-mode #:profile-running
+   #:profile-functions #:profile-tree #:parse-profile-report #:profile-percent #:profile-mode-title
+   #:profile-function #:make-profile-function #:profile-function-name #:profile-function-definition
+   #:profile-function-self #:profile-function-total #:profile-function-callers #:profile-function-callees
+   #:sort-profile-functions #:find-profile-function #:flame-node-at #:flame-boxes #:flame-path-to #:flame-depth
    ;; what the image knows
    #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
    #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p

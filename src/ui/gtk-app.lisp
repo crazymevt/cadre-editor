@@ -110,6 +110,7 @@ next run's new window would get them."
     (declare (ignore connection))
     (send-to-first-thread (gtk-app-launch-form root system entry))
     (setf *gtk-app* (list :system system :entry entry :root root :running t :gtk-thread t))
+    (add-profiler-tab)
     (update-connection-status)
     (message "Starting ~a on the main thread; the REPL evaluates on the GTK thread while it runs" entry)))
 

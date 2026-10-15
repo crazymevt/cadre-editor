@@ -2,7 +2,8 @@
 ;;;;
 ;;;; Pages: the REPL, the Terminal, Problems (compiler notes), the Debugger, the Inspector,
 ;;;; References (cross-references), History (commits), Trace (traced calls),
-;;;; Results (a SQL query's), Claude (a chat) and Output (a log of messages).
+;;;; Profiler (where the time went), Results (a SQL query's), Claude (a chat)
+;;;; and Output (a log of messages).
 
 (in-package #:cadre-ui)
 
@@ -16,7 +17,7 @@
   (make-instance 'adw:status-page :icon-name icon :title title :description description
                                   :css-classes '("compact")))
 
-(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "results")
+(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "profiler" "results")
   "Pages whose tab appears only once they have something to show, so a
 narrow panel (the vertical layout) has room for the others.")
 
@@ -36,7 +37,7 @@ narrow panel (the vertical layout) has room for the others.")
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
-                    ("trace" "Trace") ("results" "Results") ("claude" "Claude")))
+                    ("trace" "Trace") ("profiler" "Profiler") ("results" "Results") ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))

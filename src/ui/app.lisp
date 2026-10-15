@@ -53,6 +53,7 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "references" (make-references-widget))
       (panel-set-page-child panel "history" (make-history-widget))
       (panel-set-page-child panel "trace" (make-trace-widget))
+      (panel-set-page-child panel "profiler" (make-profiler-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
       (panel-set-page-child panel "terminal" (make-terminal-widget))
       ;; However the Claude tab is opened (its tab, a key, the menu), find out

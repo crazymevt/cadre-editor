@@ -42,6 +42,7 @@
                (:file "macroexpand")
                (:file "trace")
                (:file "stepper")
+               (:file "profiler")
                (:file "systems")
                (:file "review")
                (:file "file-watch")
@@ -123,7 +124,9 @@
                              (:file "inferior")
                              (:file "forms")
                              (:file "tools")
-                             (:file "image")))
+                             (:file "image")
+                             (:static-file "profiler-remote.lisp")
+                             (:file "profiler")))
                (:module "nrepl"
                 :serial t
                 :components ((:file "bencode")
@@ -172,5 +175,6 @@
                (:file "database")
                (:file "postgres")
                (:file "mysql")
-               (:file "http"))
+               (:file "http")
+               (:file "profiler"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

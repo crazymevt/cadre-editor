@@ -147,6 +147,7 @@ everyday commands, and the rest in submenus."
           (command-item debug "Trace / Untrace Function" 'toggle-trace)
           (command-item debug "Show Traces" 'show-traces)
           (when lisp-file
+            (command-item debug "Profile Form" 'profile-form)
             (command-item debug "Step Through Form" 'step-expression)
             (command-item debug "Compile for Debugging" 'compile-defun-for-debugging))
           (gio:menu-append-section lisp-menu nil debug)

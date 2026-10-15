@@ -256,6 +256,8 @@
   "C-c C-x s" 'find-symbol-in-project
   "C-c C-t" 'toggle-trace
   "C-c T" 'show-traces
+  "C-c M-p" 'profile-form
+  "C-c P" 'show-profiler
   "C-c M-s" 'step-expression
   "C-c M-c" 'compile-defun-for-debugging)
 
@@ -280,6 +282,8 @@
   "C-k e v" 'extract-variable
   "C-k t" 'toggle-trace
   "C-k T" 'show-traces
+  "C-k p" 'profile-form
+  "C-k P" 'show-profiler
   "F11" 'step-expression
   "C-k d" 'compile-defun-for-debugging)
 

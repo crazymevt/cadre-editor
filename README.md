@@ -261,6 +261,8 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Macroexpand once / completely | `Ctrl+K Ctrl+M` / `Ctrl+K Ctrl+A` | `C-c C-m` / `C-c M-m` |
 | Trace / untrace the function at the cursor | `Ctrl+K T` | `C-c C-t` |
 | Show the Trace page | `Ctrl+K Shift+T` | `C-c T` |
+| Profile the form (or a call of the definition) | `Ctrl+K P` | `C-c M-p` |
+| Show the Profiler page | `Ctrl+K Shift+P` | `C-c P` |
 | Step through the form (or a call of the definition) | `F11` | `C-c M-s` |
 | Compile the form with full debug information | `Ctrl+K D` | `C-c M-c` |
 | While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
@@ -284,6 +286,18 @@ appear while the page is open. Trace a function from its right-click menu
 (Debug › Trace / Untrace Function), with the `+` on the page (which also takes
 names such as `(setf foo)`), or with the keys above. Clear forgets the calls
 recorded so far, and Untrace All stops tracing.
+
+**Profiling** (SBCL, with `sb-sprof`) shows where a program spends its time.
+Profile Form (`Ctrl+K P`, or Debug › Profile Form in the right-click menu) runs
+the form at the cursor, or the selection, with the profiler sampling it; on a
+definition it asks which call to profile. Profile All Threads, on the Profiler
+page, samples the whole Lisp (a running app too) until you press Stop; the
+menu beside it chooses what a sample counts: CPU time, allocation, or wall
+time. The page lists the functions seen, by **self** (running that function
+itself) and **total** (anywhere on the stack); choose one to see what called
+it and what it called, and Go to Definition to open its source. **Flame
+Graph** draws the stacks from the top down, each call as wide as the samples
+it was in: click a box to zoom into it, and one above to zoom back out.
 
 **Stepping:** Step Through Form (`F11`) evaluates the form at the cursor, or
 the selection, under `cl:step`. On a definition it first compiles it for

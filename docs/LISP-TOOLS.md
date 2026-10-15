@@ -7,7 +7,7 @@ systems, running tests and refactoring. Tick an item when it lands.
 
 ## Order
 
-1. [ ] **Profiler.** Profile a form, or a running app for a while, with
+1. [x] **Profiler.** Profile a form, or a running app for a while, with
    `sb-sprof`; show the report as a sortable table (and a flame graph), each
    function a link to its source.
 2. [ ] **Library manager.** Search the systems Quicklisp (or ocicl / Qlot)

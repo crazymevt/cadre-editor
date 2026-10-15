@@ -2730,7 +2730,9 @@ d" 0 0)
          (gtk:button-get-label (cadre-ui::window-status-connection *window*)))
   (check "REPL input is wrapped for the GTK thread"
          (and (search "glib:in-main-thread" (cadre-ui::gtk-thread-source "(foo)"))
-              (string= "(in-package :foo)" (cadre-ui::gtk-thread-source "(in-package :foo)")))))
+              (string= "(in-package :foo)" (cadre-ui::gtk-thread-source "(in-package :foo)"))))
+  (check "the Profiler's tab appears, to profile the app"
+         (gtk:stack-page-get-visible (cadre-ui::panel-page (cadre-ui::window-panel *window*) "profiler"))))
 
 (defun gtk-title-form ()
   "(let ((app (gio:application-get-default))) (and app (gtk:application-get-active-window app) (gtk:window-get-title (gtk:application-get-active-window app))))")
@@ -2741,6 +2743,21 @@ d" 0 0)
 (then-when ((search "\"smoke-gtk\"" (repl-text)) :timeout 180)
   (check "the app's window is up, and the REPL reaches it on the GTK thread" (search "\"smoke-gtk\"" (repl-text)))
   (screenshot "42-gtk-app")
+  (call-command 'cadre-ui::profile-all-threads))
+
+(then-when ((let ((p (cadre-ui::pp-profile cadre-ui::*profiler-page*))) (and p (profile-running p))) :timeout 20)
+  ;; Busy work on the GTK thread, as a slow callback would be
+  (cadre-ui::repl-eval "(labels ((gtk-fib (n) (if (< n 2) n (+ (gtk-fib (- n 1)) (gtk-fib (- n 2)))))) (loop repeat 300 sum (gtk-fib 25)))"))
+
+(then 2500
+  (call-command 'cadre-ui::stop-profiling))
+
+(then-when ((let ((p (cadre-ui::pp-profile cadre-ui::*profiler-page*))) (and p (not (profile-running p)))) :timeout 20)
+  (let ((profile (cadre-ui::pp-profile cadre-ui::*profiler-page*)))
+    (check "Profile All Threads sees work on the GTK app's thread"
+           (find-if (lambda (f) (search "GTK-FIB" (profile-function-name f))) (profile-functions profile))
+           (mapcar #'profile-function-name (subseq (profile-functions profile) 0 (min 8 (length (profile-functions profile)))))))
+  (screenshot "42b-gtk-app-profile")
   (cadre-ui::repl-eval "(glib:idle-add glib:+priority-default+ (lambda () (error \"callback boom\")))"))
 
 (then-when ((find-if (lambda (d) (search "callback boom" (first (cadre-ui::dl-condition d)))) cadre-ui::*debug-levels*) :timeout 20)
@@ -3996,6 +4013,91 @@ and the number of items MODEL itself shows."
          (buffer-string (find-buffer "value<2>")))
   (dolist (name '("value" "value<2>"))
     (setf (buffer-modified-p (find-buffer name)) nil)))
+
+;;; The Profiler page
+(section "profiler")
+(defun profiler () cadre-ui::*profiler-page*)
+(defun current-profile () (cadre-ui::pp-profile (profiler)))
+(defun profiler-row-names ()
+  (loop for row = (gtk:widget-get-first-child (cadre-ui::pp-list (profiler))) then (gtk:widget-get-next-sibling row)
+        while row
+        for function = (gethash row cadre-ui::*profiler-rows*)
+        when function collect (profile-function-name function)))
+(connect-lisp)
+
+(then 100
+  (call-command 'cadre-ui::clear-profile)
+  (cadre-ui::profile-form-text "(progn (defun smoke-fib (n) (if (< n 2) n (+ (smoke-fib (- n 1)) (smoke-fib (- n 2)))))
+  (loop repeat 600 sum (smoke-fib 22)))" "COMMON-LISP-USER"))
+
+(then-when ((and (current-profile) (plusp (profile-samples (current-profile)))) :timeout 60)
+  (check "Profile Form shows the Profiler page"
+         (equal "profiler" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "with the samples' count" (search "samples of CPU" (gtk:label-get-text (cadre-ui::pp-title (profiler))))
+         (gtk:label-get-text (cadre-ui::pp-title (profiler))))
+  (check "each function a row, the busiest first" (equal "SMOKE-FIB" (first (profiler-row-names)))
+         (subseq (profiler-row-names) 0 (min 3 (length (profiler-row-names)))))
+  (check "only the form's own stacks" (equal '("SMOKE-FIB") (mapcar #'first (cddr (profile-tree (current-profile)))))
+         (mapcar #'first (cddr (profile-tree (current-profile)))))
+  (cadre-ui::select-profile-function (profiler) "SMOKE-FIB"))
+
+(then 300
+  (let ((texts (label-texts (cadre-ui::pp-details (profiler)))))
+    (check "choosing a function shows its callers and callees"
+           (and (member "Called by" texts :test #'equal) (member "Calls" texts :test #'equal)) texts))
+  (check "and offers its definition"
+         (find-if (lambda (b) (and (equal "Go to Definition" (gtk:button-get-label b)) (gtk:widget-get-sensitive b)))
+                  (find-widgets (cadre-ui::pp-details (profiler)) (lambda (w) (typep w 'gtk:button)))))
+  (setf (cadre-ui::pp-sort (profiler)) :name)
+  (cadre-ui::fill-profiler-list (profiler))
+  (let ((names (profiler-row-names)))
+    (check "the table sorts by name" (equal names (sort (copy-list names) #'string-lessp))))
+  (setf (cadre-ui::pp-sort (profiler)) :total)
+  (gtk:editable-set-text (cadre-ui::pp-filter (profiler)) "fib"))
+
+(then 300
+  (check "and filters" (equal '("SMOKE-FIB") (profiler-row-names)) (profiler-row-names))
+  (gtk:editable-set-text (cadre-ui::pp-filter (profiler)) ""))
+
+(then 300
+  (screenshot "profiler-table")
+  (let ((flame (find-if (lambda (b) (equal "Flame Graph" (gtk:button-get-label b)))
+                        (find-widgets (cadre-ui::pp-widget (profiler)) (lambda (w) (typep w 'gtk:toggle-button))))))
+    (check "a toggle shows the flame graph" flame)
+    (when flame (gtk:toggle-button-set-active flame t))))
+
+(then 400
+  (let ((boxes (cadre-ui::pp-boxes (profiler))))
+    (check "the flame graph has a box for each call" (< 3 (length boxes)) (length boxes))
+    (screenshot "profiler-flame")
+    ;; Click the third row's widest box: it zooms in.
+    (let* ((area (cadre-ui::pp-flame (profiler)))
+           (box (find 2 boxes :key #'second)))
+      (check "the flame graph is drawn" (plusp (gtk:widget-get-width area)))
+      (when box
+        (let ((path (flame-path-to (profile-tree (current-profile)) (first box))))
+          (setf (cadre-ui::pp-path (profiler)) path)
+          (cadre-ui::update-flame-boxes (profiler))
+          (check "zooming in puts the box at full width"
+                 (= 1.0 (fourth (find 2 (cadre-ui::pp-boxes (profiler)) :key #'second))))))))
+  (call-command 'cadre-ui::profile-all-threads))
+
+(then-when ((and (current-profile) (profile-running (current-profile))) :timeout 20)
+  (check "Profile All Threads says it's running" (equal "Stop" (gtk:button-get-label (cadre-ui::pp-run-button (profiler)))))
+  (cadre-ui::repl-eval "(loop repeat 800 sum (smoke-fib 25))"))
+
+(then 1500
+  (call-command 'cadre-ui::stop-profiling))
+
+(then-when ((and (current-profile) (not (profile-running (current-profile)))) :timeout 20)
+  (check "Stop shows what the threads did" (find "SMOKE-FIB" (profile-functions (current-profile))
+                                                 :key #'profile-function-name :test #'string=)
+         (list (profile-samples (current-profile))
+               (mapcar #'profile-function-name (subseq (profile-functions (current-profile)) 0 (min 8 (length (profile-functions (current-profile))))))))
+  (call-command 'cadre-ui::clear-profile))
+
+(then 200
+  (check "Clear forgets the samples" (equal "Nothing profiled" (gtk:label-get-text (cadre-ui::pp-title (profiler))))))
 
 ;;; The Terminal page (VTE)
 (section "terminal")

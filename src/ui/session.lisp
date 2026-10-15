@@ -182,6 +182,7 @@ as messages, and an abort without :on-abort says so."
     (repl-disconnected reason)
     (debugger-clear)
     (traces-disconnected)
+    (profiler-disconnected)
     (gtk-app-disconnected)
     (image-changed)
     (refresh-systems)
