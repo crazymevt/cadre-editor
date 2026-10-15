@@ -250,32 +250,63 @@ offer to restart a running REPL, so it sees them)."
                                            (message "Downloaded in ~,1f s: restart the REPL (Project page) to use them" seconds)
                                            (message "Dependencies downloaded in ~,1f s" seconds))))))
 
+(defun load-clojure-files (connection files then)
+  "Load FILES (namestrings) one after another in CONNECTION; their errors go to
+the Problems page. Then call THEN with the files that didn't load."
+  (let ((failed '()))
+    (labels ((next (remaining)
+               (if (null remaining)
+                   (funcall then (nreverse failed))
+                   (let ((file (first remaining)))
+                     (backend-compile-file connection file
+                                           :on-ok (lambda (result)
+                                                    (multiple-value-bind (notes successp) (parse-compilation-result result)
+                                                      (show-notes notes :replace-files (list file))
+                                                      (unless successp (push file failed)))
+                                                    (next (rest remaining)))
+                                           :on-abort (lambda (reason)
+                                                       (declare (ignore reason))
+                                                       (push file failed)
+                                                       (next (rest remaining))))))))
+      (next files))))
+
 (defun run-clojure-project-tests (directory)
+  "Load every namespace of the project (src/ first, then test/), so the tests
+run the code as it is now and files that don't load say why in Problems;
+then run the project's tests, their failures going to Problems too."
   (with-connection (connection :language :clojure)
     (unless (nrepl-op-p connection "test-var-query") (editor-error "Running tests needs cider-nrepl"))
-    (message "Running the project's tests…")
-    (let ((files (clojure-project-namespaces directory)))
-      (nrepl-run-tests
-       connection :project
-       :on-abort (lambda (reason) (message "The tests didn't run: ~a" reason))
-       :on-done (lambda (summary failures)
-                  (show-notes
-                   (loop for f in failures
-                         for file = (cdr (assoc (getf f :ns) files :test #'equal))
-                         collect (make-compiler-note
-                                  (if (equal (getf f :type) "error") :error :warning)
-                                  (format nil "~a/~a ~a~@[: ~a~]~@[~%expected: ~a~]~@[~%actual: ~a~]"
-                                          (getf f :ns) (getf f :var) (getf f :type)
-                                          (let ((m (getf f :message))) (and (plusp (length m)) m))
-                                          (and (getf f :expected) (string-trim '(#\Newline) (getf f :expected)))
-                                          (and (getf f :actual) (string-trim '(#\Newline) (getf f :actual))))
-                                  (if file
-                                      (list :file (uiop:native-namestring file)
-                                            :line (max 0 (1- (or (getf f :line) 1))) :column 0)
-                                      (list :error (format nil "In ~a" (getf f :ns))))))
-                   :replace-files (mapcar (lambda (e) (uiop:native-namestring (cdr e))) files))
-                  (message "Project tests: ~d test~:p, ~d passed, ~d failed, ~d error~:p"
-                           (getf summary :test) (getf summary :pass) (getf summary :fail) (getf summary :error)))))))
+    (let* ((namespaces (clojure-project-namespaces directory))
+           (files (mapcar (lambda (e) (uiop:native-namestring (cdr e)))
+                          (stable-sort (copy-list namespaces) #'<
+                                       :key (lambda (e) (if (search "/test/" (namestring (cdr e))) 1 0))))))
+      (message "Loading the project's ~d namespace~:p…" (length files))
+      (load-clojure-files
+       connection files
+       (lambda (unloaded)
+         (message "Running the project's tests…")
+         (nrepl-run-tests
+          connection :project
+          :on-abort (lambda (reason) (message "The tests didn't run: ~a" reason))
+          :on-done (lambda (summary failures)
+                     (let ((notes (loop for f in failures
+                                        for file = (cdr (assoc (getf f :ns) namespaces :test #'equal))
+                                        collect (make-compiler-note
+                                                 (if (equal (getf f :type) "error") :error :warning)
+                                                 (format nil "~a/~a ~a~@[: ~a~]~@[~%expected: ~a~]~@[~%actual: ~a~]"
+                                                         (getf f :ns) (getf f :var) (getf f :type)
+                                                         (let ((m (getf f :message))) (and (plusp (length m)) m))
+                                                         (and (getf f :expected) (string-trim '(#\Newline) (getf f :expected)))
+                                                         (and (getf f :actual) (string-trim '(#\Newline) (getf f :actual))))
+                                                 (if file
+                                                     (list :file (uiop:native-namestring file)
+                                                           :line (max 0 (1- (or (getf f :line) 1))) :column 0)
+                                                     (list :error (format nil "In ~a" (getf f :ns))))))))
+                       ;; Added to the load errors already shown for these files.
+                       (when notes (show-notes notes))
+                       (message "Project tests: ~d test~:p, ~d passed, ~d failed, ~d error~:p~[~:;; ~:*~d namespace~:p didn't load (see Problems)~]"
+                                (getf summary :test) (getf summary :pass) (getf summary :fail) (getf summary :error)
+                                (length unloaded))))))))))
 
 ;;; The page's sections, and noticing changed dependencies
 

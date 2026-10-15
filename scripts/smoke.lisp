@@ -3534,6 +3534,17 @@ and the number of items MODEL itself shows."
            (and (search "proj ran" (buffer-string (cadre-ui::repl-buffer (cadre-ui::language-repl :clojure))))
                 (search "proj.core/-main returned :done" (status-text)))
            (status-text))
+    ;; A test file that refers to a function that isn't there.
+    (write-root-file "clj-proj/test/proj/core_test.clj"
+                     (format nil "(ns proj.core-test~%  (:require [clojure.test :refer [deftest is]]~%            [proj.core :refer [no-such-fn]]))~%(deftest t (is (no-such-fn)))~%"))
+    (cadre-ui::run-clojure-project-tests (merge-pathnames "clj-proj/" *root*))))
+
+(then-when ((or (not *have-clojure*) (search "Project tests" (status-text))) :timeout 90)
+  (when *have-clojure*
+    (check "Run All Tests says which namespaces didn't load, with why in Problems"
+           (and (search "1 namespace didn't load" (status-text))
+                (find-if (lambda (s) (search "no-such-fn" (compiler-note-message (cadre-ui::sn-note s)))) cadre-ui::*notes*))
+           (status-text))
     (call-command 'cadre-ui::clojure-disconnect))
   (cadre-ui::set-window-project *window* *root*))
 

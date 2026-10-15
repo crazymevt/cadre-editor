@@ -81,14 +81,19 @@ opened or one of its files was saved (finding it reads source files).")
                                       (language-app-finished "~a failed: see the Problems page" title))))
                        :on-abort #'stopped))
              (:clojure
-              (request #'backend-load-file connection file
-                       :on-ok (lambda (value)
-                                (declare (ignore value))
-                                (request #'backend-eval connection (format nil "(~a/-main)" (getf app :namespace))
-                                         :package (getf app :namespace)
-                                         :on-ok (lambda (value)
-                                                  (language-app-finished "~a returned ~a" title (result-text value)))
-                                         :on-abort #'stopped))
+              ;; Loading compiles: an error is a note in Problems, at its
+              ;; line, and -main isn't called.
+              (request #'backend-compile-file connection file
+                       :on-ok (lambda (result)
+                                (multiple-value-bind (notes successp) (parse-compilation-result result)
+                                  (show-notes notes :replace-files (list file))
+                                  (if (not successp)
+                                      (language-app-finished "~a didn't load: see the Problems page" (file-namestring file))
+                                      (request #'backend-eval connection (format nil "(~a/-main)" (getf app :namespace))
+                                               :package (getf app :namespace)
+                                               :on-ok (lambda (value)
+                                                        (language-app-finished "~a returned ~a" title (result-text value)))
+                                               :on-abort #'stopped))))
                        :on-abort #'stopped)))))))))
 
 (defun console-app-form (root system entry)
