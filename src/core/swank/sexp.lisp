@@ -129,6 +129,10 @@
                         (or (if (= (length name) 1) (char name 0) (name-char name)) #\?))))
                    (#\( (incf i) (coerce (read-list) 'vector))
                    (#\: (incf i) (read-atom))
+                   ((#\t #\f)              ; Racket's #t, #f, #true and #false
+                    (let ((start i))
+                      (loop while (and (< i n) (not (sexp-delimiter-p (char string i)))) do (incf i))
+                      (and (member (subseq string start i) '("t" "true") :test #'string=) t)))
                    (#\< ;; An unreadable object: keep its text.
                     (let ((end (position #\> string :start i)))
                       (unless end (fail))

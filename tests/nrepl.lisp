@@ -273,3 +273,44 @@ the process; nil if there is no Clojure CLI."
                 (second (assoc "See Also (ClojureDocs)" (getf (cddr merged) :sections) :test #'string=))
                 :test #'equal)
           "a see-also in the docset is a link")))
+
+;;; Project files: EDN, deps.edn, project.clj
+
+(define-test edn-reading :parent cadre-tests
+  (is equal '(:map ((:keyword "a") . 1) ((:keyword "b") :vector "x" (:symbol "y") :nil))
+      (c:read-edn "{:a 1, :b [\"x\" y nil]}"))
+  (is equal '(:set (:keyword "k")) (c:read-edn "#{:k}"))
+  (is equal '(:vector 1 3) (c:read-edn "[1 #_2 3] ; a comment"))
+  (is equal "2026-01-01" (c:read-edn "#inst \"2026-01-01\""))
+  (is equal '((:list (:symbol "a")) (:list (:symbol "b"))) (c:read-edn-forms "(a) (b)"))
+  (fail (c:read-edn "{:a") 'c:edn-error))
+
+(define-test clojure-project-files :parent cadre-tests
+  (let ((dir (merge-pathnames (format nil "cadre-cljproj-~d/" (random 1000000)) (uiop:temporary-directory))))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (progn
+           (with-open-file (o (merge-pathnames "deps.edn" dir) :direction :output :if-exists :supersede)
+             (write-string "{:paths [\"src\"]
+ :deps {org.clojure/clojure {:mvn/version \"1.12.0\"}
+        io.github.x/lib {:git/tag \"v1.0\" :git/sha \"abcdef0123\"}
+        my/local {:local/root \"../local\"}}
+ :aliases {:dev {:extra-paths [\"dev\"]} :test {}}}" o))
+           (let ((project (c:read-clojure-project-file dir :deps)))
+             (is equal '(("org.clojure/clojure" . "1.12.0") ("io.github.x/lib" . "v1.0") ("my/local" . "local ../local"))
+                 (getf project :deps))
+             (is equal '("dev" "test") (getf project :aliases)))
+           (with-open-file (o (merge-pathnames "project.clj" dir) :direction :output :if-exists :supersede)
+             (write-string "(defproject my-app \"0.1.0\"
+  :description \"x\"
+  :dependencies [[org.clojure/clojure \"1.12.0\"] [ring \"1.9.0\"]]
+  :profiles {:dev {:dependencies []} :uberjar {}})" o))
+           (let ((project (c:read-clojure-project-file dir :lein)))
+             (is string= "my-app" (getf project :name))
+             (is string= "0.1.0" (getf project :version))
+             (is equal '(("org.clojure/clojure" . "1.12.0") ("ring" . "1.9.0")) (getf project :deps))
+             (is equal '("dev" "uberjar") (getf project :aliases))))
+      (uiop:delete-directory-tree dir :validate t)))
+  (is equal (list c:*clojure-command* "-P" "-M:dev:test") (c:clojure-fetch-command :deps '("dev" "test")))
+  (is equal (list c:*clojure-command* "-P") (c:clojure-fetch-command :deps nil))
+  (is equal (list c:*leiningen-command* "with-profile" "+dev" "deps") (c:clojure-fetch-command :lein '("dev"))))

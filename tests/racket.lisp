@@ -249,3 +249,34 @@ nil if there is no Racket."
                  (true (search "(string-join" (docset:record-summary record)))))
           (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
       (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))
+
+;;; A Racket package's info.rkt, and its missing dependencies
+
+(define-test racket-package-info :parent cadre-tests
+  (let ((dir (merge-pathnames (format nil "cadre-rktpkg-~d/" (random 1000000)) (uiop:temporary-directory))))
+    (ensure-directories-exist (merge-pathnames "private/" dir))
+    (unwind-protect
+         (progn
+           (with-open-file (o (merge-pathnames "info.rkt" dir) :direction :output :if-exists :supersede)
+             (write-string "#lang info
+(define collection \"greet\")
+(define version \"0.2\")
+(define deps '(\"base\" (\"no-such-package-xyz\" #:version \"1.0\")))
+(define build-deps '(\"rackunit-lib\"))
+(define compile-omit-paths '())
+(define test-omit-paths #t)
+" o))
+           (dolist (f '("main.rkt" "private/util.rkt" "compiled/main_rkt.zo"))
+             (ensure-directories-exist (merge-pathnames f dir))
+             (with-open-file (o (merge-pathnames f dir) :direction :output :if-exists :supersede) (write-line "#lang racket/base" o)))
+           (let ((info (c:read-racket-info dir)))
+             (is string= "greet" (getf info :collection))
+             (is string= "0.2" (getf info :version))
+             (is equal '("base" "no-such-package-xyz") (getf info :deps))
+             (is equal '("rackunit-lib") (getf info :build-deps)))
+           (is equal '("main.rkt" "util.rkt") (mapcar #'file-namestring (c:racket-package-modules dir)))
+           (if (ignore-errors (uiop:run-program (list c:*racket-command* "--version") :output nil) t)
+               (is equal '("no-such-package-xyz") (c:racket-missing-dependencies '("base" "rackunit-lib" "no-such-package-xyz")))
+               (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))
+      (uiop:delete-directory-tree dir :validate t)))
+  (is equal '("pkg" "install" "--auto" "--skip-installed" "--batch" "a" "b") (c:racket-install-arguments '("a" "b"))))

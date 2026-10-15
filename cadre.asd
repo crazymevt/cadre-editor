@@ -71,6 +71,7 @@
                (:file "build")
                (:file "racket")
                (:file "language-docs")
+               (:file "projects")
                (:file "gtk-app")
                (:file "run-app")
                (:file "bindings")
@@ -137,7 +138,9 @@
                              (:file "cli")
                              (:file "mcp")
                              (:file "diff")))
-               (:file "language-docs")))
+               (:file "language-docs")
+               (:file "edn")
+               (:file "language-projects")))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."

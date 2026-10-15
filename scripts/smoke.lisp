@@ -3419,6 +3419,91 @@ and the number of items MODEL itself shows."
   (when *have-racket*
     (check "stopping Racket disconnects" (null (cadre-ui::racket-connection)))))
 
+;;; The Project page: a Racket package and a Clojure project, with their dependencies
+(section "projects")
+
+(defun section-labels () (label-texts cadre-ui::*language-sections*))
+
+(defvar *dep-result* nil)
+
+(defun find-button (label)
+  (find-if (lambda (w) (and (typep w 'gtk:button) (equal (gtk:button-get-label w) label)))
+           (find-widgets cadre-ui::*language-sections* (lambda (w) (typep w 'gtk:button)))))
+
+(then 300
+  (when *have-racket*
+    (write-root-file "rkt-pkg/info.rkt"
+                     (format nil "#lang info~%(define collection \"greet\")~%(define version \"0.1\")~%(define deps '(\"base\" \"no-such-package-xyz\"))~%"))
+    (write-root-file "rkt-pkg/main.rkt" (format nil "#lang racket/base~%(provide hi)~%(define (hi) 'hi)~%"))
+    (cadre-ui::set-window-project *window* (merge-pathnames "rkt-pkg/" *root*))
+    (call-command 'cadre-ui::show-systems)
+    (cadre-ui::refresh-systems)))
+
+(then-when ((or (not *have-racket*) (find-if (lambda (l) (search "Missing" l)) (section-labels))) :timeout 30)
+  (when *have-racket*
+    (check "the Project page shows the Racket package" (member "RACKET PACKAGE · greet 0.1" (section-labels) :test #'equal)
+           (section-labels))
+    (check "with its missing dependency, and Install"
+           (and (find-if (lambda (l) (search "Missing: no-such-package-xyz" l)) (section-labels))
+                (gtk:widget-get-visible (find-button "Install"))))
+    (check "and its modules" (member "main.rkt" (section-labels) :test #'equal))
+    (screenshot "56-racket-project")))
+
+(then 300
+  (when *have-clojure*
+    (write-root-file "clj-proj/deps.edn"
+                     "{:paths [\"src\"] :deps {org.clojure/clojure {:mvn/version \"1.12.0\"}} :aliases {:dev {}}}")
+    (write-root-file "clj-proj/src/proj/core.clj" (format nil "(ns proj.core)~%(defn hi [] :hi)~%"))
+    (cadre-ui::set-window-project *window* (merge-pathnames "clj-proj/" *root*))
+    (cadre-ui::refresh-systems)))
+
+(then 500
+  (when *have-clojure*
+    (check "the Project page shows the Clojure project"
+           (find-if (lambda (l) (search "CLOJURE PROJECT · clj-proj" l)) (section-labels)) (section-labels))
+    (check "its aliases, dependencies and namespaces"
+           (and (member ":dev" (section-labels) :test #'equal)
+                (member "org.clojure/clojure" (section-labels) :test #'equal)
+                (member "proj.core" (section-labels) :test #'equal)))
+    (gtk:widget-activate (find-button "Jack In"))))
+
+(then-when ((or (not *have-clojure*) (and (cadre-ui::clojure-connection) (find-button "Restart"))) :timeout 120)
+  (when *have-clojure*
+    (check "Jack In from the page starts the project's REPL" (find-button "Restart"))
+    (open-file-path (merge-pathnames "clj-proj/deps.edn" *root*))))
+
+(then 500
+  (when *have-clojure*
+    (let ((text (buffer-text (current-buffer))))
+      (text-replace-contents text "{:paths [\"src\"] :deps {org.clojure/clojure {:mvn/version \"1.12.0\"} org.clojure/data.json {:mvn/version \"2.5.1\"}} :aliases {:dev {}}}"))
+    ;; As if typed: replacing the text from code doesn't mark it changed.
+    (setf (buffer-modified-p (current-buffer)) t)
+    (call-command 'cadre-ui::save-buffer)))
+
+(then-when ((or (not *have-clojure*) (search "dependencies changed" (status-text))) :timeout 20)
+  (when *have-clojure*
+    (check "saving deps.edn with a new library says the dependencies changed"
+           (and (search "dependencies changed" (status-text))
+                (member "Changed since the REPL started" (section-labels) :test #'equal))
+           (status-text))
+    (screenshot "57-clojure-project")
+    (gtk:widget-activate (find-button "Load New Dependencies"))))
+
+(then-when ((or (not *have-clojure*) (search "loaded in the REPL" (status-text))) :timeout 180)
+  (when *have-clojure*
+    (check "Load New Dependencies adds them to the running REPL" (search "loaded in the REPL" (status-text)) (status-text))
+    (let ((result :waiting))
+      (cadre-ui::request #'backend-eval (cadre-ui::clojure-connection) "(do (require 'clojure.data.json) (clojure.data.json/write-str [1]))"
+               :package "user" :on-ok (lambda (v) (setf result v)) :on-abort (lambda (r) (setf result r)))
+      (setf *dep-result* (lambda () result)))))
+
+
+(then-when ((or (not *have-clojure*) (and *dep-result* (not (eq :waiting (funcall *dep-result*))))) :timeout 30)
+  (when *have-clojure*
+    (check "and the new library loads without a restart" (search "[1]" (funcall *dep-result*)) (funcall *dep-result*))
+    (call-command 'cadre-ui::clojure-disconnect))
+  (cadre-ui::set-window-project *window* *root*))
+
 ;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
 (section "indentation")
 (connect-lisp)

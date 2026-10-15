@@ -172,7 +172,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
                 ("Toggle Layout" toggle-layout) ("Automatic Layout" use-automatic-layout))
       (:section ("Zoom In" zoom-in) ("Zoom Out" zoom-out) ("Word Wrap" toggle-word-wrap))
       (:section ("Fold All" fold-all) ("Unfold All" unfold-all))
-      (:section ("ASDF Systems" show-systems) ("Terminal" show-terminal) ("New Terminal" new-terminal))))
+      (:section ("Project" show-systems) ("Terminal" show-terminal) ("New Terminal" new-terminal))))
    '(:section
      (:submenu "Project"
       (:section ("Load Project" load-project) ("Load System…" load-system) ("Build Project" build-project))
@@ -283,7 +283,7 @@ it when the project has an :entry-point)."
                                      :on-clicked (lambda (b) (declare (ignore b))
                                                    (show-sidebar-page win "outline")))
                   (gtk:toggle-button :id :systems-button :icon-name "cadre-system-symbolic"
-                                     :tooltip-text "ASDF Systems" :css-classes '("flat")
+                                     :tooltip-text "Project" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
                                                    (show-sidebar-page win "systems"))))
                 (gtk:separator :orientation :vertical)

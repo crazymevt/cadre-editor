@@ -109,7 +109,11 @@
    ;; Racket and Clojure docsets, made on this machine (language-docs.lisp)
    #:language-docset-directory #:racket-docset-entries #:build-racket-docset
    #:*clojure-docs-code* #:clojure-docs-vars #:clojure-docset-entries #:write-clojure-docset
-   #:*clojuredocs-export-url* #:download-clojuredocs #:request-clojure-docs-vars #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:*clojuredocs-export-url* #:download-clojuredocs #:request-clojure-docs-vars
+   ;; Project files (edn.lisp, language-projects.lisp)
+   #:read-edn #:read-edn-forms #:edn-name #:edn-get #:edn-error
+   #:read-racket-info #:racket-missing-dependencies #:racket-install-arguments #:racket-package-modules
+   #:read-clojure-project-file #:clojure-project-namespaces #:clojure-fetch-command #:clojure-deps-signature #:*clojure-sync-deps-code* #:racket-project #:racket-arglist-with-current #:racket-backend-file
    #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p

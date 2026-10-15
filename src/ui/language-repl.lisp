@@ -106,6 +106,7 @@ prompt (another module's or namespace's, perhaps), keeping what is typed there."
          (remhash language *connections*))
        (repl-disconnected (second event))
        (update-connection-status)
+       (refresh-project-languages)
        (message "~a disconnected: ~a" (lrs-title (language-repl-spec language)) (second event))))))
 
 (defun language-repl-connected (language connection)

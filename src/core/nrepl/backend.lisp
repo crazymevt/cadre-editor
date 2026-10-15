@@ -461,14 +461,19 @@ the characters they stand for."
 ;;; Tests (cider-nrepl's test-var-query)
 
 (defun nrepl-run-tests (connection ns &key on-done on-abort)
-  "Run the tests in NS. ON-DONE gets the summary, a plist (:test :pass :fail
-:error), and the failures and errors as plists (:var :type :message
+  "Run the tests in NS, or with NS :project in every namespace of the
+project (loading them first). ON-DONE gets the summary, a plist (:test :pass
+:fail :error), and the failures and errors as plists (:ns :var :type :message
 :expected :actual :line)."
   (nrepl-send connection
-              (if (nrepl-op-p connection "test-var-query")
-                  (list (cons "op" "test-var-query")
-                        (cons "var-query" (list (cons "ns-query" (list (cons "exactly" (list ns)))))))
-                  (list (cons "op" "test") (cons "ns" ns)))
+              (cond ((eq ns :project)
+                     (list (cons "op" "test-var-query")
+                           (cons "var-query" (list (cons "ns-query" (list (cons "project?" "true")
+                                                                          (cons "load-project-ns?" "true")))))))
+                    ((nrepl-op-p connection "test-var-query")
+                     (list (cons "op" "test-var-query")
+                           (cons "var-query" (list (cons "ns-query" (list (cons "exactly" (list ns))))))))
+                    (t (list (cons "op" "test") (cons "ns" ns))))
               :on-abort on-abort
               :on-done (lambda (responses)
                          (let ((reply (find-if (lambda (m) (dict-get m "summary")) responses)))
@@ -477,12 +482,12 @@ the characters they stand for."
                                       (loop for key in '("test" "pass" "fail" "error")
                                             append (list (intern (string-upcase key) :keyword)
                                                          (or (dict-get (dict-get reply "summary") key) 0)))
-                                      (loop for (nil . vars) in (dict-get reply "results")
+                                      (loop for (ns-name . vars) in (dict-get reply "results")
                                             append (loop for (var . results) in vars
                                                          append (loop for r in results
                                                                       for type = (dict-get r "type")
                                                                       unless (equal type "pass")
-                                                                        collect (list :var var :type type
+                                                                        collect (list :ns ns-name :var var :type type
                                                                                       :message (dict-get r "message")
                                                                                       :expected (dict-get r "expected")
                                                                                       :actual (dict-get r "actual")

@@ -409,6 +409,17 @@ so they can be built in parallel (in separate sessions or branches).
     (`clojuredocs-export.json`), downloaded by the user's machine. The
     export states no license, so it is never bundled; the docset credits
     ClojureDocs and its contributors.
+- **Project page (2026-10-15):** the sidebar's ASDF Systems page became
+  Project, which also shows the folder's Racket package (from `info.rkt`)
+  and Clojure project (from `deps.edn`, `project.clj` or `bb.edn`, read by
+  `core/edn.lisp`), with their dependencies, modules or namespaces, and
+  actions. Missing Racket dependencies are found by
+  `vendor/cadre-racket/pkgs.rkt` and installed with `raco pkg install --auto
+  --skip-installed`. A Clojure project whose dependencies changed since its
+  REPL started gets Load New Dependencies: `clojure.repl.deps/sync-deps` in
+  a `deps.edn` REPL, tested to load a new library without a restart, else
+  `clojure -P` / `lein deps` / `bb prepare` and a restart. Aliases ticked on
+  the page are used by Jack In.
 - **Not done:**
   - **ClojureScript through shadow-cljs.** It needs Node, which this
     machine doesn't have to test against, and a second connection per

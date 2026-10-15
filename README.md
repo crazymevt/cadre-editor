@@ -26,7 +26,7 @@ for the design and the milestones.
 - **M3:** a full debugger (frame locals, evaluate in a frame, frame source,
   restart or return from a frame, more frames, inspect the condition), an
   inspector, cross-references (who calls, references, binds, sets, expands,
-  specializes), a macroexpander, an ASDF Systems view in the sidebar, and
+  specializes), a macroexpander, a Project view in the sidebar, and
   highlighting from the running image (user macros, special variables,
   constants, calls to undefined functions). Later: a Trace page (calls of
   traced functions as a tree) and a stepper.
@@ -280,8 +280,22 @@ Compile for Debugging (`Ctrl+K D`, or `C-c M-c`). That compiles it with
 `(break)`, the debugger's Step button continues to the next call compiled for
 stepping.
 Expanding a macro inside the *Macroexpansion* tab expands it there, in place.
-The sidebar's second page (the box icon) lists the folder's ASDF systems: load,
-reload with compiler notes, test, and open their files.
+The sidebar's Project page (the box icon) lists the folder's ASDF systems: load,
+reload with compiler notes, test, and open their files. When the folder is a
+Racket package or a Clojure project, the page shows that too:
+- **Racket** (`info.rkt`): the dependencies, with Install for any not yet
+  installed (`raco pkg install`); the modules, each with Run and Test; and
+  Test, Make, Install for This Machine (`raco pkg install --link`) and Build
+  Docs for the package.
+- **Clojure** (`deps.edn`, `project.clj` or `bb.edn`): the REPL, with Jack
+  In or Restart; the aliases (Leiningen's profiles) to start it with; the
+  dependencies; the namespaces, each with Load and Test; Run All Tests; and
+  Build Docs.
+- Saving `info.rkt` or a Clojure project file says when there's something
+  to install. **Load New Dependencies** adds a `deps.edn` project's new
+  libraries to its running REPL without a restart (Clojure 1.12's
+  `sync-deps`). Leiningen and Babashka projects download them, then restart.
+  Install Project Dependencies does the same from the command palette.
 
 ### Claude
 

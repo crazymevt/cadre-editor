@@ -1,4 +1,5 @@
-;;;; systems.lisp — ASDF systems: the Systems view in the sidebar, and
+;;;; systems.lisp — the Project view in the sidebar: ASDF systems (and,
+;;;; from projects.lisp, a Racket package and a Clojure project), and
 ;;;; loading the project into the Lisp
 ;;;;
 ;;;; The view lists the systems the open folder's .asd files define (read
@@ -172,6 +173,7 @@ it compiled. With nothing to compile, or no plan, just call RUN."
 (defvar *systems-list* nil)
 (defvar *systems-status* nil)
 (defvar *system-rows* '() "(name . expander-row) for the systems shown.")
+(defvar *language-sections* nil "The box below them holding the Racket and Clojure sections (projects.lisp).")
 
 (defun make-systems-widget ()
   (setf *systems-list* (make-instance 'gtk:list-box :selection-mode :none :css-classes '("boxed-list")
@@ -181,7 +183,7 @@ it compiled. With nothing to compile, or no plan, just call RUN."
   (gtk:build
     (gtk:box :orientation :vertical
       (gtk:box :margin-start 12 :margin-end 6 :margin-top 4
-        (gtk:label :label "SYSTEMS" :xalign 0.0 :hexpand t :css-classes '("caption-heading" "dim-label"))
+        (gtk:label :label "PROJECT" :xalign 0.0 :hexpand t :css-classes '("caption-heading" "dim-label"))
         (gtk:button :icon-name "view-refresh-symbolic" :tooltip-text "Refresh" :css-classes '("flat")
                     :on-clicked (lambda (b) (declare (ignore b)) (refresh-systems)))
         (gtk:button :icon-name "cadre-play-symbolic" :tooltip-text "Load another system…" :css-classes '("flat")
@@ -189,7 +191,14 @@ it compiled. With nothing to compile, or no plan, just call RUN."
       (gtk:scrolled-window :vexpand t :hscrollbar-policy :never
         (gtk:box :orientation :vertical
           *systems-status*
-          *systems-list*)))))
+          *systems-list*
+          (setf *language-sections* (make-instance 'gtk:box :orientation :vertical :margin-bottom 8)))))))
+
+(defun refresh-project-languages ()
+  "Redraw the page's Racket and Clojure sections (projects.lisp), as when a
+REPL starts or stops: not the ASDF systems, which ask the Lisp."
+  (when (and *language-sections* *window*)
+    (refresh-language-sections (window-project *window*))))
 
 (defun systems-status (format &rest args)
   (gtk:label-set-text *systems-status* (if format (apply #'format nil format args) ""))
@@ -201,9 +210,11 @@ it compiled. With nothing to compile, or no plan, just call RUN."
     (gtk:list-box-remove-all *systems-list*)
     (setf *system-rows* '())
     (let* ((directory (window-project *window*))
-           (entries (and directory (project-system-entries directory))))
-      (cond ((null directory) (systems-status "Open a folder to see its ASDF systems."))
-            ((null entries) (systems-status "No .asd file in this folder."))
+           (entries (and directory (project-system-entries directory)))
+           (others (refresh-language-sections directory)))
+      (gtk:widget-set-visible *systems-list* (and entries t))
+      (cond ((null directory) (systems-status "Open a folder to see its ASDF systems, Racket package or Clojure project."))
+            ((null entries) (systems-status (if others nil "No .asd, info.rkt, deps.edn, project.clj or bb.edn in this folder.")))
             (t (systems-status nil)
                (dolist (entry entries)
                  (let ((row (system-row directory (first entry) (second entry))))

@@ -52,6 +52,7 @@
         *clojure-starting* nil)
   (language-repl-connected :clojure connection)
   (update-connection-status)
+  (refresh-project-languages)
   (message "Connected to ~a" (connection-implementation connection))
   (let ((waiting (reverse *clojure-waiting*)))
     (setf *clojure-waiting* '())
@@ -62,6 +63,7 @@
 (defun clojure-failed (why)
   (setf *clojure-starting* nil *clojure-waiting* '())
   (update-connection-status)
+  (refresh-project-languages)
   (message "~a" why))
 
 (defun connect-clojure (host port)
@@ -73,13 +75,29 @@
                                :on-failure (lambda (reason) (clojure-failed (format nil "nREPL failed: ~a" reason))))
     (editor-error (e) (clojure-failed (editor-error-message e)))))
 
-(defun start-clojure-connection (then)
-  "Start or connect to the Clojure REPL of the current file's project, then
-call THEN with the connection."
+(defvar *clojure-project-aliases* (make-hash-table :test 'equal)
+  "Project folder (FOLDER-KEY) → the aliases ticked on its Project page,
+which its REPL starts with (instead of *clojure-aliases*).")
+
+(defun folder-key (directory)
+  "DIRECTORY's real path, as a string: the same however it was reached."
+  (namestring (or (probe-file directory) directory)))
+
+(defvar *clojure-repl-project* nil
+  "The project the Clojure REPL runs: (folder kind deps-signature), the
+signature being its dependencies when the REPL started (or last loaded them).")
+
+(defun start-clojure-connection (then &key directory kind)
+  "Start or connect to the Clojure REPL of the current file's project (or
+the project in DIRECTORY, of KIND), then call THEN with the connection."
   (when then (push then *clojure-waiting*))
   (unless *clojure-starting*
-    (multiple-value-bind (dir kind) (clojure-start-directory)
-      (let ((running (nrepl-port-file dir)))
+    (multiple-value-bind (dir kind) (if directory (values directory kind) (clojure-start-directory))
+      (setf *clojure-repl-project*
+            (and kind (list dir kind (ignore-errors (clojure-deps-signature (read-clojure-project-file dir kind))))))
+      (let ((running (nrepl-port-file dir))
+            (*clojure-aliases* (multiple-value-bind (aliases set) (gethash (folder-key dir) *clojure-project-aliases*)
+                                 (if set (format nil "~{:~a~}" aliases) *clojure-aliases*))))
         (if (and running (ignore-errors (sb-bsd-sockets:socket-close
                                          (let ((s (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
                                            (sb-bsd-sockets:socket-connect s #(127 0 0 1) running)
@@ -90,6 +108,7 @@ call THEN with the connection."
             (let ((command (clojure-command kind)))
               (setf *clojure-starting* t)
               (update-connection-status)
+              (refresh-project-languages)
               (message "Starting ~a in ~a…" (first command) (uiop:native-namestring dir))
               (panel-log (window-panel *window*) (format nil "Starting ~{~a~^ ~} in ~a" command (uiop:native-namestring dir)))
               (handler-case
