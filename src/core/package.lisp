@@ -113,7 +113,8 @@
    ;; Project files (edn.lisp, language-projects.lisp)
    #:read-edn #:read-edn-forms #:edn-name #:edn-get #:edn-error
    #:read-racket-info #:racket-missing-dependencies #:racket-install-arguments #:racket-package-modules
-   #:read-clojure-project-file #:clojure-project-namespaces #:clojure-fetch-command #:clojure-deps-signature #:*clojure-sync-deps-code* #:racket-project #:racket-arglist-with-current #:racket-backend-file
+   #:read-clojure-project-file #:clojure-project-namespaces #:clojure-fetch-command
+   #:racket-project-app #:clojure-project-app #:clojure-main-namespace #:main-submodule-p #:clojure-deps-signature #:*clojure-sync-deps-code* #:racket-project #:racket-arglist-with-current #:racket-backend-file
    #:*racket-command* #:*raco-command* #:*racket-startup-timeout*
    ;; any running Lisp (backend.lisp)
    #:lisp-connection #:connection-language #:backend-supports-p

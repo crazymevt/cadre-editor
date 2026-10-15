@@ -38,7 +38,7 @@
 (defun racket-start-directory ()
   "Where Racket starts: the current file's package folder, else its folder,
 else the open project's."
-  (let* ((view (current-view))
+  (let* ((view (and *window* (current-view-or-nil *window*)))   ; none when no file is open
          (file (and view (buffer-file (view-buffer view))))
          (start (or file (window-project *window*) (user-homedir-pathname))))
     (or (racket-project start) (uiop:pathname-directory-pathname start))))

@@ -3434,7 +3434,8 @@ and the number of items MODEL itself shows."
   (when *have-racket*
     (write-root-file "rkt-pkg/info.rkt"
                      (format nil "#lang info~%(define collection \"greet\")~%(define version \"0.1\")~%(define deps '(\"base\" \"no-such-package-xyz\"))~%"))
-    (write-root-file "rkt-pkg/main.rkt" (format nil "#lang racket/base~%(provide hi)~%(define (hi) 'hi)~%"))
+    (write-root-file "rkt-pkg/main.rkt"
+                     (format nil "#lang racket/base~%(provide hi)~%(define (hi) 'hi)~%(module+ main~%  (printf \"name? \")~%  (flush-output)~%  (printf \"Hello, ~~a!~~n\" (read-line)))~%"))
     (cadre-ui::set-window-project *window* (merge-pathnames "rkt-pkg/" *root*))
     (call-command 'cadre-ui::show-systems)
     (cadre-ui::refresh-systems)))
@@ -3447,13 +3448,34 @@ and the number of items MODEL itself shows."
            (and (find-if (lambda (l) (search "Missing: no-such-package-xyz" l)) (section-labels))
                 (gtk:widget-get-visible (find-button "Install"))))
     (check "and its modules" (member "main.rkt" (section-labels) :test #'equal))
-    (screenshot "56-racket-project")))
+    (screenshot "56-racket-project")
+    (let ((button (gethash :run-button cadre-ui::*named-widgets*)))
+      (check "the ▶ button runs the package's main module"
+             (and (gtk:widget-get-visible button)
+                  (equal "Run main.rkt (in the Racket REPL)" (gtk:widget-get-tooltip-text button)))
+             (gtk:widget-get-tooltip-text button)))
+    (call-command 'cadre-ui::run-app)))
+
+(then-when ((or (not *have-racket*) (cadre-ui::repl-reading (cadre-ui::language-repl :racket))) :timeout 60)
+  (when *have-racket*
+    (check "it runs in the Racket REPL, which takes the line it reads"
+           (cadre-ui::repl-reading (cadre-ui::language-repl :racket)))
+    (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "Pat"))
+    (call-command 'cadre-ui::repl-return)))
+
+(then-when ((or (not *have-racket*) (null cadre-ui::*language-app*)) :timeout 30)
+  (when *have-racket*
+    (let ((text (buffer-string (cadre-ui::repl-buffer (cadre-ui::language-repl :racket)))))
+      (check "and the program ends, with ▶ back"
+             (and (search "Hello, Pat!" text) (search "finished" (status-text)))
+             (status-text)))))
 
 (then 300
   (when *have-clojure*
     (write-root-file "clj-proj/deps.edn"
                      "{:paths [\"src\"] :deps {org.clojure/clojure {:mvn/version \"1.12.0\"}} :aliases {:dev {}}}")
-    (write-root-file "clj-proj/src/proj/core.clj" (format nil "(ns proj.core)~%(defn hi [] :hi)~%"))
+    (write-root-file "clj-proj/src/proj/core.clj"
+                     (format nil "(ns proj.core)~%(defn hi [] :hi)~%(defn -main [& args] (println \"proj ran\") :done)~%"))
     (cadre-ui::set-window-project *window* (merge-pathnames "clj-proj/" *root*))
     (cadre-ui::refresh-systems)))
 
@@ -3501,6 +3523,17 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-clojure*) (and *dep-result* (not (eq :waiting (funcall *dep-result*))))) :timeout 30)
   (when *have-clojure*
     (check "and the new library loads without a restart" (search "[1]" (funcall *dep-result*)) (funcall *dep-result*))
+    (check "the ▶ button runs the project's -main"
+           (equal "Run proj.core/-main (in the Clojure REPL)"
+                  (gtk:widget-get-tooltip-text (gethash :run-button cadre-ui::*named-widgets*))))
+    (call-command 'cadre-ui::run-app)))
+
+(then-when ((or (not *have-clojure*) (search "returned" (status-text))) :timeout 60)
+  (when *have-clojure*
+    (check "it runs in the Clojure REPL, and says what -main returned"
+           (and (search "proj ran" (buffer-string (cadre-ui::repl-buffer (cadre-ui::language-repl :clojure))))
+                (search "proj.core/-main returned :done" (status-text)))
+           (status-text))
     (call-command 'cadre-ui::clojure-disconnect))
   (cadre-ui::set-window-project *window* *root*))
 

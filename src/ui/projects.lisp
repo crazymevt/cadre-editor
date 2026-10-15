@@ -38,9 +38,13 @@
     button))
 
 (defun button-bar (&rest buttons)
-  (let ((box (make-instance 'gtk:box :spacing 6 :margin-start 8 :margin-end 8 :margin-top 6 :margin-bottom 6)))
-    (dolist (b buttons) (when b (gtk:box-append box b)))
-    (make-instance 'gtk:list-box-row :activatable nil :selectable nil :child box)))
+  "A row of BUTTONS that wraps onto more lines when the sidebar is narrow
+(in a box they would widen the page past the sidebar's edge)."
+  (let ((flow (make-instance 'gtk:flow-box :selection-mode :none :homogeneous nil
+                                           :column-spacing 6 :row-spacing 6 :max-children-per-line 6
+                                           :margin-start 8 :margin-end 8 :margin-top 6 :margin-bottom 6)))
+    (dolist (b buttons) (when b (gtk:flow-box-append flow b)))
+    (make-instance 'gtk:list-box-row :activatable nil :selectable nil :child flow)))
 
 (defun file-in-project-name (file directory)
   (let ((base (uiop:native-namestring directory)) (name (uiop:native-namestring file)))

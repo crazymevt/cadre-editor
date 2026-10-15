@@ -13,6 +13,11 @@
 ;;;;    it to the Lisp's first thread and returns at once, leaving the REPL
 ;;;;    free. The app runs until rl:running-p says the game ended, and
 ;;;;    stopping it calls rl:stop.
+;;;; A Racket or Clojure project with a program (core language-projects.lisp)
+;;;; runs it in that language's REPL tab, which takes the input it reads:
+;;;; Racket runs the module with a main submodule (main.rkt first) as Run
+;;;; File does; Clojure loads the main namespace and calls its -main.
+;;;; Stopping interrupts it.
 
 (in-package #:cadre-ui)
 
@@ -24,7 +29,67 @@ returned and its game runs on.")
 (defparameter *raylib-poll-ms* 500
   "How often Cadre asks whether a raylib game still runs.")
 
-(defun app-running-p () (or (gtk-app-running-p) (and *console-app* t)))
+(defvar *language-app* nil
+  "The Racket or Clojure program the ▶ button started (LANGUAGE-PROJECT-APP's
+plist), while it runs.")
+
+(defun app-running-p () (or (gtk-app-running-p) (and *console-app* t) (and *language-app* t)))
+
+(defvar *language-app-cache* nil
+  "(root . app): the open folder's Racket or Clojure program, found when it
+opened or one of its files was saved (finding it reads source files).")
+
+(defun language-project-app (root)
+  "ROOT's Racket or Clojure program (a plist with :language), or nil."
+  (let ((key (namestring root)))
+    (unless (equal key (car *language-app-cache*))
+      (setf *language-app-cache* (cons key (or (ignore-errors (racket-project-app root))
+                                               (ignore-errors (clojure-project-app root))))))
+    (cdr *language-app-cache*)))
+
+(defun current-project-app (root)
+  "The program ▶ runs in ROOT: the .asd's :entry-point, else a Racket or Clojure one."
+  (and root (or (project-app root) (language-project-app root))))
+
+(defun language-app-finished (&optional format &rest args)
+  (setf *language-app* nil)
+  (update-run-button)
+  (when format (apply #'message format args)))
+
+(defun run-language-app (root app)
+  "Run APP, a Racket or Clojure program, in its language's REPL tab."
+  (save-project-then
+   root
+   (lambda ()
+     (let ((language (getf app :language))
+           (title (getf app :title))
+           (file (uiop:native-namestring (getf app :file))))
+       (with-connection (connection :language language)
+         (show-language-repl language :focus t)
+         (language-repl-note language (format nil "; Running ~a (input it reads is typed here, then RET)~%" title))
+         (setf *language-app* app)
+         (update-run-button)
+         (flet ((stopped (reason) (language-app-finished "~a stopped~@[: ~a~]" title reason)))
+           (ecase language
+             (:racket
+              (request #'backend-compile-file connection file
+                       :on-ok (lambda (result)
+                                (multiple-value-bind (notes successp) (parse-compilation-result result)
+                                  (show-notes notes :replace-files (list file))
+                                  (if successp
+                                      (language-app-finished "~a finished" title)
+                                      (language-app-finished "~a failed: see the Problems page" title))))
+                       :on-abort #'stopped))
+             (:clojure
+              (request #'backend-load-file connection file
+                       :on-ok (lambda (value)
+                                (declare (ignore value))
+                                (request #'backend-eval connection (format nil "(~a/-main)" (getf app :namespace))
+                                         :package (getf app :namespace)
+                                         :on-ok (lambda (value)
+                                                  (language-app-finished "~a returned ~a" title (result-text value)))
+                                         :on-abort #'stopped))
+                       :on-abort #'stopped)))))))))
 
 (defun console-app-form (root system entry)
   "Source that loads SYSTEM, notes the thread it runs on (so Stop App can
@@ -83,8 +148,11 @@ project's files and compiling what changed (its notes go to the Problems
 page; with errors, the app doesn't start): a gtk4 one as Run GTK App does,
 any other in the REPL, which takes the input it reads."
   (let* ((root (project-root-or-error))
-         (app (or (project-app root) (editor-error "No .asd file in the project has an :entry-point"))))
+         (app (or (current-project-app root)
+                  (editor-error "No program here: no .asd with an :entry-point, Racket module with a main submodule, or Clojure -main"))))
     (when (app-running-p) (editor-error "The app is running (Stop App ends it)"))
+    (when (getf app :language)
+      (return-from run-app (run-language-app root app)))
     (save-project-then root
                        (lambda ()
                          (compile-system-then
@@ -98,6 +166,11 @@ any other in the REPL, which takes the input it reads."
 (define-command stop-app ()
   "Stop the program started with Run App."
   (cond ((gtk-app-running-p) (stop-gtk-app))
+        (*language-app*
+         (let ((connection (language-connection (getf *language-app* :language))))
+           (if connection
+               (progn (backend-interrupt connection) (message "Stopping ~a…" (getf *language-app* :title)))
+               (language-app-finished))))
         ((getf *console-app* :game)
          (with-connection (connection)
            (rex connection
@@ -120,17 +193,23 @@ any other in the REPL, which takes the input it reads."
   (let ((button (gethash :run-button *named-widgets*)))
     (when (and button *window*)
       (let* ((root (window-project *window*))
-             (app (and root (project-app root)))
+             (app (current-project-app root))
              (running (app-running-p)))
         (gtk:widget-set-visible button (or running (and app t)))
         (gtk:button-set-icon-name button (if running "media-playback-stop-symbolic" "media-playback-start-symbolic"))
         (gtk:widget-set-tooltip-text button
                                      (cond (running "Stop the app")
+                                           ((getf app :language)
+                                            (format nil "Run ~a (in the ~a REPL)" (getf app :title)
+                                                    (if (eq (getf app :language) :racket) "Racket" "Clojure")))
                                            (app (format nil "Run ~a~:[ (in the REPL)~;~]" (getf app :entry) (getf app :gtk)))
                                            (t "")))))))
 
-;; Adding or removing an :entry-point shows or hides the button.
+;; Adding or removing an :entry-point, a main submodule or a -main shows or
+;; hides the button.
 (add-hook '*after-save-hook* (lambda (buffer)
                                (let ((file (buffer-file buffer)))
-                                 (when (and file (string-equal (pathname-type file) "asd"))
+                                 (when (and file (member (pathname-type file) '("asd" "rkt" "clj" "cljc" "edn")
+                                                         :test #'string-equal))
+                                   (setf *language-app-cache* nil)
                                    (update-run-button)))))

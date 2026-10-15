@@ -314,3 +314,32 @@ the process; nil if there is no Clojure CLI."
   (is equal (list c:*clojure-command* "-P" "-M:dev:test") (c:clojure-fetch-command :deps '("dev" "test")))
   (is equal (list c:*clojure-command* "-P") (c:clojure-fetch-command :deps nil))
   (is equal (list c:*leiningen-command* "with-profile" "+dev" "deps") (c:clojure-fetch-command :lein '("dev"))))
+
+;;; The program the ▶ button runs: Racket's main submodule, Clojure's -main
+
+(define-test project-programs :parent cadre-tests
+  (let ((dir (merge-pathnames (format nil "cadre-apps-~d/" (random 1000000)) (uiop:temporary-directory))))
+    (flet ((put (name text)
+             (let ((file (merge-pathnames name dir)))
+               (ensure-directories-exist file)
+               (with-open-file (o file :direction :output :if-exists :supersede) (write-string text o)))))
+      (unwind-protect
+           (progn
+             (is eq nil (c:racket-project-app dir))
+             (put "util.rkt" "#lang racket/base (provide f) (define (f) 1)")
+             (is eq nil (c:racket-project-app dir) "a module with no main submodule isn't a program")
+             (put "tool.rkt" (format nil "#lang racket/base~%(module+ main (displayln 1))"))
+             (is string= "tool.rkt" (getf (c:racket-project-app dir) :title))
+             (put "main.rkt" (format nil "#lang racket/base~%(module main racket/base (displayln 2))"))
+             (is string= "main.rkt" (getf (c:racket-project-app dir) :title) "main.rkt comes first")
+             (is eq nil (c:clojure-project-app dir) "no project file, no Clojure program")
+             (put "deps.edn" "{:paths [\"src\"]}")
+             (put "src/app/core.clj" (format nil "(ns app.core)~%(defn -main [& args] (println :hi))"))
+             (put "src/app/other.clj" (format nil "(ns app.other)~%(defn -main [] nil)"))
+             (is string= "app.core" (getf (c:clojure-project-app dir) :namespace) "the one under src/ with -main")
+             (put "deps.edn" "{:paths [\"src\"] :aliases {:run {:main-opts [\"-m\" \"app.other\"]}}}")
+             (is string= "app.other" (getf (c:clojure-project-app dir) :namespace) "an alias's -m comes first")
+             (delete-file (merge-pathnames "deps.edn" dir))
+             (put "project.clj" "(defproject app \"0.1\" :main app.core)")
+             (is string= "app.core/-main" (getf (c:clojure-project-app dir) :title)))
+        (uiop:delete-directory-tree dir :validate t)))))

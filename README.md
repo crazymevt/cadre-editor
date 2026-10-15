@@ -766,6 +766,14 @@ changed), and calls the entry point:
   starts the game with `rl:run`) runs on the Lisp's first thread while the
   REPL stays free for redefining its functions. The app runs until the
   game's window closes.
+- **A Racket package** (or folder of Racket code) gets ▶ when a top-level
+  module has a `main` submodule (`main.rkt` first). It runs in the Racket
+  REPL tab, as Run File does, and the REPL takes the lines it reads.
+- **A Clojure project** gets ▶ when it has a main namespace: `:main` in
+  `project.clj`, an alias's `:main-opts ["-m" "app.core"]` in `deps.edn`,
+  or a namespace under `src/` that defines `-main`. ▶ starts the REPL if
+  needed, loads the namespace and calls its `-main` in the Clojure REPL tab.
+  The status bar says what it returned.
 
 While the app runs, the button turns into **■**: **Stop App**
 (`Ctrl+Shift+F5`, `C-x p k`) quits a GTK app, ends a raylib game

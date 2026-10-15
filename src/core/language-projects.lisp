@@ -157,3 +157,57 @@ test/ and dev/ folders, its namespace read from its (ns …) form."
                             (and match (aref groups 0))))))
                  (when ns (push (cons ns file) found)))))))))
     (sort found #'string< :key #'car)))
+
+;;; The program a project runs, for the ▶ button (ui/run-app.lisp)
+
+(defun main-submodule-p (text)
+  "True if Racket source TEXT has a main submodule."
+  (and (ppcre:scan "\\((?:module\\+|module\\*?)\\s+main\\b" text) t))
+
+(defun racket-project-app (root)
+  "The program of the Racket package (or folder of Racket code) in ROOT: the
+top-level module with a main submodule (main.rkt first), as a plist
+(:language :racket :file :title); or nil."
+  (let* ((files (remove "info.rkt" (uiop:directory-files (uiop:ensure-directory-pathname root) "*.rkt")
+                        :key #'file-namestring :test #'string=))
+         (ordered (append (remove-if-not (lambda (f) (string= (file-namestring f) "main.rkt")) files)
+                          (remove-if (lambda (f) (string= (file-namestring f) "main.rkt")) files)))
+         (file (find-if (lambda (f) (let ((text (read-text-file f))) (and text (main-submodule-p text))))
+                        ordered)))
+    (and file (list :language :racket :file file :title (file-namestring file)))))
+
+(defun clojure-main-namespace (directory kind)
+  "The namespace a Clojure project runs: project.clj's :main, else an
+alias's :main-opts [\"-m\" \"ns\"] in deps.edn; or nil."
+  (let ((forms (ignore-errors
+                (read-edn-forms (uiop:read-file-string
+                                 (merge-pathnames (ecase kind (:deps "deps.edn") (:lein "project.clj") (:babashka "bb.edn"))
+                                                  directory))))))
+    (case kind
+      (:lein
+       (let ((form (find-if (lambda (f) (and (consp f) (eq (first f) :list) (equal (edn-name (second f)) "defproject")))
+                            forms)))
+         (edn-name (getf-edn (cddddr form) "main"))))
+      (:deps
+       (loop for (nil . alias) in (rest (edn-get (first forms) "aliases"))
+             for opts = (rest (edn-get alias "main-opts"))
+             for m = (position "-m" opts :test #'equal)
+             when (and m (stringp (nth (1+ m) opts))) return (nth (1+ m) opts))))))
+
+(defun clojure-project-app (root)
+  "The program of the Clojure project in ROOT, as a plist (:language :clojure
+:namespace :file :title): its main namespace (CLOJURE-MAIN-NAMESPACE), else
+the one under src/ that defines -main; or nil."
+  (let ((kind (loop for (file . kind) in *clojure-project-files*
+                    when (probe-file (merge-pathnames file root)) return kind)))
+    (when kind
+      (let* ((namespaces (clojure-project-namespaces root))
+             (named (clojure-main-namespace root kind))
+             (entry (or (and named (assoc named namespaces :test #'string=))
+                        (find-if (lambda (e)
+                                   (and (search "/src/" (namestring (cdr e)))
+                                        (let ((text (read-text-file (cdr e))))
+                                          (and text (ppcre:scan "\\(defn-?\\s+(?:\\^\\S+\\s+)?-main\\b" text)))))
+                                 namespaces))))
+        (and entry (list :language :clojure :namespace (car entry) :file (cdr entry)
+                         :title (format nil "~a/-main" (car entry))))))))

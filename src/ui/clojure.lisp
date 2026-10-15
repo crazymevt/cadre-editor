@@ -39,7 +39,7 @@
 
 (defun clojure-start-directory ()
   "Where the current file's Clojure project is, and its kind; else the open folder."
-  (let* ((view (current-view))
+  (let* ((view (and *window* (current-view-or-nil *window*)))   ; none when no file is open
          (file (and view (buffer-file (view-buffer view))))
          (start (or file (window-project *window*) (user-homedir-pathname))))
     (multiple-value-bind (dir kind) (clojure-project start)
