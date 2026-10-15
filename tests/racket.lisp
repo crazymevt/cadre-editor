@@ -44,7 +44,7 @@
                (is eql 0 code)
                (true (search "1 test passed" output)))
           (uiop:delete-directory-tree dir :validate t)))
-      (skip "Racket isn't installed" (true nil))))
+      (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))
 
 ;;; Against a real Racket, if it is installed
 
@@ -93,7 +93,7 @@ nil if there is no Racket."
     (with-open-file (o file :direction :output :if-exists :supersede) (write-string text o))
     (multiple-value-bind (conn process) (start-test-racket dir)
       (if (null conn)
-          (skip "Racket isn't installed" (true nil))
+          (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))
           (unwind-protect
                (progn
                  (is eq :racket (c:connection-language conn))

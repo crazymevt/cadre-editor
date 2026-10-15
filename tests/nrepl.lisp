@@ -76,7 +76,7 @@ the process; nil if there is no Clojure CLI."
   (setf *events* '())
   (multiple-value-bind (conn process dir) (start-test-clojure)
     (if (null conn)
-        (skip "The Clojure CLI isn't installed" (true nil))
+        (progn (require-language "The Clojure CLI") (skip "The Clojure CLI isn't installed" (true nil)))
         (unwind-protect
              (progn
                (is eq :clojure (c:connection-language conn))
@@ -162,4 +162,4 @@ the process; nil if there is no Clojure CLI."
                (is eql 0 code (format nil "~a~a" output error))
                (true (search "0 failures, 0 errors" output)))
           (uiop:delete-directory-tree dir :validate t)))
-      (skip "The Clojure CLI isn't installed" (true nil))))
+      (progn (require-language "The Clojure CLI") (skip "The Clojure CLI isn't installed" (true nil)))))

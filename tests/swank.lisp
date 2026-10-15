@@ -86,6 +86,11 @@
 (defun swank (conn name &rest args)
   (c:swank-eval-sync conn (apply #'c:swank-call name args)))
 
+(defun require-language (what)
+  "In CI (CADRE_REQUIRE_LANGUAGES set), a missing WHAT is an error, not a skip."
+  (when (uiop:getenv "CADRE_REQUIRE_LANGUAGES")
+    (error "~a isn't installed, and CADRE_REQUIRE_LANGUAGES says it must be" what)))
+
 (defun wait-for (predicate &optional (timeout 10))
   (loop repeat (* timeout 20)
         when (funcall predicate) return t
