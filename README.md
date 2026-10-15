@@ -300,6 +300,13 @@ it and what it called, and Go to Definition to open its source. **Flame
 Graph** draws the stacks from the top down, each call as wide as the samples
 it was in: click a box to zoom into it, and one above to zoom back out.
 
+**Libraries** (Project › Libraries…, or the `+` on the Project page) shows what
+the project's system depends on (its `.asd`'s `:depends-on`) and searches
+the systems Quicklisp offers. **Add** puts one in the `.asd`, keeping its
+layout and comments, and loads it with Quicklisp in the REPL, which downloads
+it first if it must; **Load** only loads it; **Remove** takes it out of the
+`.asd`. It needs Quicklisp in the Lisp.
+
 **Scratch Buffer** (`Ctrl+K Shift+S`, `C-x M-s` in the Emacs keys, or the
 Lisp menu) opens `*scratch*`, a Lisp buffer
 for trying things out. Each project has its own, kept between sessions but

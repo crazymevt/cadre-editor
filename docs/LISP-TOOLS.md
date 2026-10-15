@@ -10,7 +10,7 @@ systems, running tests and refactoring. Tick an item when it lands.
 1. [x] **Profiler.** Profile a form, or a running app for a while, with
    `sb-sprof`; show the report as a sortable table (and a flame graph), each
    function a link to its source.
-2. [ ] **Library manager.** Search the systems Quicklisp (or ocicl / Qlot)
+2. [x] **Library manager.** Search the systems Quicklisp (or ocicl / Qlot)
    offers, install one, and add it to the `.asd`'s `:depends-on` in one step.
 3. [ ] **Threads page.** The Lisp's threads, with Interrupt, Kill, and Debug
    (the debugger in that thread): for servers, GTK apps, background work.
@@ -21,3 +21,8 @@ systems, running tests and refactoring. Tick an item when it lands.
    in the code, a step at a time, and fold it back.
 6. [x] **Scratch buffer** for each project: a place for experiments that is
    kept, but isn't a file in the project.
+
+## Later
+
+- [ ] Libraries from ocicl and Qlot, not only Quicklisp: `ocicl install`, a
+  `qlfile` line.

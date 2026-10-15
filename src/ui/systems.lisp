@@ -61,8 +61,9 @@ its subdirectories), the main system of each file first."
   (asdf-form (format nil "(funcall (find-symbol \"TEST-SYSTEM\" \"ASDF\") ~a)" (cadre::lisp-string system))
              directory))
 
-(defun run-in-repl (note form)
-  "Show NOTE in the REPL and evaluate FORM (source) there, as if typed."
+(defun run-in-repl (note form &key on-done)
+  "Show NOTE in the REPL and evaluate FORM (source) there, as if typed; then
+call ON-DONE."
   (show-repl-page)
   (with-connection (connection)
     (declare (ignore connection))
@@ -71,7 +72,7 @@ its subdirectories), the main system of each file first."
              (repl-insert (format nil "; ~a~%" note) "cadre-repl-note")
              (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
                                         (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
-             (repl-eval form)))))
+             (repl-eval form :on-done on-done)))))
 
 (defun load-system-in-repl (directory system)
   "Load SYSTEM, compiling it first so its notes reach the Problems page, then
@@ -187,7 +188,10 @@ it compiled. With nothing to compile, or no plan, just call RUN."
         (gtk:button :icon-name "view-refresh-symbolic" :tooltip-text "Refresh" :css-classes '("flat")
                     :on-clicked (lambda (b) (declare (ignore b)) (refresh-systems)))
         (gtk:button :icon-name "cadre-play-symbolic" :tooltip-text "Load another system…" :css-classes '("flat")
-                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'load-system))))
+                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'load-system)))
+        (gtk:button :icon-name "list-add-symbolic" :tooltip-text "Libraries: dependencies, and adding one from Quicklisp"
+                    :css-classes '("flat")
+                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'manage-libraries))))
       (gtk:scrolled-window :vexpand t :hscrollbar-policy :never
         (gtk:box :orientation :vertical
           *systems-status*
@@ -280,7 +284,9 @@ that one, and its ▶."
        (gtk:button :label "Test" :tooltip-text "Run the system's tests (asdf:test-system) in the REPL"
                    :on-clicked (lambda (b) (declare (ignore b))
                                  (run-in-repl (format nil "Testing system ~a" name)
-                                              (test-system-form directory name)))))))
+                                              (test-system-form directory name))))
+       (gtk:button :label "Libraries" :tooltip-text "What the system depends on, and adding a library from Quicklisp"
+                   :on-clicked (lambda (b) (declare (ignore b)) (show-libraries directory name))))))
   (if (connected-p)
       (with-swank-asdf (connection)
         (rex connection (swank-call "swank:eval-and-grab-output" (system-files-form name))

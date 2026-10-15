@@ -45,6 +45,7 @@
                (:file "profiler")
                (:file "scratch")
                (:file "systems")
+               (:file "libraries")
                (:file "review")
                (:file "file-watch")
                (:file "claude-tools")
@@ -153,7 +154,8 @@
                              (:file "sqlite")
                              (:file "postgres")
                              (:file "mysql")))
-               (:file "http" :pathname "http/http")))
+               (:file "http" :pathname "http/http")
+               (:file "libraries")))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -177,5 +179,6 @@
                (:file "postgres")
                (:file "mysql")
                (:file "http")
-               (:file "profiler"))
+               (:file "profiler")
+               (:file "libraries"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

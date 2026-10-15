@@ -4139,6 +4139,44 @@ and the number of items MODEL itself shows."
   (check "and it opens again as it was" (search "(+ 1 2) ; more" (buffer-string (scratch-buffer)))
          (buffer-string (scratch-buffer))))
 
+;;; The Libraries tab
+(section "libraries")
+(defvar *smoke-asd-text* nil)
+(defun libraries-page () (let ((b (cadre-ui::libraries-buffer *root*))) (and b (buffer-local b :libraries))))
+(defun smoke-asd () (merge-pathnames "smoke.asd" *root*))
+(connect-lisp)
+(load-quicklisp)
+
+(then 100
+  (setf *smoke-asd-text* (uiop:read-file-string (smoke-asd)))
+  (cadre-ui::show-libraries *root*))
+
+(then-when ((let ((page (libraries-page))) (and page (listp (cadre-ui::lp-libraries page)) (cadre-ui::lp-libraries page))) :timeout 30)
+  (let ((page (libraries-page)))
+    (check "the Libraries tab lists Quicklisp's systems" (< 1000 (length (cadre-ui::lp-libraries page))))
+    (check "and the system's dependencies: none yet"
+           (member "No dependencies" (label-texts (cadre-ui::lp-dependencies page)) :test #'equal))
+    (gtk:editable-set-text (cadre-ui::lp-search page) "alexandria")))
+
+(then 500
+  (let* ((page (libraries-page))
+         (titles (label-texts (cadre-ui::lp-results page))))
+    (check "searching finds a library" (member "alexandria" titles :test #'equal) (subseq titles 0 (min 6 (length titles))))
+    (screenshot "libraries")
+    (cadre-ui::add-library page "alexandria")))
+
+(then-when ((not (cadre-ui::repl-busy cadre-ui::*repl*)) :timeout 60)
+  (let ((text (uiop:read-file-string (smoke-asd))))
+    (check "Add puts it in the .asd's :depends-on"
+           (search "(defsystem \"smoke\" :depends-on (\"alexandria\") :components" text) text))
+  (check "and lists it" (member "alexandria" (label-texts (cadre-ui::lp-dependencies (libraries-page))) :test #'equal))
+  (check "and loads it" (search "alexandria" (repl-text)))
+  (cadre-ui::remove-library (libraries-page) "alexandria"))
+
+(then 300
+  (check "Remove takes it out again" (string= *smoke-asd-text* (uiop:read-file-string (smoke-asd)))
+         (uiop:read-file-string (smoke-asd))))
+
 ;;; The Terminal page (VTE)
 (section "terminal")
 

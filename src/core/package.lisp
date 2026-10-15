@@ -22,6 +22,9 @@
    #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p #:sql-mode #:http-mode
    ;; buffers
    #:project-file-key #:scratch-file-name
+   #:asd-systems #:asd-depends-on #:asd-dependency-names #:asd-add-dependency #:asd-remove-dependency #:apply-edit
+   #:*quicklisp-systems-form* #:library #:make-library #:library-name #:library-project #:library-installed
+   #:parse-quicklisp-systems #:search-libraries
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
    #:buffer-modified-p #:buffer-string #:buffer-length #:buffer-point

@@ -186,6 +186,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
    '(:section
      (:submenu "Project"
       (:section ("Load Project" load-project) ("Load System…" load-system) ("Build Project" build-project))
+      (:section ("Libraries…" manage-libraries))
       (:section ("Run Tests" run-tests) ("Run Tests in a New Lisp" run-tests-in-new-lisp))
       (:section ("Run App" run-app) ("Stop App" stop-app))
       (:section ("Run GTK App" run-gtk-app) ("Stop GTK App" stop-gtk-app)))
