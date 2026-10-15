@@ -311,15 +311,15 @@ keyboard macro being defined, and the selection."
   (gobject:emit (view-text-view (current-view)) :paste-clipboard))
 
 (define-command undo ()
-  "Undo the last change."
+  "Undo the last change (with a macro expanded in place, collapse it)."
   (let ((buffer (view-gtk-buffer (current-view))))
-    (if (gtk:text-buffer-get-can-undo buffer)
-        (gtk:text-buffer-undo buffer)
-        (message "Nothing to undo"))))
+    (cond ((macrostep-undo (view-buffer (current-view))))
+          ((gtk:text-buffer-get-can-undo buffer) (gtk:text-buffer-undo buffer))
+          (t (message "Nothing to undo")))))
 
 (define-command redo ()
   "Redo the last undone change."
   (let ((buffer (view-gtk-buffer (current-view))))
-    (if (gtk:text-buffer-get-can-redo buffer)
-        (gtk:text-buffer-redo buffer)
-        (message "Nothing to redo"))))
+    (cond ((macrostep-blocks-redo-p (view-buffer (current-view))) (message "Nothing to redo"))
+          ((gtk:text-buffer-get-can-redo buffer) (gtk:text-buffer-redo buffer))
+          (t (message "Nothing to redo")))))

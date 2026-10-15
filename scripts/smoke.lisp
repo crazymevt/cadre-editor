@@ -4352,6 +4352,61 @@ and the number of items MODEL itself shows."
   (check "clicking a test goes to it" (= 6 (cadre-ui::cursor-line-column (current-view)))
          (cadre-ui::cursor-line-column (current-view))))
 
+;;; Expanding macros in place
+(section "macrostep")
+(defun steps-buffer () (find-buffer "steps.lisp"))
+(defun steps-count () (length (cadre-ui::macrosteps (steps-buffer))))
+(use-root-project)
+(connect-lisp)
+
+(then 100
+  (write-root-file "src/steps.lisp" (format nil "(defmacro step-outer (x) `(step-inner ,x))~%(defmacro step-inner (x) `(list ,x ,x))~%~%(step-outer 5)~%"))
+  (open-file-path (merge-pathnames "src/steps.lisp" *root*)))
+
+(then-when ((steps-buffer) :timeout 10)
+  (show-buffer-named "steps.lisp")
+  (call-command 'cadre-ui::load-file))
+
+(then-when ((search "Loaded steps.lisp" (status-text)) :timeout 30)
+  ;; An edit of the user's, to undo afterwards
+  (let ((text (buffer-text (steps-buffer))))
+    (gtk:text-buffer-insert text (gtk:text-buffer-get-end-iter text) "; edited" -1))
+  (set-cursor 3 0)
+  (call-command 'cadre-ui::macrostep-expand-in-place))
+
+(then-when ((plusp (steps-count)) :timeout 20)
+  (check "Expand in Place puts the expansion in the source" (search "(step-inner 5)" (string-downcase (line-text 3))) (line-text 3))
+  (check "read-only while expanded" (not (gtk:text-view-get-editable (cadre-ui::view-text-view (current-view)))))
+  (set-cursor 3 0)
+  (call-command 'cadre-ui::macrostep-expand-in-place))
+
+(then-when ((= 2 (steps-count)) :timeout 20)
+  (check "expanding inside it steps further in" (search "(list 5 5)" (string-downcase (line-text 3))) (line-text 3))
+  (screenshot "macrostep")
+  (call-command 'cadre-ui::undo))
+
+(then 300
+  (check "Undo collapses the last expansion"
+         (and (= 1 (steps-count)) (search "(step-inner 5)" (string-downcase (line-text 3)))) (line-text 3))
+  (call-command 'cadre-ui::macrostep-collapse-all-expansions))
+
+(then 300
+  (check "Collapse All puts the form back" (string= "(step-outer 5)" (line-text 3)) (line-text 3))
+  (check "and the buffer is editable again" (gtk:text-view-get-editable (cadre-ui::view-text-view (current-view))))
+  (call-command 'cadre-ui::undo))
+
+(then 300
+  (check "the undo history from before is still there" (not (search "; edited" (buffer-string (steps-buffer)))))
+  (set-cursor 3 0)
+  (call-command 'cadre-ui::macrostep-expand-in-place))
+
+(then-when ((plusp (steps-count)) :timeout 20)
+  (call-command 'cadre-ui::save-buffer))
+
+(then-when ((and (zerop (steps-count)) (not (buffer-modified-p (steps-buffer)))) :timeout 10)
+  (check "saving collapses first: the file has the form, not its expansion"
+         (search "(step-outer 5)" (uiop:read-file-string (merge-pathnames "src/steps.lisp" *root*)))))
+
 ;;; The Terminal page (VTE)
 (section "terminal")
 

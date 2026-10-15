@@ -259,6 +259,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Who expands a macro / specializes a class | (palette) | `C-c C-w m` / `a` |
 | Callers / callees | (palette) | `C-c <` / `C-c >` |
 | Macroexpand once / completely | `Ctrl+K Ctrl+M` / `Ctrl+K Ctrl+A` | `C-c C-m` / `C-c M-m` |
+| Expand the macro in place / collapse it | `Ctrl+K Ctrl+E` / `Ctrl+K Ctrl+U` | `C-c M-e` / `C-c M-u` |
 | Trace / untrace the function at the cursor | `Ctrl+K T` | `C-c C-t` |
 | Show the Trace page | `Ctrl+K Shift+T` | `C-c T` |
 | Profile the form (or a call of the definition) | `Ctrl+K P` | `C-c M-p` |
@@ -342,6 +343,12 @@ Compile for Debugging (`Ctrl+K D`, or `C-c M-c`). That compiles it with
 `(break)`, the debugger's Step button continues to the next call compiled for
 stepping.
 Expanding a macro inside the *Macroexpansion* tab expands it there, in place.
+**Expand in Place** (`Ctrl+K Ctrl+E`, or Lisp › Expand in Place) replaces the
+macro form at the cursor with its expansion right in the file, shaded;
+expanding a form inside it steps further in. **Collapse** (`Ctrl+K Ctrl+U`)
+or Undo folds the last expansion back, and Collapse All all of them. The file
+is read-only while anything is expanded, the undo history from before stays,
+and saving collapses everything first, so an expansion never reaches the file.
 The sidebar's Project page (the box icon) lists the folder's ASDF systems: load,
 reload with compiler notes, test, and open their files. When the folder is a
 Racket package or a Clojure project, the page shows that too:

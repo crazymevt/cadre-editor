@@ -241,6 +241,8 @@
   "C-c C-b" 'interrupt-lisp
   "C-c I" 'inspect-value
   "C-c C-m" 'expand-macro-once
+  "C-c M-e" 'macrostep-expand-in-place
+  "C-c M-u" 'macrostep-collapse
   "C-c RET" 'expand-macro-once
   "C-c M-m" 'expand-macro-all
   "C-c C-w c" 'who-calls
@@ -278,6 +280,8 @@
   "C-k i" 'inspect-value
   "C-k h" 'look-up-documentation
   "C-k C-m" 'expand-macro-once
+  "C-k C-e" 'macrostep-expand-in-place
+  "C-k C-u" 'macrostep-collapse
   "C-k C-a" 'expand-macro-all
   "C-k C-f" 'find-symbol-in-project
   "C-k e f" 'extract-function
@@ -315,6 +319,8 @@
   "M-p" 'previous-note
   "C-c C-b" 'interrupt-lisp
   "C-c C-m" 'expand-macro-once
+  "C-c M-e" 'macrostep-expand-in-place
+  "C-c M-u" 'macrostep-collapse
   "C-c RET" 'expand-macro-once
   "C-c M-m" 'expand-macro-all
   "C-c C-w c" 'who-calls
@@ -333,6 +339,8 @@
   "S-F8" 'previous-note
   "S-F12" 'find-references
   "C-k C-m" 'expand-macro-once
+  "C-k C-e" 'macrostep-expand-in-place
+  "C-k C-u" 'macrostep-collapse
   "C-k C-a" 'expand-macro-all
   "C-k n" 'clojure-set-namespace
   "C-k i" 'inspect-value
@@ -358,6 +366,8 @@
   "M-p" 'previous-note
   "C-c C-b" 'interrupt-lisp
   "C-c C-e f" 'expand-macro-once
+  "C-c M-e" 'macrostep-expand-in-place
+  "C-c M-u" 'macrostep-collapse
   "C-c C-e a" 'expand-macro-all
   "C-c C-t" 'raco-test
   "C-c C-h" 'look-up-documentation
@@ -377,6 +387,8 @@
   "S-F8" 'previous-note
   "S-F12" 'find-references
   "C-k C-m" 'expand-macro-once
+  "C-k C-e" 'macrostep-expand-in-place
+  "C-k C-u" 'macrostep-collapse
   "C-k C-a" 'expand-macro-all
   "C-k t" 'raco-test
   "C-k h" 'look-up-documentation)

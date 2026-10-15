@@ -40,6 +40,7 @@
                (:file "presentations")
                (:file "xref")
                (:file "macroexpand")
+               (:file "macrostep")
                (:file "trace")
                (:file "stepper")
                (:file "profiler")

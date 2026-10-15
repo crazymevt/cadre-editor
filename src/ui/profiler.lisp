@@ -182,12 +182,11 @@
                                              (profile-function-total function))
                                      :css-classes '("dim-label")))
           (let ((definition (profile-function-definition function)))
-            (gtk:box-append box (gtk:build
-                                  (gtk:button :label (if definition "Go to Definition" "No source")
-                                              :sensitive (and definition t) :halign :start
-                                              :tooltip-text (if definition (format nil "Show ~a's source" definition) "")
-                                              :on-clicked (lambda (b) (declare (ignore b))
-                                                            (go-to-profiled-definition definition))))))
+            (let ((button (make-instance 'gtk:button :label (if definition "Go to Definition" "No source")
+                                                     :sensitive (and definition t) :halign :start
+                                                     :tooltip-text (if definition (format nil "Show ~a's source" definition) ""))))
+              (gobject:connect button :clicked (lambda (b) (declare (ignore b)) (go-to-profiled-definition definition)))
+              (gtk:box-append box button)))
           (flet ((section (heading pairs)
                    (gtk:box-append box (label heading :margin-top 8 :css-classes '("heading")))
                    (if (null pairs)
