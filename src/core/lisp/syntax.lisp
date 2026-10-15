@@ -80,7 +80,9 @@ by DIALECT's rules."
       (setf (syntax-first-unchecked syntax) nil (syntax-max-dirty syntax) -1
             i nil))
     (when (and i (<= i through))
-      (let ((previous (if (zerop i) +initial-state+ (line-info-end-state (aref lines (1- i))))))
+      (let ((previous (if (zerop i)
+                                 (dialect-initial-state (syntax-dialect syntax))
+                                 (line-info-end-state (aref lines (1- i))))))
         (loop
           (let ((info (aref lines i)))
             (if (and (not (line-info-dirty info)) (equal (line-info-start-state info) previous))
@@ -195,7 +197,7 @@ multi-line string, here string, |symbol| or block comment)."
   "Whether (LINE, COLUMN) is in :code, a :string or a :comment."
   (let ((tk (find-if (lambda (tk) (< (token-start tk) column (token-end tk)))
                      (line-tokens syntax line))))
-    (cond ((and tk (eq (token-type tk) :string)) :string)
+    (cond ((and tk (member (token-type tk) '(:string :text))) :string)
           ((and tk (eq (token-type tk) :comment)) :comment)
           ((and (null tk) (= column (line-info-length (line-info syntax line)))
                 (let ((last (let ((ts (line-tokens syntax line)))
@@ -203,6 +205,7 @@ multi-line string, here string, |symbol| or block comment)."
                   (and last (= (token-end last) column)
                        (case (token-type last)
                          (:comment :comment)
+                         (:text :string)
                          (:string (and (member (state-mode (line-end-state syntax line)) '(:string :here))
                                        :string)))))))
           (t :code))))

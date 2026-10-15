@@ -11,7 +11,8 @@
 
 (defstruct (dialect (:constructor make-dialect
                         (&key name title opens terminating comma-whitespace block-comments
-                              bar-symbols colon-keywords package-separator definer named-head)))
+                              bar-symbols colon-keywords package-separator definer named-head
+                              at-expressions (initial-state '(:code 0)))))
   "NAME is :common-lisp, :racket or :clojure. OPENS lists the characters
 that open a list by themselves. TERMINATING lists the characters, apart
 from whitespace, that end a symbol. COMMA-WHITESPACE is true where a comma
@@ -20,9 +21,11 @@ part of a symbol and \\ escapes inside one. COLON-KEYWORDS: a symbol
 starting with : is a keyword. PACKAGE-SEPARATOR splits a qualified symbol.
 DEFINER is a function of a head symbol's text, true if the list defines
 something named by its next element. NAMED-HEAD: after a definer, a list's
-head is the name, as in Racket's (define (f x) …)."
+head is the name, as in Racket's (define (f x) …). AT-EXPRESSIONS: Scribble's
+@-expressions, @cmd[args]{text}, whose text bodies are prose. INITIAL-STATE
+is the lexer's state at the top of a file (lexer.lisp)."
   name title opens terminating comma-whitespace block-comments bar-symbols
-  colon-keywords package-separator definer named-head)
+  colon-keywords package-separator definer named-head at-expressions initial-state)
 
 (defparameter +brackets+ '((#\( . #\)) (#\[ . #\]) (#\{ . #\}))
   "Each opening bracket and the one that closes it.")
@@ -71,6 +74,18 @@ head is the name, as in Racket's (define (f x) …)."
                 :terminating '(#\( #\) #\[ #\] #\{ #\} #\" #\' #\` #\, #\;)
                 :block-comments t :bar-symbols t
                 :definer #'racket-definer-p :named-head t))
+
+(defparameter *scribble-dialect*
+  (make-dialect :name :racket :title "Scribble"
+                :opens '(#\( #\[ #\{)
+                :terminating '(#\( #\) #\[ #\] #\{ #\} #\" #\' #\` #\, #\; #\@)
+                :block-comments t :bar-symbols t
+                :definer #'racket-definer-p :named-head t
+                :at-expressions t
+                ;; A Scribble document is prose from the top: a text body
+                ;; with no closing brace.
+                :initial-state '(:text 0 ((:text 0 :top))))
+  "Racket read with Scribble's @-expressions (named :racket: it runs as Racket).")
 
 (defparameter *clojure-dialect*
   (make-dialect :name :clojure :title "Clojure"

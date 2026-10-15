@@ -3055,6 +3055,20 @@ and the number of items MODEL itself shows."
 
 ;;; Clojure through nREPL (docs/RACKET-CLOJURE.md, R3). Needs the Clojure CLI;
 ;;; the first run downloads nREPL and cider-nrepl.
+;; Scribble: prose in @-expressions' bodies is text, not code
+(then 300
+  (write-root-file "dialects/doc.scrbl"
+                   (format nil "#lang scribble/manual~%@title{Don't \"quote\" me}~%@racket[(define x 1)]~%"))
+  (open-file-path (merge-pathnames "dialects/doc.scrbl" *root*)))
+
+(then-when ((and (find-buffer "doc.scrbl") (eq (current-buffer) (find-buffer "doc.scrbl"))))
+  (check "a .scrbl file is lexed with @-expressions"
+         (eq cadre:*scribble-dialect* (cadre:syntax-dialect (cadre-ui::buffer-sexp-syntax (current-buffer))))))
+
+(then 600
+  (check "prose with a quote in it isn't drawn as a string" (not (has-face-p 1 15 :string)))
+  (check "and code in @racket[…] is still code" (has-face-p 2 10 :definer)))
+
 (section "clojure")
 
 ;; clj-kondo on save, with a stand-in that reports one finding.

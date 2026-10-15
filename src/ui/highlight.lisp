@@ -71,6 +71,17 @@ Lisp (through Swank) and Common Lisp's own rules know about."
   (let ((syntax (buffer-local buffer :syntax)))
     (and syntax (eq (syntax-dialect syntax) *common-lisp-dialect*) syntax)))
 
+(defun buffer-dialect (buffer)
+  "The dialect BUFFER's text is lexed as: its mode's, except that a Racket
+buffer of Scribble (a .scrbl file, or #lang scribble/…) has @-expressions."
+  (let ((dialect (mode-dialect (buffer-major-mode buffer))))
+    (if (and (eq dialect *racket-dialect*)
+             (or (and (buffer-file buffer) (equalp (pathname-type (buffer-file buffer)) "scrbl"))
+                 (let ((first (text-line-string (buffer-text buffer) 0)))
+                   (uiop:string-prefix-p "#lang scribble/" first))))
+        *scribble-dialect*
+        dialect)))
+
 (defun attach-syntax (buffer)
   "Set up BUFFER's tags and, for Lisp buffers, its syntax. Safe to call again,
 for instance after the buffer's major mode changes."
@@ -103,7 +114,7 @@ for instance after the buffer's major mode changes."
                                 (schedule-highlight buffer)
                                 (clear-inline-result buffer)
                                 (completion-buffer-changed buffer))))))
-    (let ((dialect (mode-dialect (buffer-major-mode buffer)))
+    (let ((dialect (buffer-dialect buffer))
           (syntax (buffer-sexp-syntax buffer)))
       (unless (and syntax (eq (syntax-dialect syntax) dialect))
         (when syntax

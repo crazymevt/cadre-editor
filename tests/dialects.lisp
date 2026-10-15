@@ -203,3 +203,34 @@ indentation Cadre would change, as (line wanted)."
   (fail (dialect-paredit c:*racket-dialect* #'c:paredit-join "[a] |(b)") 'c:editor-error)
   (is string= "\\(|" (dialect-paredit c:*clojure-dialect* #'c:paredit-open "\\|") "a character, not a list")
   (is string= "(a [| b] c)" (dialect-paredit c:*clojure-dialect* #'c:paredit-slurp-forward "(a [|] b c)")))
+
+;;; Scribble: @-expressions, whose bodies are prose
+
+(define-test scribble-lexing :parent cadre-tests
+  (flet ((lex (lines)
+           (let ((state (c:dialect-initial-state c:*scribble-dialect*)) (all '()))
+             (dolist (line lines (values (nreverse all) state))
+               (multiple-value-bind (tokens end) (c:lex-line line state c:*scribble-dialect*)
+                 (push (mapcar (lambda (tk) (list (c:token-type tk) (subseq line (c:token-start tk) (c:token-end tk))))
+                               tokens)
+                       all)
+                 (setf state end))))))
+    (multiple-value-bind (lines state)
+        (lex '("#lang scribble/manual"
+               "@title{Don't \"quote\" | me}"
+               "Some @bold{nested {braces}} text."
+               "@racket[(define x 1)] and @(+ 1 2)."
+               "@section{Two"
+               "lines}"))
+      (is equal '((:reader "#lang scribble/manual")) (first lines))
+      (is equal '((:quote "@") (:symbol "title") (:open "{") (:text "Don't \"quote\" | me") (:close "}"))
+          (second lines) "prose in a body isn't code: quotes and bars are text")
+      (is equal '((:text "Some ") (:quote "@") (:symbol "bold") (:open "{") (:text "nested {braces}")
+                  (:close "}") (:text " text."))
+          (third lines) "balanced braces in prose are prose")
+      (is equal '((:quote "@") (:symbol "racket") (:open "[") (:open "(") (:symbol "define") (:symbol "x")
+                  (:number "1") (:close ")") (:close "]") (:text " and ") (:quote "@") (:open "(")
+                  (:symbol "+") (:number "1") (:number "2") (:close ")") (:text "."))
+          (fourth lines) "[…] and (…) after @ are code")
+      (is equal '((:text "lines") (:close "}")) (sixth lines) "a body can span lines")
+      (is equal '(:text 0 ((:text 0 :top))) state "and the file ends back in its top-level prose"))))

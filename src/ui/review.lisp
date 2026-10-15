@@ -46,7 +46,7 @@
     (ensure-diff-tags gtk-buffer)
     (text-replace-contents gtk-buffer (format nil "~{~a~^~%~}" lines))
     (when (lisp-family-mode-p (buffer-major-mode buffer))
-      (let ((syntax (make-lisp-syntax gtk-buffer :dialect (mode-dialect (buffer-major-mode buffer)))))
+      (let ((syntax (make-lisp-syntax gtk-buffer :dialect (buffer-dialect buffer))))
         (ensure-lexed syntax (1- (syntax-line-count syntax)))
         (dotimes (line (syntax-line-count syntax))
           (highlight-line gtk-buffer syntax line))))

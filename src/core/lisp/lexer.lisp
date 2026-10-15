@@ -8,6 +8,13 @@
 ;;;;   (:here depth end)        inside a Racket here string, ended by the line END
 ;;;;   (:block depth nesting)   inside #| |#, NESTING deep
 ;;;;   (:bar depth)             inside a |symbol|
+;;;; With Scribble's @-expressions (the Scribble dialect), code and text
+;;;; states carry a stack of frames, innermost first:
+;;;;   (:code depth frames)     code inside an @-expression in text
+;;;;   (:text depth frames)     prose, in an @cmd{…} body or at the top
+;;;; A frame is (:text braces [:top]): a text body, with BRACES unmatched
+;;;; { in its prose; or (:code depth): code entered from text, which goes
+;;;; back to text when the brackets close back to DEPTH.
 ;;;; States are compared with EQUAL, which is what lets the line cache
 ;;;; (syntax.lisp) stop re-lexing as soon as a line ends as it did before.
 
@@ -19,7 +26,8 @@
   "A token on one line. TYPE is one of :open :close :symbol :keyword :number
 :character :string :comment :quote :reader-conditional :reader :invalid,
 and in Racket and Clojure also :constant (#t, #f) and :datum-comment (#;
-and #_, which comment out the element after them).
+and #_, which comment out the element after them), and in Scribble :text
+(prose in an @-expression's body).
 START and END are columns. DEPTH is the parenthesis depth: for :open the
 depth before it, for :close the depth after it (so a pair has equal
 depths), otherwise the depth around the token. SUBTYPE refines symbols:
@@ -164,7 +172,10 @@ the line."
         (after-open nil)                ; the next atom is a list's head
         (name-next nil)                 ; the next symbol is a definition's name
         (name-head nil)                 ; the next list head is a definition's name
-        (feature-next nil))             ; the next element is a #+/#- feature
+        (feature-next nil)              ; the next element is a #+/#- feature
+        (frames (and (dialect-at-expressions dialect) (member (state-mode state) '(:code :text))
+                     (third state)))     ; Scribble's stack (above)
+        (after-at nil))                 ; text: a { now opens the body of the @-expression just read
     (labels ((emit (type start end &optional subtype)
                (push (make-token type start end depth subtype) tokens))
              (element ()
@@ -185,7 +196,73 @@ the line."
                    (emit :invalid i (1+ i))     ; a close bracket with nothing open
                    (progn (decf depth) (emit :close i (1+ i) bracket)))
                (incf i)
-               (setf after-open nil name-next nil name-head nil))
+               (setf after-open nil name-next nil name-head nil)
+               ;; The end of the code in an @-expression in text: back to the text.
+               (let ((top (first frames)))
+                 (when (and (eq (first top) :code) (= depth (second top)))
+                   (pop frames)
+                   (setf mode :text after-at t))))
+             (text-body ()
+               ;; An @-expression's { at I: its body is text.
+               (element)
+               (emit :open i (1+ i) #\{) (incf depth) (incf i)
+               (push (list :text 0) frames)
+               (setf mode :text after-at nil))
+             (at-expression ()
+               ;; @ at I, in code or text: @cmd[args]{body}, @(expr), @;comment.
+               (let ((next (char-at (1+ i))))
+                 (cond
+                   ((eql next #\;) (emit :comment i n) (setf i n))
+                   (t
+                    (prefix :quote (1+ i))
+                    (cond ((or (null next) (member next '(#\Space #\Tab))))
+                          ((member next '(#\[ #\( #\{ #\" #\|)))
+                          (t (let ((end (max (1+ i) (scan-atom line i dialect))))
+                               (setf after-open t)
+                               (atom-at i)
+                               (setf i end))))
+                    (setf after-at t)))))
+             (enter-code-from-text ()
+               ;; [ or ( after an @cmd in text: code, until it closes.
+               (push (list :code depth) frames)
+               (setf mode :code after-at nil))
+             (lex-text ()
+               ;; Prose until the body's } (or the line's end, or an @).
+               (when (and (zerop i) (uiop:string-prefix-p "#lang" line))
+                 (emit :reader 0 n) (setf i n)
+                 (return-from lex-text))
+               (let ((start i))
+                 (flet ((flush () (when (< start i) (emit :text start i))))
+                   (loop
+                     (when (>= i n) (flush) (return))
+                     (let ((c (char line i))
+                           (braces (second (first frames))))
+                       (cond
+                         ((and after-at (member c '(#\[ #\()))
+                          (flush) (enter-code-from-text) (return))
+                         ((and after-at (char= c #\{))
+                          (flush) (text-body) (return))
+                         ((char= c #\@)
+                          (flush) (at-expression)
+                          (return))
+                         ((char= c #\{)
+                          (setf after-at nil)
+                          (setf frames (cons (list* :text (1+ braces) (cddr (first frames))) (rest frames)))
+                          (incf i))
+                         ((and (char= c #\}) (plusp braces))
+                          (setf after-at nil)
+                          (setf frames (cons (list* :text (1- braces) (cddr (first frames))) (rest frames)))
+                          (incf i))
+                         ((char= c #\})
+                          (flush)
+                          (if (eq (third (first frames)) :top)
+                              (emit :invalid i (1+ i))
+                              (progn (decf depth) (emit :close i (1+ i) #\{)
+                                     (pop frames)
+                                     (setf mode (if (eq (first (first frames)) :text) :text :code))))
+                          (incf i) (setf after-at nil)
+                          (return))
+                         (t (setf after-at nil) (incf i))))))))
              (string-from (start quote)
                ;; A string whose token starts at START (a prefix such as
                ;; #rx included) and whose opening quote is at QUOTE.
@@ -313,7 +390,7 @@ the line."
                  (t (prefix :reader (+ i 2))))))
       ;; Continue whatever the previous line left open.
       (ecase mode
-        (:code)
+        ((:code :text))
         (:string (multiple-value-bind (end closed) (scan-string line 0)
                    (emit :string 0 end)
                    (setf i end)
@@ -332,10 +409,16 @@ the line."
                       (setf i end2)
                       (unless open (setf mode :code)))
                     (progn (emit :symbol 0 end) (setf i end))))))
-      (loop while (and (< i n) (eq mode :code))
+      (loop
+       (cond ((>= i n) (return))
+             ((eq mode :text) (lex-text))
+             ((not (eq mode :code)) (return)))
+       (loop while (and (< i n) (eq mode :code))
             do (let ((c (char line i)))
                  (cond
                    ((dialect-whitespace-p c dialect) (incf i))
+                   ((and frames (char= c #\@)) (at-expression))
+                   ((and (dialect-at-expressions dialect) (char= c #\{)) (text-body))
                    ((char= c #\;) (emit :comment i n) (setf i n))
                    ((member c (dialect-opens dialect)) (open-list i (1+ i) c (char= c #\()))
                    ((find c (dialect-opens dialect) :key #'closing-bracket) (close-list c))
@@ -356,10 +439,11 @@ the line."
                    ((char= c #\,)
                     (prefix :quote (if (member (char-at (1+ i)) '(#\@ #\.)) (+ i 2) (1+ i))))
                    ((char= c #\#) (dispatch))
-                   (t (atom-at i)))))
+                   (t (atom-at i))))))
       (values (nreverse tokens)
               (ecase mode
-                (:code (list :code depth))
+                (:code (if frames (list :code depth frames) (list :code depth)))
+                (:text (list :text depth frames))
                 (:string (list :string depth))
                 (:here (list :here depth terminator))
                 (:block (list :block depth nesting))

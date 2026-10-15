@@ -55,7 +55,7 @@
    #:dialect #:dialect-name #:dialect-title #:dialect-opens #:find-dialect #:mode-dialect
    #:+brackets+ #:closing-bracket #:close-bracket-char-p
    #:mode-dialect-name #:lisp-family-mode-p
-   #:*common-lisp-dialect* #:*racket-dialect* #:*clojure-dialect*
+   #:*common-lisp-dialect* #:*racket-dialect* #:*scribble-dialect* #:*clojure-dialect* #:dialect-initial-state
    #:make-lisp-syntax #:syntax-dialect #:reset-syntax #:syntax-text #:syntax-line-count #:syntax-lines-changed
    #:ensure-lexed #:line-tokens #:line-start-state #:line-end-state
    #:line-info #:line-info-highlighted #:line-info-tokens #:forget-highlighting
