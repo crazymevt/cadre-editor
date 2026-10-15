@@ -7,7 +7,7 @@
 ;;;;   @baseUrl = https://api.example.com        a file variable
 ;;;;
 ;;;;   ### List users                            ### starts a request, and names it
-;;;;   # @no-redirect                            options: @no-redirect, @insecure, @timeout 10
+;;;;   # @no-redirect                            options: @no-redirect, @insecure, @timeout 10, @no-cookie-jar
 ;;;;   GET {{baseUrl}}/users?page=1
 ;;;;   Authorization: Bearer {{token}}
 ;;;;
@@ -41,7 +41,7 @@
   (url "")
   (headers '())                         ; (name . value) each, in order
   (body "")
-  (options '())                         ; plist: :no-redirect :insecure :timeout :captures
+  (options '())                         ; plist: :no-redirect :insecure :timeout :captures :no-cookie-jar
   (start nil)                           ; where its block is in its file's text
   (end nil))
 
@@ -117,6 +117,8 @@
                                  (setf (getf (http-request-options request) :no-redirect) t))
                                 ((string-equal option "insecure")
                                  (setf (getf (http-request-options request) :insecure) t))
+                                ((string-equal option "no-cookie-jar")
+                                 (setf (getf (http-request-options request) :no-cookie-jar) t))
                                 ((string-equal option "capture")
                                  (multiple-value-bind (m g) (ppcre:scan-to-strings "^([$\\w.-]+)\\s*=\\s*(.+?)\\s*$" value)
                                    (when m
@@ -177,6 +179,7 @@
     (let ((options (http-request-options request)))
       (when (getf options :no-redirect) (format out "# @no-redirect~%"))
       (when (getf options :insecure) (format out "# @insecure~%"))
+      (when (getf options :no-cookie-jar) (format out "# @no-cookie-jar~%"))
       (when (getf options :timeout) (format out "# @timeout ~d~%" (getf options :timeout)))
       (loop for (name . path) in (getf options :captures)
             do (format out "# @capture ~a = ~a~%" name path)))
@@ -658,7 +661,7 @@ from a \"< path\" line), with :filename and :type when given."
                (t (write-char c out))))
     (write-char #\" out)))
 
-(defun curl-config (request &key body-file header-file output-file directory)
+(defun curl-config (request &key body-file header-file output-file directory cookie-jar)
   "The curl config (curl -K) that sends REQUEST (its variables already put in).
 Files a body names (\"< path\") are relative to DIRECTORY."
   (let ((options (http-request-options request))
@@ -687,6 +690,10 @@ Files a body names (\"< path\") are relative to DIRECTORY."
               (file (option "data-binary" (format nil "@~a" (body-path file directory))))
               ((and body-file (plusp (length (http-request-body request))))
                (option "data-binary" (format nil "@~a" (uiop:native-namestring body-file)))))
+        ;; Cookies the server sets are kept in COOKIE-JAR and sent back.
+        (when (and cookie-jar (not (getf options :no-cookie-jar)))
+          (option "cookie" (uiop:native-namestring cookie-jar))
+          (option "cookie-jar" (uiop:native-namestring cookie-jar)))
         (unless (getf options :no-redirect) (option "location"))
         (when (getf options :insecure) (option "insecure"))
         (option "max-time" (princ-to-string (or (getf options :timeout) 60)))
@@ -723,7 +730,7 @@ dump of them: after redirects, there is one block for each response)."
 
 (defstruct (curl-run (:conc-name curl-run-)) process files)
 
-(defun start-curl (request &key directory)
+(defun start-curl (request &key directory cookie-jar)
   "Start curl sending REQUEST (variables put in); files its body names are
 relative to DIRECTORY. FINISH-CURL waits for it."
   (let* ((work (uiop:ensure-directory-pathname
@@ -733,6 +740,9 @@ relative to DIRECTORY. FINISH-CURL waits for it."
          (output (merge-pathnames "response-body" work)))
     (ensure-directories-exist work)
     (sb-posix:chmod (uiop:native-namestring work) #o700)
+    (when cookie-jar
+      (ensure-directories-exist cookie-jar)
+      (ignore-errors (sb-posix:chmod (uiop:native-namestring (uiop:pathname-directory-pathname cookie-jar)) #o700)))
     (when (plusp (length (http-request-body request)))
       (with-open-file (out body :direction :output :external-format :utf-8)
         (write-string (http-request-body request) out)))
@@ -740,7 +750,7 @@ relative to DIRECTORY. FINISH-CURL waits for it."
                                                                       :error-output :stream)))
       (with-open-stream (in (uiop:process-info-input process))
         (write-string (curl-config request :body-file body :header-file headers :output-file output
-                                           :directory directory)
+                                           :directory directory :cookie-jar cookie-jar)
                       in))
       (make-curl-run :process process :files (list work headers output)))))
 
@@ -777,9 +787,30 @@ relative to DIRECTORY. FINISH-CURL waits for it."
 (defun cancel-curl (run)
   (ignore-errors (uiop:terminate-process (curl-run-process run))))
 
-(defun send-http-request (request &key directory)
+(defun send-http-request (request &key directory cookie-jar)
   "Send REQUEST (variables put in) and wait for its response."
-  (finish-curl (start-curl request :directory directory)))
+  (finish-curl (start-curl request :directory directory :cookie-jar cookie-jar)))
+
+;;; Cookie jars (curl's, in Netscape's format)
+
+(defun parse-cookie-jar (text)
+  "The cookies in TEXT, a cookie jar curl wrote: plists of :domain :path
+:secure :expires (universal time, or nil for the session) :name :value :http-only."
+  (loop for line in (uiop:split-string text :separator '(#\Newline))
+        for http-only = (uiop:string-prefix-p "#HttpOnly_" line)
+        for content = (string-right-trim '(#\Return) (if http-only (subseq line 10) line))
+        for fields = (uiop:split-string content :separator '(#\Tab))
+        when (and (plusp (length content)) (char/= (char content 0) #\#) (= 7 (length fields)))
+          collect (destructuring-bind (domain subdomains path secure expires name value) fields
+                    (declare (ignore subdomains))
+                    (let ((seconds (ignore-errors (parse-integer expires))))
+                      (list :domain domain :path path :secure (string-equal secure "TRUE")
+                            :expires (and seconds (plusp seconds)
+                                          (+ seconds #.(encode-universal-time 0 0 0 1 1 1970 0)))
+                            :name name :value value :http-only http-only)))))
+
+(defun read-cookie-jar (file)
+  (if (probe-file file) (parse-cookie-jar (uiop:read-file-string file)) '()))
 
 ;;; Copying and pasting curl command lines
 

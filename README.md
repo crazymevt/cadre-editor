@@ -941,6 +941,11 @@ Content-Type: application/json
   secrets and gives the request the header with a `{{variable}}`
   (`Authorization: Bearer {{token}}`); the tab recognizes such headers in
   requests you open.
+- **Cookies** a server sets are kept, one jar for each environment, and sent
+  back with the requests after (a login's session). The jar is outside the
+  project (`~/.config/cadre/api/cookies/`); the page lists its cookies, with
+  Clear. A request can leave it out: **Keep cookies** off in Options, or
+  `# @no-cookie-jar` in the file.
 - **Capture** values from a response for the requests after it, such as a
   login's token: in a request's Options, or in the file as
   `# @capture token = $.token` (a JSON path like `$.data[0].id`,

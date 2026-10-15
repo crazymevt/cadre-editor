@@ -220,4 +220,5 @@
    #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters
    #:json-path-value #:capture-response-values #:http-request-auth #:auth-header #:*api-key-headers*
    #:http-request-content-type #:multipart-boundary #:form-body-pairs #:pairs-form-body #:body-file-reference
-   #:parse-multipart-body #:render-multipart-body #:body-path #:relative-body-path))
+   #:parse-multipart-body #:render-multipart-body #:body-path #:relative-body-path
+   #:parse-cookie-jar #:read-cookie-jar))

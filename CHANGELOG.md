@@ -13,7 +13,8 @@
   show status, time, headers and a body highlighted (and laid out) as JSON,
   XML or HTML. Saving offers to move secrets out of the file; curl commands
   can be copied and pasted. Bodies can be text, a file, a form or multipart
-  (with file uploads). An Auth tab sets up Bearer, Basic and API-key
+  (with file uploads). Cookies are kept in a jar for each environment. An
+  Auth tab sets up Bearer, Basic and API-key
   authentication with the secret kept outside the project.
 - New Lisp Project is now **New Project** (`M-x new-project`), since it
   makes Racket packages and Clojure projects too.

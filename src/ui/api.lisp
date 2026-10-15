@@ -54,6 +54,14 @@
 
 (defun api-history-file () (merge-pathnames "history.http" (api-home)))
 
+(defun api-cookie-jar ()
+  "The cookie jar for this project and environment: kept outside the project, like the secrets."
+  (let ((project (api-project)))
+    (merge-pathnames (format nil "cookies/~a-~a.txt"
+                             (if project (pathname-name (http-secrets-file-name project)) "global")
+                             (or *api-environment* "default"))
+                     (api-home))))
+
 (defun api-default-file ()
   (let ((project (api-project)))
     (if project
@@ -219,6 +227,22 @@ Cadre quits (or the folder changes). Never written anywhere.")
                     row (one-line-row :title (format nil "{{~a}}" name)
                                       :subtitle (if (> (length value) 12) (format nil "~a…" (subseq value 0 12)) value))))
           (gtk:list-box-append *api-list* row)))
+      (let ((cookies (ignore-errors (read-cookie-jar (api-cookie-jar)))))
+        (when cookies
+          (let ((row (make-instance 'adw:expander-row :title "Cookies" :title-lines 1
+                                                      :subtitle (format nil "~d kept~@[ for ~a~]" (length cookies) *api-environment*))))
+            (adw:expander-row-add-suffix row (flat-button "Clear" "Forget the cookies (for this environment)"
+                                                          (lambda () (uiop:delete-file-if-exists (api-cookie-jar))
+                                                            (refresh-api-page)
+                                                            (message "Cleared the cookies"))))
+            (dolist (cookie cookies)
+              (let ((value (getf cookie :value)))
+                (adw:expander-row-add-row
+                 row (one-line-row :title (format nil "~a · ~a~a" (getf cookie :name) (getf cookie :domain) (getf cookie :path))
+                                   :subtitle (format nil "~a~:[~; · secure~]~:[~; · HTTP only~]"
+                                                     (if (> (length value) 12) (format nil "~a…" (subseq value 0 12)) value)
+                                                     (getf cookie :secure) (getf cookie :http-only))))))
+            (gtk:list-box-append *api-list* row))))
       (let ((history (api-history)))
         (when history
           (let ((row (make-instance 'adw:expander-row :title "History" :title-lines 1
@@ -697,6 +721,9 @@ ON-CHANGE is called after either changes, or the row goes."
     (adw:action-row-add-suffix timeout-row timeout)
     (adw:preferences-group-add options (option-switch page "Follow redirects" "Go where a 3xx response points"
                                                       :no-redirect :invert t))
+    (adw:preferences-group-add options (option-switch page "Keep cookies"
+                                                      "Send the environment's cookies, and keep the ones the server sets"
+                                                      :no-cookie-jar :invert t))
     (adw:preferences-group-add options (option-switch page "Skip TLS certificate checks"
                                                       "For local servers with self-signed certificates" :insecure))
     (adw:preferences-group-add options timeout-row)
@@ -819,7 +846,7 @@ ON-CHANGE is called after either changes, or the row goes."
   (let* ((request (page-request page))
          (resolved (progn (when (string= (http-request-url request) "") (editor-error "Type the URL first"))
                           (resolved-request request :file (ap-file page))))
-         (run (start-curl resolved :directory (page-directory page))))
+         (run (start-curl resolved :directory (page-directory page) :cookie-jar (api-cookie-jar))))
     (setf (ap-run page) run)
     (gtk:button-set-label (ap-send-button page) "Cancel")
     (gtk:widget-remove-css-class (ap-send-button page) "suggested-action")
@@ -872,7 +899,9 @@ ON-CHANGE is called after either changes, or the row goes."
                                                                  (http-response-headers response)))
                                    -1)
          (gtk:widget-set-visible (ap-copy-body-button page) t)
-         (capture-from-response page response))))
+         (capture-from-response page response)
+         ;; Its cookies may have changed.
+         (refresh-api-page))))
 
 (defun capture-from-response (page response)
   "Keep the values the request's captures take from RESPONSE, and say so."

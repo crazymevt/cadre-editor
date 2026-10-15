@@ -4211,10 +4211,13 @@ create table later (x)")
                           ((search "/html" path) (values "text/html" "<!doctype html><html><body><p>Hi</p></body></html>"))
                           (t (values "application/json"
                                      (json-string (jobj "path" path "auth" (or (cdr (assoc "authorization" headers :test #'string=)) "")
+                                                        "cookie" (or (cdr (assoc "cookie" headers :test #'string=)) "")
                                                         "body" body)))))
                   (let ((octets (sb-ext:string-to-octets reply :external-format :utf-8)))
-                    (format stream "HTTP/1.1 200 OK~c~cContent-Type: ~a~c~cContent-Length: ~d~c~c~c~c~a"
-                            #\Return #\Newline type #\Return #\Newline (length octets) #\Return #\Newline #\Return #\Newline reply)))
+                    (format stream "HTTP/1.1 200 OK~c~cContent-Type: ~a~c~c~aContent-Length: ~d~c~c~c~c~a"
+                            #\Return #\Newline type #\Return #\Newline
+                            (if (search "/set-cookie" path) (format nil "Set-Cookie: visit=v42; Path=/~c~c" #\Return #\Newline) "")
+                            (length octets) #\Return #\Newline #\Return #\Newline reply)))
                 (finish-output stream))
            (close stream)))))))
 (defun api-tab-page () (buffer-local (current-buffer) :api-page))
@@ -4445,6 +4448,23 @@ create table later (x)")
     (cadre-ui::write-api-request page (merge-pathnames "api/people.http" *root*) (cadre-ui::page-request page)))
   (let ((text (uiop:read-file-string (merge-pathnames "api/people.http" *root*))))
     (check "saved, its file is beside the .http file: < ./upload.txt" (search "< ./upload.txt" text) text)))
+
+(then 100
+  (cadre-ui::open-api-request (make-http-request :url (format nil "http://127.0.0.1:~d/set-cookie" *api-port*)) :send t))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "a cookie the server sets is kept for the environment"
+         (equal '("visit") (mapcar (lambda (c) (getf c :name)) (read-cookie-jar (cadre-ui::api-cookie-jar)))))
+  (check "outside the project" (not (search (namestring *root*) (namestring (cadre-ui::api-cookie-jar)))))
+  (check "and listed on the page" (find-if (lambda (s) (search "visit ·" s)) (label-texts cadre-ui::*api-list*)))
+  (cadre-ui::open-api-request (make-http-request :url (format nil "http://127.0.0.1:~d/after" *api-port*)) :send t))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "and sent back with the next request" (search "visit=v42" (buffer-string (api-response-buffer)))
+         (buffer-string (api-response-buffer)))
+  (uiop:delete-file-if-exists (cadre-ui::api-cookie-jar))
+  (cadre-ui::refresh-api-page)
+  (check "Clear forgets them" (notany (lambda (s) (search "visit ·" s)) (label-texts cadre-ui::*api-list*))))
 
 ;;; PostgreSQL on the Databases page, against a server started here (skipped
 ;;; where PostgreSQL isn't installed)

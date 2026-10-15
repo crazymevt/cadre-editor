@@ -182,6 +182,23 @@ world") (:name "photo" :file "/home/me/api/cat.png" :filename "cat.png" :type "i
   (is string= "./sub/a.png" (c:relative-body-path "/home/me/api/sub/a.png" #p"/home/me/api/"))
   (is string= "/elsewhere/a.png" (c:relative-body-path "/elsewhere/a.png" #p"/home/me/api/")))
 
+(define-test cookie-jars :parent cadre-tests
+  (let ((jar (c:parse-cookie-jar (format nil "# Netscape HTTP Cookie File~%~%127.0.0.1~cFALSE~c/~cFALSE~c0~csession~cabc~%#HttpOnly_.x.test~cTRUE~c/app~cTRUE~c1893456000~cid~c42~%"
+                                         #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab))))
+    (is equal '("session" "id") (mapcar (lambda (c) (getf c :name)) jar))
+    (is equal nil (getf (first jar) :expires))
+    (is eq t (getf (second jar) :http-only))
+    (is eq t (getf (second jar) :secure))
+    (is string= "/app" (getf (second jar) :path)))
+  (let ((r (first (c:parse-http-file "### R
+# @no-cookie-jar
+GET https://x.test/
+"))))
+    (is eq t (getf (c:http-request-options r) :no-cookie-jar))
+    (true (search "@no-cookie-jar" (c:render-http-request r)))
+    (false (search "cookie-jar" (c:curl-config r :cookie-jar #p"/tmp/jar.txt"))))
+  (true (search "cookie-jar = \"/tmp/jar.txt\"" (c:curl-config (c:make-http-request :url "u") :cookie-jar #p"/tmp/jar.txt"))))
+
 (define-test query-parameters :parent cadre-tests
   (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
       (c:url-query-parameters "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"))
@@ -235,14 +252,18 @@ world") (:name "photo" :file "/home/me/api/cat.png" :filename "cat.png" :type "i
                     (body (let ((s (make-string length))) (read-sequence s stream) s))
                     (parts (uiop:split-string request-line :separator " "))
                     (redirect (search "/redirect" (second parts)))
+                    (set-cookie (search "/set-cookie" (second parts)))
                     (reply (c:json-string (c:jobj "method" (first parts) "path" (second parts)
                                                   "auth" (or (cdr (assoc "authorization" headers :test #'string=)) "")
+                                                  "cookie" (or (cdr (assoc "cookie" headers :test #'string=)) "")
                                                   "body" body))))
                (if redirect
                    (format stream "HTTP/1.1 302 Found~c~cLocation: /landed~c~cContent-Length: 0~c~c~c~c"
                            #\Return #\Newline #\Return #\Newline #\Return #\Newline #\Return #\Newline)
-                   (format stream "HTTP/1.1 201 Created~c~cContent-Type: application/json~c~cX-Echo: yes~c~cContent-Length: ~d~c~c~c~c~a"
-                           #\Return #\Newline #\Return #\Newline #\Return #\Newline (length reply)
+                   (format stream "HTTP/1.1 201 Created~c~cContent-Type: application/json~c~cX-Echo: yes~c~c~aContent-Length: ~d~c~c~c~c~a"
+                           #\Return #\Newline #\Return #\Newline #\Return #\Newline
+                           (if set-cookie (format nil "Set-Cookie: session=abc123; Path=/~c~c" #\Return #\Newline) "")
+                           (length reply)
                            #\Return #\Newline #\Return #\Newline reply))
                (finish-output stream))
           (close stream))))))
@@ -299,6 +320,19 @@ world") (:name "photo" :file "/home/me/api/cat.png" :filename "cat.png" :type "i
                         (true (search "filename=\"p.json\"" echoed))
                         (true (search "{\"from\": \"file\"}" echoed))))
                  (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
+             ;; A cookie the server sets comes back on the next request through the jar.
+             (let ((jar (merge-pathnames (format nil "cadre-jar-~d/jar.txt" (random 1000000)) (uiop:temporary-directory))))
+               (unwind-protect
+                    (progn
+                      (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/set-cookie" port)) :cookie-jar jar)
+                      (is equal '("session") (mapcar (lambda (c) (getf c :name)) (c:read-cookie-jar jar)))
+                      (let ((next (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/next" port)) :cookie-jar jar)))
+                        (is string= "session=abc123" (c:jget (c:parse-json (c:http-response-body next)) "cookie")))
+                      (let ((without (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/next" port)
+                                                                               :options '(:no-cookie-jar t))
+                                                          :cookie-jar jar)))
+                        (is string= "" (c:jget (c:parse-json (c:http-response-body without)) "cookie"))))
+                 (uiop:delete-directory-tree (uiop:pathname-directory-pathname jar) :validate t :if-does-not-exist :ignore)))
              (let ((failed (c:send-http-request (c:make-http-request :url "http://127.0.0.1:1/"))))
                (true (c:http-response-error failed))))
         (sb-bsd-sockets:socket-close socket)
