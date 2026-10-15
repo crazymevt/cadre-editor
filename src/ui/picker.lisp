@@ -55,6 +55,8 @@
                                                                 :width-request 560
                                                          entry scroller)))))
     (gtk:widget-add-css-class list-view "navigation-sidebar")
+    ;; One click chooses, as in a menu (GTK's default is a double click).
+    (gtk:list-view-set-single-click-activate list-view t)
     (gtk:widget-set-parent popover parent)
     (setf (slot-value picker 'popover) popover
           (slot-value picker 'entry) entry

@@ -415,6 +415,8 @@ smoke test starts it without one), and wait for it."
   (press "C-S-p")
   (check "C-S-p opens the command palette"
          (and (picker) (gtk:widget-get-visible (cadre-ui::picker-popover (picker)))))
+  (check "one click on a row chooses it"
+         (gtk:list-view-get-single-click-activate (cadre-ui::picker-list-view (picker))))
   (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "toggle lay"))
 
 (then 300
