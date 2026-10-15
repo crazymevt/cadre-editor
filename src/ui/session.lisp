@@ -183,6 +183,7 @@ as messages, and an abort without :on-abort says so."
     (debugger-clear)
     (traces-disconnected)
     (profiler-disconnected)
+    (threads-disconnected)
     (gtk-app-disconnected)
     (image-changed)
     (refresh-systems)

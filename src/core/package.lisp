@@ -161,6 +161,8 @@
    #:trace-call-results #:trace-call-state #:trace-call-children #:trace-spec-name #:parse-trace-call
    #:trace-tree #:make-trace-tree #:trace-tree-calls #:trace-tree-roots #:trace-tree-key
    #:trace-tree-add #:trace-tree-count #:trace-tree-lines #:trace-call-text
+   #:lisp-thread #:make-lisp-thread #:lisp-thread-index #:lisp-thread-id #:lisp-thread-name #:lisp-thread-status
+   #:swank-thread-p #:parse-thread-list
    ;; the profiler
    #:+profiler-helper+ #:profile #:make-profile #:profile-samples #:profile-mode #:profile-running
    #:profile-functions #:profile-tree #:parse-profile-report #:profile-percent #:profile-mode-title

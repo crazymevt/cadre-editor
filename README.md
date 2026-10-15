@@ -300,6 +300,12 @@ it and what it called, and Go to Definition to open its source. **Flame
 Graph** draws the stacks from the top down, each call as wide as the samples
 it was in: click a box to zoom into it, and one above to zoom back out.
 
+**Threads** (Lisp › Threads; its tab also appears when an app starts) lists
+the Lisp's threads: a server's, a GTK app's, background work. **Debug**
+interrupts one and opens the debugger in it, with its backtrace and locals;
+Continue lets it go on. **Kill** ends it, after asking. Swank's own threads
+are hidden unless you tick Swank's threads.
+
 **Libraries** (Project › Libraries…, or the `+` on the Project page) shows what
 the project's system depends on (its `.asd`'s `:depends-on`) and searches
 the systems Quicklisp offers. **Add** puts one in the `.asd`, keeping its

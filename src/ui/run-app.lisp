@@ -144,7 +144,7 @@ doesn't, the app has ended."
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
                                (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
     (setf *console-app* (list :system system :entry entry :raylib raylib))
-    (add-profiler-tab)
+    (add-app-tabs)
     (update-run-button)
     (repl-eval (console-app-form root system entry) :on-done #'console-app-returned)))
 

@@ -198,6 +198,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
       (:section ("Trace Function…" trace-function) ("Show Traces" show-traces))
       (:section ("Profile Form…" profile-expression) ("Profile All Threads" profile-all-threads)
                 ("Stop Profiling" stop-profiling) ("Show Profiler" show-profiler))
+      (:section ("Threads" show-threads))
       (:section ("Restart Lisp" restart-lisp)))
      (:submenu "Claude"
       (:section ("Chat with Claude" claude) ("Claude Code in a Terminal" claude-code-in-terminal))))

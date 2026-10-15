@@ -278,6 +278,16 @@
   (true (c:stepper-condition-p '("Evaluating call:" "   [Condition of type SB-EXT:STEP-FORM-CONDITION]" nil)))
   (false (c:stepper-condition-p '("division by zero" "   [Condition of type DIVISION-BY-ZERO]" nil))))
 
+(define-test thread-list-replies :parent cadre-tests
+  (let ((threads (c:parse-thread-list '((:id :name :status) (9475 "my-server" "Running")
+                                        (8707 "repl-thread" "Running") (5123 "reader-thread" "Running")
+                                        (7179 "Swank 56732" "Running") (259 "main thread" nil)))))
+    (is equal '(0 1 2 3 4) (mapcar #'c:lisp-thread-index threads))
+    (is equal '("my-server" "repl-thread" "reader-thread" "Swank 56732" "main thread") (mapcar #'c:lisp-thread-name threads))
+    (is string= "" (c:lisp-thread-status (fifth threads)))
+    (is equal '("my-server" "repl-thread" "main thread")
+        (mapcar #'c:lisp-thread-name (remove-if #'c:swank-thread-p threads)))))
+
 (define-test trace-dialog-replies :parent cadre-tests
   (is string= "foo" (c:trace-spec-name (c:read-sexp "common-lisp-user::foo")))
   (is string= "(setf foo)" (c:trace-spec-name (c:read-sexp "(cl:setf cl-user::foo)")))

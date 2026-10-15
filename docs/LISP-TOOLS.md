@@ -12,8 +12,9 @@ systems, running tests and refactoring. Tick an item when it lands.
    function a link to its source.
 2. [x] **Library manager.** Search the systems Quicklisp (or ocicl / Qlot)
    offers, install one, and add it to the `.asd`'s `:depends-on` in one step.
-3. [ ] **Threads page.** The Lisp's threads, with Interrupt, Kill, and Debug
-   (the debugger in that thread): for servers, GTK apps, background work.
+3. [x] **Threads page.** The Lisp's threads, with Debug (interrupt it and
+   open the debugger in that thread) and Kill: for servers, GTK apps,
+   background work.
 4. [ ] **Test explorer.** The project's tests (parachute, FiveAM) with pass
    or fail for each; run one, or the failed ones again; jump from a failure
    to its code.

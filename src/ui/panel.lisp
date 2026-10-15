@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Pages: the REPL, the Terminal, Problems (compiler notes), the Debugger, the Inspector,
 ;;;; References (cross-references), History (commits), Trace (traced calls),
-;;;; Profiler (where the time went), Results (a SQL query's), Claude (a chat)
+;;;; Profiler (where the time went), Threads, Results (a SQL query's), Claude (a chat)
 ;;;; and Output (a log of messages).
 
 (in-package #:cadre-ui)
@@ -17,7 +17,7 @@
   (make-instance 'adw:status-page :icon-name icon :title title :description description
                                   :css-classes '("compact")))
 
-(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "profiler" "results")
+(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "profiler" "threads" "results")
   "Pages whose tab appears only once they have something to show, so a
 narrow panel (the vertical layout) has room for the others.")
 
@@ -37,7 +37,7 @@ narrow panel (the vertical layout) has room for the others.")
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
-                    ("trace" "Trace") ("profiler" "Profiler") ("results" "Results") ("claude" "Claude")))
+                    ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("results" "Results") ("claude" "Claude")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))
@@ -116,6 +116,10 @@ narrow panel (the vertical layout) has room for the others.")
   "Show page NAME, adding its tab if it was hidden."
   (gtk:stack-page-set-visible (panel-page panel name) t)
   (gtk:stack-set-visible-child-name (panel-stack panel) name))
+
+(defun panel-add-tab (panel name)
+  "Put page NAME's tab in the switcher, without showing the page."
+  (gtk:stack-page-set-visible (panel-page panel name) t))
 
 (defun panel-hide-page (panel name)
   "Take page NAME's tab away until it is shown again."

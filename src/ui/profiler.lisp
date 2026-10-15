@@ -350,11 +350,12 @@
                 (fill-profiler-page *profiler-page*)
                 (show-profiler-page))))
 
-(defun add-profiler-tab ()
-  "Put the Profiler's tab in the panel without showing the page: a running
-app can be profiled with Profile All Threads."
+(defun add-app-tabs ()
+  "Put the Profiler's and Threads' tabs in the panel without showing them:
+a running app can be profiled, and its threads seen."
   (when *window*
-    (gtk:stack-page-set-visible (panel-page (window-panel *window*) "profiler") t)))
+    (panel-add-tab (window-panel *window*) "profiler")
+    (panel-add-tab (window-panel *window*) "threads")))
 
 (defun show-profiler-page ()
   (panel-show (window-panel *window*) "profiler")

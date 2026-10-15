@@ -342,6 +342,9 @@ unwound: MESSAGE, its TYPE, and FRAMES as (name file line column)."
 
 (defun debugger-enter (connection thread level condition restarts frames &rest more)
   (declare (ignore more))
+  ;; Swank's name for a break Cadre asked for
+  (when (equal (first condition) "Interrupt from Emacs")
+    (setf condition (cons "Interrupted" (rest condition))))
   (let ((new (make-debug-level :connection connection :thread thread :level level
                                :condition condition :restarts restarts
                                :frames (parse-frames frames))))
@@ -359,7 +362,9 @@ unwound: MESSAGE, its TYPE, and FRAMES as (name file line column)."
         (t (clear-stepped-form)
            (focus-debugger)
            (ignore-errors (fetch-gui-backtrace (first *debug-levels*)))
-           (message "Error: ~a" (first condition)))))
+           (if (equal (first condition) "Interrupted")
+               (message "Interrupted: the debugger shows where it was (Continue goes on)")
+               (message "Error: ~a" (first condition))))))
 
 (defun focus-debugger ()
   "Give the first restart the focus, so digits choose restarts."

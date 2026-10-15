@@ -4177,6 +4177,45 @@ and the number of items MODEL itself shows."
   (check "Remove takes it out again" (string= *smoke-asd-text* (uiop:read-file-string (smoke-asd)))
          (uiop:read-file-string (smoke-asd))))
 
+;;; The Threads page
+(section "threads")
+(defun threads-page () cadre-ui::*threads-page*)
+(defun shown-thread-names () (mapcar #'lisp-thread-name (cadre-ui::shown-threads (threads-page))))
+(defun smoke-thread () (find "smoke-worker" (cadre-ui::thp-threads (threads-page)) :key #'lisp-thread-name :test #'string=))
+(connect-lisp)
+
+(then 100
+  (cadre-ui::repl-eval "(sb-thread:make-thread (lambda () (loop (sleep 0.1))) :name \"smoke-worker\")")
+  (call-command 'cadre-ui::show-threads))
+
+(then-when ((smoke-thread) :timeout 20)
+  (check "the Threads page lists the Lisp's threads"
+         (and (member "smoke-worker" (shown-thread-names) :test #'string=)
+              (member "repl-thread" (shown-thread-names) :test #'string=))
+         (shown-thread-names))
+  (check "but not Swank's own" (not (member "reader-thread" (shown-thread-names) :test #'string=)))
+  (gtk:check-button-set-active (cadre-ui::thp-show-swank (threads-page)) t)
+  (check "unless asked" (member "reader-thread" (shown-thread-names) :test #'string=))
+  (gtk:check-button-set-active (cadre-ui::thp-show-swank (threads-page)) nil))
+
+(then 300
+  (screenshot "threads")
+  (cadre-ui::debug-thread (smoke-thread)))
+
+(then-when (cadre-ui::*debug-levels* :timeout 20)
+  (check "Debug opens the debugger in the thread"
+         (eql (lisp-thread-id (smoke-thread)) (cadre-ui::dl-thread (first cadre-ui::*debug-levels*)))
+         (list (lisp-thread-id (smoke-thread)) (cadre-ui::dl-thread (first cadre-ui::*debug-levels*))))
+  (check "saying it was interrupted" (equal "Interrupted" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))))
+  (call-command 'cadre-ui::debugger-continue))
+
+(then-when ((null cadre-ui::*debug-levels*) :timeout 20)
+  (check "and Continue lets it go on" (smoke-thread))
+  (cadre-ui::kill-thread (smoke-thread)))
+
+(then-when ((null (smoke-thread)) :timeout 20)
+  (check "Kill ends it" t))
+
 ;;; The Terminal page (VTE)
 (section "terminal")
 

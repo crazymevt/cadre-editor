@@ -43,6 +43,7 @@
                (:file "trace")
                (:file "stepper")
                (:file "profiler")
+               (:file "threads")
                (:file "scratch")
                (:file "systems")
                (:file "libraries")

@@ -189,3 +189,25 @@ ids). At most LIMIT lines."
             (:running " …")
             (:unwound " ⇏ exited non-locally")
             (:returned (format nil " ⇒ ~:[nothing~;~:*~{~a~^, ~}~]" (trace-call-results call))))))
+
+;;; Threads
+
+(defstruct (lisp-thread (:constructor make-lisp-thread (index id name status)))
+  "A thread of the other Lisp, from swank:list-threads. INDEX is its place in
+that list, which Swank's kill-nth-thread and debug-nth-thread take."
+  index id name status)
+
+(defparameter *swank-thread-names*
+  '("reader-thread" "control-thread" "swank-indentation-cache-thread" "auto-flush-thread" "finalizer")
+  "Threads Swank (or SBCL) runs for itself.")
+
+(defun swank-thread-p (thread)
+  (let ((name (lisp-thread-name thread)))
+    (or (member name *swank-thread-names* :test #'string-equal)
+        (and (> (length name) 6) (string= "Swank " name :end2 6)))))
+
+(defun parse-thread-list (reply)
+  "LISP-THREADs from a reply of swank:list-threads: ((:id :name :status …) (id name status …) …)."
+  (loop for (id name status) in (rest reply)
+        for index from 0
+        collect (make-lisp-thread index id (princ-to-string name) (if (stringp status) status ""))))
