@@ -18,9 +18,17 @@ jobs:
       - name: Install SBCL
         run: brew install sbcl
 
-      - name: Install Racket and the Clojure CLI
+      # Racket's own installer (the full distribution, for check-syntax and
+      # the docs): Homebrew's cask breaks when Racket replaces a download.
+      - name: Install Racket
+        uses: Bogdanp/setup-racket@v1.15
+        with:
+          version: stable
+          distribution: full
+          variant: CS
+
+      - name: Install the Clojure CLI
         run: |
-          brew install --cask racket
           brew install clojure
           racket --version
           clojure -Sdescribe > /dev/null
