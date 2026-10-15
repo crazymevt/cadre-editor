@@ -7,8 +7,9 @@ interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4)
 
 ![Cadre editing Lisp, with Claude explaining the code in the side panel](docs/screenshot.png)
 
-**Status:** milestone M6, with release packages for macOS and Linux ([docs/RELEASING.md](docs/RELEASING.md)). See [docs/DESIGN.md](docs/DESIGN.md)
-for the design and the milestones.
+**Status:** version 1.0.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
+editing Common Lisp, Racket and Clojure ([docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md)).
+See [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestones it was built in:
 
 - **M0:** a window with a file explorer, tabs, an editor with line numbers, a
   panel (Output; REPL and Problems arrive in M2), a status bar, the horizontal
@@ -44,11 +45,28 @@ for the design and the milestones.
 - **M6:** a settings page for every option, color themes (with a light and a
   dark choice), Claude's agent mode, and reloading files changed on disk.
 
+## Installing a release
+
+The [Releases](https://github.com/crazymevt/cadre-editor/releases) page has
+packages with Cadre compiled in:
+
+- **macOS** (Apple silicon, macOS 15 or newer): open the `.dmg` and drag
+  Cadre to Applications. It carries its own GTK. It isn't signed by a
+  registered developer yet, so macOS blocks it the first time: open System
+  Settings → Privacy & Security and choose **Open Anyway** (or run `xattr -dr
+  com.apple.quarantine /Applications/Cadre.app`).
+- **Linux** (x86-64, with GTK 4.14+ and libadwaita 1.5+, as on Ubuntu 24.04
+  or newer): install the `.deb` (`sudo apt install ./cadre_*.deb`), or unpack
+  the `.tar.gz` anywhere and run `bin/cadre`.
+
+For the REPL, install a Lisp (`brew install sbcl`, or `sudo apt install
+sbcl`). The optional tools below (Git, Claude Code, Racket, the Clojure
+CLI, tree-sitter, Prettier) are used when they're installed.
+
 ## Setup
 
-Cadre is developed and tested on macOS (Apple silicon, with Homebrew). The
-gtk4 bindings also support Linux, so Cadre should run there too, but it
-hasn't been tested on Linux yet.
+To run Cadre from source, or build its packages. Cadre is developed on macOS
+(Apple silicon, with Homebrew) and also runs on Linux.
 
 ### Required
 

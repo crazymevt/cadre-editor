@@ -4,7 +4,7 @@
   :description "Cadre: a Common Lisp editor with Emacs's depth and VS Code's interface."
   :author "Jessie Hughart"
   :license "MIT"
-  :version "0.0.1"
+  :version "1.0.0"
   :depends-on ("cadre/core" "gtk4" "gtk4-adwaita")
   :pathname "src/ui/"
   :serial t

@@ -4,7 +4,7 @@
 #
 # Pushing a tag vX.Y.Z (matching :version in cadre.asd) also makes a draft
 # GitHub release with the packages and their checksums, to publish by
-# hand. Started from the Actions tab, it only builds them (as artifacts).
+# hand; its notes are CHANGELOG.md's section for that version. Started from the Actions tab, it only builds them (as artifacts).
 #
 # Signing and notarizing the macOS app needs these repository secrets;
 # without them the app is signed ad hoc and Gatekeeper warns about it.
@@ -171,17 +171,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      # For CHANGELOG.md, whose section for this version is the release notes.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+
       - name: Make a draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
+          # The text under "## VERSION" in CHANGELOG.md, up to the next "## ".
+          awk -v v="$VERSION" '/^## / { p = ($2 == v); next } p' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            notes=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            echo "::warning::CHANGELOG.md has no section for $VERSION; using GitHub's generated notes"
+            notes=(--generate-notes)
+          fi
           cd dist
           cat ./*.sha256 > SHA256SUMS
           files=()
           for file in ./*; do case "$file" in *.sha256) ;; *) files+=("$file") ;; esac; done
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
-            --title "Cadre ${{ needs.version.outputs.version }}" --generate-notes "${files[@]}"
+            --title "Cadre $VERSION" "${notes[@]}" "${files[@]}"

@@ -22,7 +22,8 @@ Prettier and the Claude Code CLI also stay the user's.
 
 ## Making a release
 
-1. Set `:version` in `cadre.asd` (semantic versioning; 0.x until 1.0).
+1. Set `:version` in `cadre.asd` (semantic versioning), and add a
+   `## VERSION` section to `CHANGELOG.md`: it becomes the release's notes.
 2. If Cadre needs newer gtk4 or docset commits or a newer Quicklisp dist,
    update `packaging/versions.env` (push those repositories first).
 3. Commit, tag `vVERSION`, push the tag. `.github/workflows/release.yml`
