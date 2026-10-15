@@ -394,6 +394,7 @@ it when the project has an :entry-point)."
                        (make-explorer directory :on-open-file #'open-file-path))
     (refresh-systems)
     (update-run-button)
+    (claude-follow-folder directory)
     (let ((name (car (last (pathname-directory directory)))))
       (adw:window-title-set-title (window-title win) name)
       (adw:window-title-set-subtitle (window-title win)

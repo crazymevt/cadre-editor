@@ -75,7 +75,9 @@ of proposing every change for review. Open files reload when they change on disk
   (stream-label nil)
   (stream-text "")
   (tools (make-hash-table :test 'equal)) ; tool call id → (expander . result label)
-  (pending-approvals '()))              ; functions that deny the waiting approvals
+  (pending-approvals '())               ; functions that deny the waiting approvals
+  (directory nil)                       ; the folder the conversation runs in (Claude Code keeps it there)
+  (pending-directory nil))              ; a folder opened while Claude was replying, to move to after
 
 (defvar *chat* nil)
 
@@ -616,7 +618,8 @@ Claude meant as its reply: not showing it lost that."
        (when (numberp (event-cost event)) (setf (chat-cost *chat*) (event-cost event)))
        (when (and (event-error event) (plusp (length (event-text event))))
          (chat-note (event-text event) "error"))
-       (chat-update-status)))))
+       (chat-update-status)
+       (claude-reply-ended)))))
 
 (defun claude-exited (process code)
   (when (and *chat* (eq process (chat-process *chat*)))
@@ -626,6 +629,7 @@ Claude meant as its reply: not showing it lost that."
       (unless (cp-stopped process)
         (chat-note (format nil "Claude Code exited (status ~a). See the Output tab for its messages." code) "error")))
     (deny-pending-approvals)
+    (claude-reply-ended)
     (chat-update-status)))
 
 (defun ensure-claude-process ()
@@ -654,7 +658,13 @@ started in the other mode is replaced, resuming the same conversation."
                                                                    *claude-system-prompt*)
                                                 :isolated *claude-isolated*)
                               :program (claude-status-program *claude-status*)
-                              :directory (or (window-project *window*) (user-homedir-pathname))
+                              :directory (setf (chat-directory *chat*)
+                                               ;; A conversation stays in its folder (resuming it
+                                               ;; elsewhere would start afresh); a new one starts
+                                               ;; in the open folder.
+                                               (or (and resume (chat-directory *chat*))
+                                                   (window-project *window*)
+                                                   (user-homedir-pathname)))
                               :environment (list "MCP_TOOL_TIMEOUT=3600000")
                               :deliver #'deliver-to-gui
                               :on-event #'handle-claude-event
@@ -783,6 +793,29 @@ started in the other mode is replaced, resuming the same conversation."
                                     (chat-update-status))
                                   nil)))))
 
+(defun claude-follow-folder (directory)
+  "The open folder became DIRECTORY: Claude works there from now on. A
+conversation in another folder ends (Claude Code keeps it in that folder's
+history) and a new one starts here, as a note in the chat says; while
+Claude is replying, that waits until it finishes."
+  (when (and *chat* (chat-started *chat*) (chat-directory *chat*)
+             (not (equal (namestring (uiop:ensure-directory-pathname directory))
+                         (namestring (uiop:ensure-directory-pathname (chat-directory *chat*))))))
+    (if (chat-busy *chat*)
+        (setf (chat-pending-directory *chat*) directory)
+        (let ((old (chat-directory *chat*)))
+          (claude-new-chat)
+          (setf (chat-directory *chat*) nil)
+          (chat-note (format nil "Claude now works in ~a, the folder you opened: this is a new conversation there. The one in ~a is in Claude Code's history for that folder."
+                             (uiop:native-namestring directory) (uiop:native-namestring old)))))))
+
+(defun claude-reply-ended ()
+  "Move to a folder opened while Claude was replying."
+  (let ((directory (and *chat* (chat-pending-directory *chat*))))
+    (when directory
+      (setf (chat-pending-directory *chat*) nil)
+      (claude-follow-folder directory))))
+
 (define-command claude-new-chat ()
   "Start a new conversation with Claude."
   (when (chat-process *chat*) (stop-claude (chat-process *chat*)))
@@ -791,7 +824,7 @@ started in the other mode is replaced, resuming the same conversation."
   (clrhash (chat-tools *chat*))
   (setf (chat-process *chat*) nil (chat-busy *chat*) nil (chat-started *chat*) nil
         (chat-session-id *chat*) (make-uuid) (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
-        (chat-plan-box *chat*) nil)
+        (chat-plan-box *chat*) nil (chat-directory *chat*) nil (chat-pending-directory *chat*) nil)
   (clear-box (chat-messages *chat*))
   (show-claude-intro)
   (chat-update-status))

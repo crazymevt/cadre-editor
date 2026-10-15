@@ -3174,7 +3174,11 @@ and the number of items MODEL itself shows."
 
 (then 800
   (when *have-clojure*
-    (check "the Clojure REPL is a tab" (eq 'cadre-ui::clojure-repl-mode (buffer-major-mode (current-buffer))))
+    (check "the Clojure REPL is on the REPL page, titled for Clojure"
+           (and (eq 'cadre-ui::clojure-repl-mode (buffer-major-mode (current-buffer)))
+                (equal "clojure" (gtk:stack-get-visible-child-name cadre-ui::*repl-stack*))
+                (equal "REPL · Clojure" (panel-page-title "repl")))
+           (panel-page-title "repl"))
     (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(demo.core/area 6 7)"))
     (call-command 'cadre-ui::repl-return)))
 
@@ -3312,7 +3316,10 @@ and the number of items MODEL itself shows."
 
 (then 800
   (when *have-racket*
-    (check "the Racket REPL is a tab" (eq 'cadre-ui::racket-repl-mode (buffer-major-mode (current-buffer))))
+    (check "the Racket REPL is on the REPL page, titled for Racket"
+           (and (eq 'cadre-ui::racket-repl-mode (buffer-major-mode (current-buffer)))
+                (equal "REPL · Racket" (panel-page-title "repl")))
+           (panel-page-title "repl"))
     (check "the REPL is in the module it ran" (search "demo.rkt>" (buffer-string (current-buffer)))
            (buffer-string (current-buffer)))
     (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(area 6 7)"))
@@ -3323,6 +3330,19 @@ and the number of items MODEL itself shows."
     (check "the Racket REPL evaluates what is typed, in the module" (search "42" (buffer-string (current-buffer)))
            (buffer-string (current-buffer)))
     (screenshot "52-racket-repl")
+    (write-root-file "rkt-demo/switch.lisp" (format nil "(in-package #:cl-user)~%"))
+    (open-file-path (merge-pathnames "rkt-demo/switch.lisp" *root*))))
+
+(then 600
+  (when *have-racket*
+    (check "selecting a Common Lisp tab puts its REPL back on the page"
+           (and (equal "common-lisp" (gtk:stack-get-visible-child-name cadre-ui::*repl-stack*))
+                (equal "REPL" (panel-page-title "repl")))
+           (list (panel-page-title "repl")
+                 (let ((v (cadre-ui::selected-view *window*))) (and v (buffer-name (cadre-ui::view-buffer v))))
+                 (let ((v (cadre-ui::selected-view *window*))) (and v (buffer-major-mode (cadre-ui::view-buffer v))))))
+    (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))
+    (cadre-ui::show-racket-repl)
     (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(car 5)"))
     (call-command 'cadre-ui::repl-return)))
 
@@ -3547,6 +3567,44 @@ and the number of items MODEL itself shows."
            (status-text))
     (call-command 'cadre-ui::clojure-disconnect))
   (cadre-ui::set-window-project *window* *root*))
+
+;; Claude follows Open Folder: a conversation in one folder ends, and the
+;; next starts in the folder opened.
+(then 300
+  (setf (cadre-ui::chat-started cadre-ui::*chat*) t
+        (cadre-ui::chat-directory cadre-ui::*chat*) *root*)
+  (cadre-ui::set-window-project *window* (merge-pathnames "clj-proj/" *root*)))
+
+(then 300
+  (let ((notes (label-texts (cadre-ui::chat-messages cadre-ui::*chat*))))
+    (check "opening another folder starts Claude's next conversation there"
+           (and (not (cadre-ui::chat-started cadre-ui::*chat*))
+                (find-if (lambda (l) (search "Claude now works in" l)) notes))
+           notes))
+  (cadre-ui::set-window-project *window* *root*))
+
+;; A folder of several projects: the page and ▶ follow the current file's.
+(then 500
+  (when (and *have-racket* *have-clojure*)
+    (open-file-path (merge-pathnames "rkt-pkg/main.rkt" *root*))))
+
+(then 800
+  (when (and *have-racket* *have-clojure*)
+    (check "in a folder of projects, the page shows the current file's project"
+           (and (find-if (lambda (l) (search "RACKET PACKAGE" l)) (section-labels))
+                (equal "Run main.rkt (in the Racket REPL)"
+                       (gtk:widget-get-tooltip-text (gethash :run-button cadre-ui::*named-widgets*))))
+           (section-labels))
+    (open-file-path (merge-pathnames "clj-proj/src/proj/core.clj" *root*))))
+
+(then 800
+  (when (and *have-racket* *have-clojure*)
+    (check "and switching to a file in another project switches to it"
+           (and (find-if (lambda (l) (search "CLOJURE PROJECT · clj-proj" l)) (section-labels))
+                (not (find-if (lambda (l) (search "RACKET PACKAGE" l)) (section-labels)))
+                (equal "Run proj.core/-main (in the Clojure REPL)"
+                       (gtk:widget-get-tooltip-text (gethash :run-button cadre-ui::*named-widgets*))))
+           (section-labels))))
 
 ;;; Indentation learned from the Lisp: a macro with &body indents its body by 2
 (section "indentation")

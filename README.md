@@ -302,7 +302,10 @@ Racket package or a Clojure project, the page shows that too:
 Cadre runs the Claude Code CLI (`claude`), so you need it installed and signed
 in: `claude auth login` (with a Claude subscription or a Console account).
 Cadre finds `claude` on your PATH, in `~/.local/bin`, or inside the Claude
-desktop app; set `*claude-program*` to use another.
+desktop app; set `*claude-program*` to use another. Claude works in the open folder,
+so that's where Claude Code keeps its notes and memory for the project.
+Opening another folder moves it: the conversation in the old folder ends (it
+stays in Claude Code's history there) and the next starts in the new one.
 
 To change some code, select it (or just put the cursor in a top-level form),
 press `Ctrl+I` (Emacs `C-c C-a e`, or "Ask Claude to Change…" in the
@@ -619,7 +622,8 @@ Lisp commands work on Clojure code, in the file's namespace:
 - compile a form (errors go to Problems), and load the file
 - describe a symbol, go to its definition, argument hints in the status bar
 - completion, macroexpand, who calls, and interrupt
-- the REPL, a `*clojure-repl*` tab (`C-c C-z`)
+- the REPL (`C-c C-z`), on the panel's REPL page, which shows the REPL of
+  the selected tab's language: Common Lisp's, Clojure's or Racket's
 - errors with their stack on the Debugger page, Run Tests in Namespace
   (failures in Problems), and the Inspector
 - clj-kondo's findings on save when it's installed, and indentation from the
@@ -647,7 +651,7 @@ module and puts the REPL in it, as DrRacket's Run does. Then:
   buffer's text without running it. Saving checks the file the same way:
   unbound identifiers, bad syntax and unused requires go to Problems.
 - `raco make` and `raco test`, with the places they report in Problems
-- the REPL, a `*racket-repl*` tab (`C-c C-z`)
+- the REPL (`C-c C-z`), on the REPL page while a Racket tab is selected
 - Rename Symbol for a binding and its uses in the file, and run-time errors
   with their stack on the Debugger page
 - Scribble files (`.scrbl`) with their @-expressions' text read as prose
@@ -752,6 +756,12 @@ Cadre's. Without VTE, the Terminal tab tells you how to install it.
 
 ### Running the project's program
 
+▶, Build Project and the Project page act on the project of the file you're
+in: the nearest folder above it with an `.asd`, `info.rkt`, `deps.edn`,
+`project.clj` or `bb.edn`, within the open folder. So with a folder of
+several projects open, switching to a file in another project switches them
+to that project.
+
 When a project's `.asd` has an `:entry-point` (as New Lisp Project's
 application kinds write), a **▶** button appears in the header bar. **Run
 App** (the button, `Ctrl+F5`, Emacs `C-x p r`, or the main menu) saves the
@@ -768,11 +778,12 @@ changed), and calls the entry point:
   game's window closes.
 - **A Racket package** (or folder of Racket code) gets ▶ when a top-level
   module has a `main` submodule (`main.rkt` first). It runs in the Racket
-  REPL tab, as Run File does, and the REPL takes the lines it reads.
+  REPL, as Run File does, and the REPL takes the lines it reads.
 - **A Clojure project** gets ▶ when it has a main namespace: `:main` in
   `project.clj`, an alias's `:main-opts ["-m" "app.core"]` in `deps.edn`,
   or a namespace under `src/` that defines `-main`. ▶ starts the REPL if
-  needed, loads the namespace and calls its `-main` in the Clojure REPL tab.
+  needed, loads the namespace and calls its `-main` in the Clojure REPL. If
+  the file doesn't load, its error is in Problems and `-main` isn't called.
   The status bar says what it returned.
 
 While the app runs, the button turns into **■**: **Stop App**
