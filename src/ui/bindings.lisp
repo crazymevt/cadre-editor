@@ -444,12 +444,14 @@
 ;;; SQL (databases.lisp): run the statement at the cursor, or the whole file.
 (bind-keys (mode-profile-keymap 'sql-mode :standard)
   "C-RET" 'db-run-statement
-  "C-S-RET" 'db-run-all-sql)
+  "C-S-RET" 'db-run-all-sql
+  "C-SPC" 'complete-symbol)
 
 (bind-keys (mode-profile-keymap 'sql-mode :emacs)
   "C-c C-c" 'db-run-statement
   "C-c C-b" 'db-run-all-sql
-  "C-c C-d" 'db-choose-connection)
+  "C-c C-d" 'db-choose-connection
+  "C-M-i" 'complete-symbol)
 
 ;;; .http files (api.lisp): send the request at the cursor.
 (bind-keys (mode-profile-keymap 'http-mode :standard)

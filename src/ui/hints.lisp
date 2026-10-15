@@ -420,11 +420,23 @@ none."
          :on-abort (lambda (reason) (declare (ignore reason))
                      (when (and on-none (null local)) (funcall on-none))))))
 
+(defvar *mode-completers* '()
+  "Major mode → a function of a prefix and a buffer returning its completions
+\((name nil nil kind) each), for languages other than the Lisps (SQL).")
+
 (defun start-completion (view &key auto)
   "Show completions for the symbol before VIEW's cursor. AUTO (while typing)
 shows nothing for a single exact match, and stays quiet when there are none."
   (multiple-value-bind (prefix start) (prefix-before-cursor view)
     (cond
+      ((assoc (buffer-major-mode (view-buffer view)) *mode-completers*)
+       (cond ((string= prefix "") (unless auto (editor-error "Nothing to complete")))
+             (t (let ((items (rank-completions
+                              prefix (funcall (cdr (assoc (buffer-major-mode (view-buffer view)) *mode-completers*))
+                                              prefix (view-buffer view)))))
+                  (cond ((null items) (unless auto (message "No completions for ~a" prefix)))
+                        ((and (not auto) (null (rest items))) (replace-prefix view start (first (first items))))
+                        (t (show-completions view start items)))))))
       ((string= prefix "") (unless auto (editor-error "Nothing to complete")))
       (t
        (let* ((buffer (view-buffer view))
@@ -464,6 +476,11 @@ shows nothing for a single exact match, and stays quiet when there are none."
 (defun auto-complete-p (view)
   "Whether completions should appear now, after typing in VIEW."
   (let ((syntax (buffer-sexp-syntax (view-buffer view))))
+    (when (and *auto-complete* (assoc (buffer-major-mode (view-buffer view)) *mode-completers*)
+               (eq view (focused-view *window*)))
+      (return-from auto-complete-p
+        (let ((prefix (prefix-before-cursor view)))
+          (and (>= (length prefix) *auto-complete-min-chars*) (alpha-char-p (char prefix 0))))))
     (and *auto-complete* syntax (eq view (focused-view *window*))
          (multiple-value-bind (prefix) (prefix-before-cursor view)
            (and (>= (length (string-left-trim ":" prefix)) *auto-complete-min-chars*)

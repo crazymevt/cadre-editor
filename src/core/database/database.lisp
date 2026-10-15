@@ -19,7 +19,7 @@
 
 ;;; Connections
 
-(defparameter *database-kinds* '((:sqlite . "SQLite"))
+(defparameter *database-kinds* '((:sqlite . "SQLite") (:postgres . "PostgreSQL"))
   "The kinds of database Cadre can open, and their names.")
 
 (defstruct (db-connection (:conc-name db-connection-))
@@ -28,17 +28,46 @@
   (kind :sqlite)
   (path nil)                            ; a file database's file (relative to the project's folder for a project connection)
   (read-only nil)
-  (scope :global))                      ; :global, or :project for one saved in the project
+  (scope :global)                       ; :global, or :project for one saved in the project
+  ;; A server database's (PostgreSQL); its password is kept apart (DB-PASSWORD).
+  (host nil) (port nil) (database nil) (user nil))
+
+(defun db-connection-server-p (connection)
+  (not (eq (db-connection-kind connection) :sqlite)))
 
 (defun db-connection-plist (connection)
-  (list :id (db-connection-id connection) :name (db-connection-name connection)
-        :kind (db-connection-kind connection) :path (db-connection-path connection)
-        :read-only (db-connection-read-only connection)))
+  (append (list :id (db-connection-id connection) :name (db-connection-name connection)
+                :kind (db-connection-kind connection))
+          (if (db-connection-server-p connection)
+              (list :host (db-connection-host connection) :port (db-connection-port connection)
+                    :database (db-connection-database connection) :user (db-connection-user connection))
+              (list :path (db-connection-path connection)))
+          (list :read-only (db-connection-read-only connection))))
 
 (defun plist-db-connection (plist scope)
-  (destructuring-bind (&key id name kind path read-only &allow-other-keys) plist
+  (destructuring-bind (&key id name kind path read-only host port database user &allow-other-keys) plist
     (make-db-connection :id (or id (make-uuid)) :name (or name "") :kind (or kind :sqlite)
-                        :path path :read-only read-only :scope scope)))
+                        :path path :read-only read-only :scope scope
+                        :host host :port port :database database :user user)))
+
+;;; Passwords: kept apart from the connections (which may be committed with a
+;;; project), in a file only you can read: {"connection id": "password"}.
+
+(defun read-db-password (file id)
+  (let ((json (ignore-errors (parse-json (uiop:read-file-string file)))))
+    (and (jobject-p json) (let ((p (jget json id))) (and (stringp p) p)))))
+
+(defun write-db-password (file id password)
+  "Keep PASSWORD for connection ID in FILE (nil or \"\" forgets it)."
+  (let* ((json (ignore-errors (parse-json (uiop:read-file-string file))))
+         (entries (remove id (and (jobject-p json) (cdr json)) :key #'car :test #'string=)))
+    (when (plusp (length password)) (setf entries (append entries (list (cons id password)))))
+    (ensure-directories-exist file)
+    (ignore-errors (sb-posix:chmod (uiop:native-namestring (uiop:pathname-directory-pathname file)) #o700))
+    (with-open-file (out file :direction :output :if-exists :supersede :external-format :utf-8)
+      (write-string (json-string (cons :object entries)) out))
+    (sb-posix:chmod (uiop:native-namestring file) #o600)
+    file))
 
 (defun read-db-connections (file scope)
   "The connections saved in FILE (none if it doesn't exist), as SCOPE."
@@ -102,7 +131,12 @@ relative to PROJECT."
 (defun db-connection-description (connection)
   (format nil "~a~@[ · ~a~]~:[~; · read-only~]"
           (or (cdr (assoc (db-connection-kind connection) *database-kinds*)) (db-connection-kind connection))
-          (db-connection-path connection) (db-connection-read-only connection)))
+          (if (db-connection-server-p connection)
+              (format nil "~@[~a@~]~a~@[:~a~]/~a" (db-connection-user connection)
+                      (or (db-connection-host connection) "localhost") (db-connection-port connection)
+                      (db-connection-database connection))
+              (db-connection-path connection))
+          (db-connection-read-only connection)))
 
 ;;; What a backend provides
 
@@ -119,19 +153,21 @@ relative to PROJECT."
   (changes 0)                           ; rows inserted, updated or deleted
   (milliseconds 0))
 
-(defgeneric open-database-kind (kind file &key read-only create)
-  (:documentation "Open a database of KIND (:sqlite) at FILE."))
+(defgeneric open-database-kind (kind connection &key project password create)
+  (:documentation "Open CONNECTION, a database of KIND (:sqlite, :postgres)."))
 
-(defmethod open-database-kind ((kind (eql :sqlite)) file &key read-only create)
-  (open-sqlite file :read-only read-only :create create))
+(defmethod open-database-kind ((kind (eql :sqlite)) connection &key project password create)
+  (declare (ignore password))
+  (open-sqlite (or (db-connection-file connection project) (editor-error "Choose the database file"))
+               :read-only (db-connection-read-only connection) :create create))
 
-(defmethod open-database-kind (kind file &key read-only create)
-  (declare (ignore file read-only create))
+(defmethod open-database-kind (kind connection &key project password create)
+  (declare (ignore connection project password create))
   (editor-error "Cadre can't open ~a databases" kind))
 
-(defun open-database (connection &key project create)
-  (open-database-kind (db-connection-kind connection) (db-connection-file connection project)
-                      :read-only (db-connection-read-only connection) :create create))
+(defun open-database (connection &key project password create)
+  (open-database-kind (db-connection-kind connection) connection
+                      :project project :password password :create create))
 
 (defgeneric db-close (db))
 (defgeneric db-open-p (db))
@@ -204,7 +240,7 @@ its rows can't be told apart (a view): then it can't be edited."))
 
 (defun parse-column-filter (text)
   "What a filter typed above a column means, as (OP VALUE): =, !=, <, <=, >,
->= and a value; NULL and !NULL; or else the column contains the text (:like).
+>= and a value; NULL and !NULL; or else the column contains the text, in any case (:like).
 Nil for an empty filter."
   (let ((text (string-trim " " text)))
     (cond ((string= text "") nil)
@@ -224,7 +260,8 @@ Nil for an empty filter."
       (case op
         (:null (values (format nil "~a IS NULL" name) '()))
         (:not-null (values (format nil "~a IS NOT NULL" name) '()))
-        (:like (values (format nil "CAST(~a AS TEXT) LIKE ?" name) (list value)))
+        ;; Any case, in any database (PostgreSQL's LIKE minds it, SQLite's doesn't).
+        (:like (values (format nil "LOWER(CAST(~a AS TEXT)) LIKE LOWER(?)" name) (list value)))
         (t (values (format nil "~a ~a ?" name (string-downcase op)) (list value)))))))
 
 (defun where-sql (filters)
@@ -241,12 +278,14 @@ Nil for an empty filter."
 
 (defun table-select-sql (table &key key filters sort descending limit offset)
   "The SELECT for a page of TABLE: its KEY columns first (when there is a
-key), then every column, with FILTERS, sorted by column SORT. Returns the SQL
-and its parameters."
+key), then every column, with FILTERS, sorted by column SORT (or else by the
+key, so rows keep their places: PostgreSQL's come in no order). Returns the
+SQL and its parameters."
   (multiple-value-bind (where params) (where-sql filters)
     (values (format nil "SELECT ~{~a, ~}* FROM ~a~a~@[ ORDER BY ~a~]~@[ LIMIT ~d~]~@[ OFFSET ~d~]"
                     (mapcar #'key-column-sql key) (quote-sql-identifier table) where
-                    (and sort (format nil "~a~:[~; DESC~]" (quote-sql-identifier sort) descending))
+                    (cond (sort (format nil "~a~:[~; DESC~]" (quote-sql-identifier sort) descending))
+                          (key (format nil "~{~a~^, ~}" (mapcar #'key-column-sql key))))
                     limit (and offset (plusp offset) offset))
             params)))
 

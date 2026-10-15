@@ -11,6 +11,10 @@
 ;;;;   GET {{baseUrl}}/users?page=1
 ;;;;   Authorization: Bearer {{token}}
 ;;;;
+;;;;   ### Log in
+;;;;   # @capture token = $.token                a response value, as {{token}} from then on
+;;;;   POST {{baseUrl}}/login
+;;;;
 ;;;;   ### Add a user
 ;;;;   POST {{baseUrl}}/users
 ;;;;   Content-Type: application/json
@@ -37,7 +41,7 @@
   (url "")
   (headers '())                         ; (name . value) each, in order
   (body "")
-  (options '())                         ; plist: :no-redirect :insecure :timeout
+  (options '())                         ; plist: :no-redirect :insecure :timeout :captures
   (start nil)                           ; where its block is in its file's text
   (end nil))
 
@@ -113,6 +117,12 @@
                                  (setf (getf (http-request-options request) :no-redirect) t))
                                 ((string-equal option "insecure")
                                  (setf (getf (http-request-options request) :insecure) t))
+                                ((string-equal option "capture")
+                                 (multiple-value-bind (m g) (ppcre:scan-to-strings "^([$\\w.-]+)\\s*=\\s*(.+?)\\s*$" value)
+                                   (when m
+                                     (setf (getf (http-request-options request) :captures)
+                                           (append (getf (http-request-options request) :captures)
+                                                   (list (cons (aref g 0) (aref g 1))))))))
                                 ((string-equal option "timeout")
                                  (let ((seconds (ignore-errors (parse-integer value :junk-allowed t))))
                                    (when seconds (setf (getf (http-request-options request) :timeout) seconds))))))))))
@@ -167,7 +177,9 @@
     (let ((options (http-request-options request)))
       (when (getf options :no-redirect) (format out "# @no-redirect~%"))
       (when (getf options :insecure) (format out "# @insecure~%"))
-      (when (getf options :timeout) (format out "# @timeout ~d~%" (getf options :timeout))))
+      (when (getf options :timeout) (format out "# @timeout ~d~%" (getf options :timeout)))
+      (loop for (name . path) in (getf options :captures)
+            do (format out "# @capture ~a = ~a~%" name path)))
     (format out "~a ~a~%" (http-request-method request) (http-request-url request))
     (loop for (name . value) in (http-request-headers request)
           do (format out "~a: ~a~%" name value))
@@ -246,11 +258,13 @@ others: they are put in too."
               (http-request-body copy) (resolve (http-request-body request)))
         (values copy (nreverse missing))))))
 
-(defun http-variable-lookup (&key file-variables environment secrets)
-  "A lookup for RESOLVE-HTTP-REQUEST: the file's variables, then the
-environment's secrets, then the environment's own (each an alist)."
+(defun http-variable-lookup (&key file-variables captured environment secrets)
+  "A lookup for RESOLVE-HTTP-REQUEST: the file's variables, then values
+captured from responses, then the environment's secrets, then the
+environment's own (each an alist)."
   (lambda (name)
     (cdr (or (assoc name file-variables :test #'string=)
+             (assoc name captured :test #'string=)
              (assoc name secrets :test #'string=)
              (assoc name environment :test #'string=)))))
 
@@ -385,6 +399,69 @@ plists (:where :header/:query/:body, :key, :value, :variable — a name for it).
 (defun replace-unique-substring (string old new)
   (let ((at (search old string)))
     (if at (concatenate 'string (subseq string 0 at) new (subseq string (+ at (length old)))) string)))
+
+;;; Capturing values from a response
+
+(defun json-path-value (json path)
+  "The value at PATH in JSON: $ is the whole of it, .key or ['key'] a member,
+[n] an element (from 0). A path without $ is taken to start with $. (token
+is $.token). Returns the value and whether it was found."
+  (let ((i 0) (n (length path)) (value json))
+    (flet ((fail () (return-from json-path-value (values nil nil))))
+      (cond ((and (> n 0) (char= (char path 0) #\$)) (setf i 1))
+            ((and (> n 0) (not (find (char path 0) ".["))) (setf path (concatenate 'string "." path) n (length path))))
+      (loop while (< i n)
+            do (let ((c (char path i)))
+                 (cond ((char= c #\.)
+                        (let ((end (or (position-if (lambda (c) (find c ".[")) path :start (1+ i)) n)))
+                          (unless (jobject-p value) (fail))
+                          (let ((entry (assoc (subseq path (1+ i) end) (cdr value) :test #'string=)))
+                            (unless entry (fail))
+                            (setf value (cdr entry) i end))))
+                       ((char= c #\[)
+                        (let ((close (or (position #\] path :start i) (fail)))
+                              (inside (string-trim " " (subseq path (1+ i) (position #\] path :start i)))))
+                          (cond ((and (plusp (length inside)) (find (char inside 0) "'\""))
+                                 (unless (jobject-p value) (fail))
+                                 (let ((entry (assoc (string-trim "'\"" inside) (cdr value) :test #'string=)))
+                                   (unless entry (fail))
+                                   (setf value (cdr entry))))
+                                (t (let ((index (ignore-errors (parse-integer inside))))
+                                     (unless (and index (vectorp value) (< -1 index (length value))) (fail))
+                                     (setf value (aref value index)))))
+                          (setf i (1+ close))))
+                       (t (fail)))))
+      (values value t))))
+
+(defun capture-text (value)
+  (cond ((stringp value) value)
+        ((eq value t) "true")
+        ((eq value :false) "false")
+        ((eq value :null) "null")
+        ((numberp value) (princ-to-string value))
+        (t (json-string value))))
+
+(defun capture-response-values (response captures)
+  "The values CAPTURES ((name . path) each) take from RESPONSE: a JSON path
+into its body, \"header Name\", or \"status\". Returns the (name . value)
+found and the names that weren't."
+  (let ((json :unparsed) (found '()) (missing '()))
+    (loop for (name . path) in captures
+          do (let ((path (string-trim " " path)))
+               (multiple-value-bind (value ok)
+                   (cond ((string-equal path "status")
+                          (values (princ-to-string (http-response-status response)) t))
+                         ((and (> (length path) 7) (string-equal "header " path :end2 7))
+                          (let ((entry (assoc (string-trim " " (subseq path 7)) (http-response-headers response)
+                                              :test #'string-equal)))
+                            (values (cdr entry) (and entry t))))
+                         (t (when (eq json :unparsed)
+                              (setf json (ignore-errors (parse-json (http-response-body response)))))
+                            (if json (json-path-value json path) (values nil nil))))
+                 (if ok
+                     (push (cons name (capture-text value)) found)
+                     (push name missing)))))
+    (values (nreverse found) (nreverse missing))))
 
 ;;; Query parameters
 

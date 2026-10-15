@@ -12,7 +12,7 @@
   (is equal '(:null) (c:parse-column-filter "NULL"))
   (is equal '(:not-null) (c:parse-column-filter "!null"))
   (multiple-value-bind (sql params) (c:where-sql '(("name" . "bo") ("age" . ">30") ("x" . "")))
-    (is string= " WHERE CAST(\"name\" AS TEXT) LIKE ? AND \"age\" > ?" sql)
+    (is string= " WHERE LOWER(CAST(\"name\" AS TEXT)) LIKE LOWER(?) AND \"age\" > ?" sql)
     (is equal '("%bo%" 30) params)))
 
 (define-test sql-builders :parent cadre-tests
@@ -91,6 +91,7 @@ CREATE INDEX people_age ON people (age);")
                   (true (search "CREATE VIEW" (c:db-create-statement db "adults")))
                   (multiple-value-bind (sql params)
                       (c:table-select-sql "people" :key '("id") :filters '(("age" . ">20")))
+                    (true (search "ORDER BY \"id\"" sql))
                     (let ((result (c:db-run db sql :params params)))
                       (is equal '("id" "id" "name" "age" "photo") (c:db-result-columns result))
                       (is = 1 (length (c:db-result-rows result)))

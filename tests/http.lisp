@@ -114,6 +114,33 @@ line 2")
       (true (search "\"password\": \"{{password}}\"" (c:http-request-body moved)))
       (is equal '() (c:find-literal-secrets moved)))))
 
+(define-test http-captures :parent cadre-tests
+  (let ((json (c:parse-json "{\"token\": \"abc\", \"data\": [{\"id\": 7, \"ok\": true}], \"odd key\": 1}")))
+    (is string= "abc" (c:json-path-value json "$.token"))
+    (is string= "abc" (c:json-path-value json "token"))
+    (is = 7 (c:json-path-value json "$.data[0].id"))
+    (is = 1 (c:json-path-value json "$['odd key']"))
+    (is equal '(nil nil) (multiple-value-list (c:json-path-value json "$.data[3]")))
+    (is equal '(nil nil) (multiple-value-list (c:json-path-value json "$.nope"))))
+  (let ((response (c:make-http-response :status 201 :headers '(("Location" . "/users/9"))
+                                        :body "{\"token\": \"abc\", \"user\": {\"id\": 9, \"admin\": false}}")))
+    (multiple-value-bind (found missing)
+        (c:capture-response-values response '(("token" . "$.token") ("id" . "$.user.id") ("admin" . "$.user.admin")
+                                              ("where" . "header location") ("code" . "status") ("gone" . "$.x")))
+      (is equal '(("token" . "abc") ("id" . "9") ("admin" . "false") ("where" . "/users/9") ("code" . "201")) found)
+      (is equal '("gone") missing)))
+  ;; Captures are kept in the file.
+  (let* ((text "### Log in
+# @capture token = $.token
+# @capture id = $.user.id
+POST https://x.test/login
+")
+         (request (first (c:parse-http-file text))))
+    (is equal '(("token" . "$.token") ("id" . "$.user.id")) (getf (c:http-request-options request) :captures))
+    (is equal (getf (c:http-request-options request) :captures)
+        (getf (c:http-request-options (first (c:parse-http-file (c:render-http-request request)))) :captures)))
+  (is string= "new" (funcall (c:http-variable-lookup :captured '(("token" . "new")) :secrets '(("token" . "old"))) "token")))
+
 (define-test query-parameters :parent cadre-tests
   (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
       (c:url-query-parameters "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"))

@@ -84,10 +84,15 @@
 (defun connection-database (connection)
   (gethash (db-connection-id connection) *open-databases*))
 
+(defun db-passwords-file ()
+  "Where server databases' passwords are kept: outside any project, only you can read it."
+  (merge-pathnames "secrets/database-passwords.json" (config-directory)))
+
 (defun ensure-database (connection)
   "CONNECTION's open database, opening it if need be."
   (or (connection-database connection)
-      (let ((db (open-database connection :project (db-project))))
+      (let ((db (open-database connection :project (db-project)
+                                          :password (read-db-password (db-passwords-file) (db-connection-id connection)))))
         (setf (gethash (db-connection-id connection) *open-databases*) db)
         (refresh-databases-page)
         db)))
@@ -231,6 +236,7 @@
   (sb-thread:with-mutex ((db-lock db)) (db-tables db)))
 
 (defun refresh-databases-page ()
+  (clrhash *db-schema-cache*)
   (when *databases-list*
     (gtk:list-box-remove-all *databases-list*)
     (dolist (connection *db-connections*)
@@ -262,6 +268,18 @@
          (choose (make-instance 'gtk:button :label "Choose…" :valign :center))
          (create-file (make-instance 'gtk:button :label "New…" :valign :center
                                                  :tooltip-text "Make a new, empty database file"))
+         (host (make-instance 'adw:entry-row :title "Host"
+                                             :text (or (and existing (db-connection-host existing)) "localhost")))
+         (port (make-instance 'adw:entry-row :title "Port"
+                                             :text (princ-to-string (or (and existing (db-connection-port existing)) 5432))))
+         (database (make-instance 'adw:entry-row :title "Database"
+                                                 :text (or (and existing (db-connection-database existing)) "postgres")))
+         (user (make-instance 'adw:entry-row :title "User"
+                                             :text (or (and existing (db-connection-user existing)) (uiop:getenv "USER") "")))
+         (password (make-instance 'adw:password-entry-row :title "Password (kept outside the project)"
+                                                          :text (or (and existing (read-db-password (db-passwords-file)
+                                                                                                    (db-connection-id existing)))
+                                                                    "")))
          (read-only (make-instance 'adw:switch-row :title "Read-only"
                                                    :subtitle "Look, but don't change anything"
                                                    :active (and existing (db-connection-read-only existing))))
@@ -281,9 +299,16 @@
     (labels ((text (row) (string-trim " " (gtk:editable-get-text row)))
              (say (format &rest args)
                (gtk:label-set-text note (apply #'format nil format args)))
+             (server-p () (not (eq (combo-choice kind *database-kinds*) :sqlite)))
              (update ()
-               (adw:action-row-set-subtitle location (if file (uiop:native-namestring file) "None chosen"))
-               (gtk:widget-set-sensitive save (and file (plusp (length (text name))))))
+               (let ((server (server-p)))
+                 (gtk:widget-set-visible location (not server))
+                 (dolist (row (list host port database user password)) (gtk:widget-set-visible row server))
+                 (adw:action-row-set-subtitle location (if file (uiop:native-namestring file) "None chosen"))
+                 (gtk:widget-set-sensitive save (and (plusp (length (text name)))
+                                                     (if server
+                                                         (and (plusp (length (text host))) (plusp (length (text database))))
+                                                         file)))))
              (use-file (path)
                (setf file (pathname path))
                (when (string= (text name) "")
@@ -291,10 +316,16 @@
                (update))
              (made ()
                (let ((scope (if (and project (adw:switch-row-get-active in-project)) :project :global)))
-                 (make-db-connection :id (if existing (db-connection-id existing) (make-uuid))
-                                     :name (text name) :kind (combo-choice kind *database-kinds*)
-                                     :path (path-for-connection file scope project)
-                                     :read-only (adw:switch-row-get-active read-only) :scope scope)))
+                 (if (server-p)
+                     (make-db-connection :id (if existing (db-connection-id existing) (make-uuid))
+                                         :name (text name) :kind (combo-choice kind *database-kinds*)
+                                         :host (text host) :port (or (ignore-errors (parse-integer (text port))) 5432)
+                                         :database (text database) :user (let ((u (text user))) (and (plusp (length u)) u))
+                                         :read-only (adw:switch-row-get-active read-only) :scope scope)
+                     (make-db-connection :id (if existing (db-connection-id existing) (make-uuid))
+                                         :name (text name) :kind (combo-choice kind *database-kinds*)
+                                         :path (path-for-connection file scope project)
+                                         :read-only (adw:switch-row-get-active read-only) :scope scope))))
              (folder ()
                (gio:file-new-for-path (uiop:native-namestring (or (and file (uiop:pathname-directory-pathname file))
                                                                   project (user-homedir-pathname)))))
@@ -311,6 +342,9 @@
                      (setf *db-connections* (stable-sort (copy-list *db-connections*) #'string>
                                                          :key (lambda (c) (string (db-connection-scope c)))))
                      (save-db-connections)
+                     (when (server-p)
+                       (write-db-password (db-passwords-file) (db-connection-id connection)
+                                          (gtk:editable-get-text password)))
                      (refresh-databases-page)
                      (adw:dialog-close dialog)
                      (message "~:[Added~;Saved~] ~a" existing (db-connection-name connection)))
@@ -342,23 +376,29 @@
                                       :error (lambda (e) (declare (ignore e)))))))
       (gobject:connect test :clicked
                        (lambda (b) (declare (ignore b))
-                         (if (null file)
+                         (if (and (not (server-p)) (null file))
                              (say "Choose the database file first.")
                              (handler-case
-                                 (let ((db (open-database (made) :project project)))
+                                 (let ((db (open-database (made) :project project :password (gtk:editable-get-text password))))
                                    (unwind-protect
-                                        (say "Connected: ~d table~:p and view~:p (SQLite ~a)."
-                                             (length (db-run-tables db)) (sqlite-version))
+                                        (say "Connected: ~d table~:p and view~:p (~a)."
+                                             (length (db-run-tables db))
+                                             (if (server-p)
+                                                 (let ((v (aref (first (db-result-rows (db-run db "SELECT version()"))) 0)))
+                                                   (subseq v 0 (or (position #\Space v :start (1+ (or (position #\Space v) 0))) (length v))))
+                                                 (format nil "SQLite ~a" (sqlite-version))))
                                      (db-close db)))
                                (editor-error (e) (say "~a" (editor-error-message e)))))))
       (gobject:connect name :changed (lambda (e) (declare (ignore e)) (update)))
+      (dolist (row (list host database)) (gobject:connect row :changed (lambda (e) (declare (ignore e)) (update))))
+      (gobject:connect kind "notify::selected" (lambda (r p) (declare (ignore r p)) (update)))
       (gobject:connect name :entry-activated (lambda (e) (declare (ignore e))
                                                (when (gtk:widget-get-sensitive save) (save-it))))
       (gobject:connect save :clicked (lambda (b) (declare (ignore b)) (save-it)))
       (gobject:connect cancel :clicked (lambda (b) (declare (ignore b)) (adw:dialog-close dialog)))
       (let ((group (make-instance 'adw:preferences-group))
             (options (make-instance 'adw:preferences-group)))
-        (dolist (row (list name kind location)) (adw:preferences-group-add group row))
+        (dolist (row (list name kind location host port database user password)) (adw:preferences-group-add group row))
         (dolist (row (list read-only in-project)) (adw:preferences-group-add options row))
         (let ((header (make-instance 'adw:header-bar :show-end-title-buttons nil :show-start-title-buttons nil))
               (toolbar (make-instance 'adw:toolbar-view)))
@@ -373,13 +413,14 @@
           (adw:dialog-set-child dialog toolbar)))
       (update)
       (setf *db-connection-dialog* (list :dialog dialog :name name :read-only read-only :in-project in-project
+                                         :kind kind :host host :port port :database database :user user :password password
                                          :save save :test test :note note
                                          :use-file #'use-file :save-it #'save-it))
       (adw:dialog-present dialog (window-gtk-window *window*))
       (gtk:widget-grab-focus name))))
 
 (define-command db-add-connection ()
-  "Add a database connection (a SQLite file) to the Databases page."
+  "Add a database connection (a SQLite file, or a PostgreSQL server) to the Databases page."
   (show-sidebar-page *window* "databases" :toggle nil)
   (db-connection-dialog))
 
@@ -390,6 +431,8 @@
   (let ((copy (copy-db-connection connection)))
     (setf (db-connection-id copy) (make-uuid)
           (db-connection-name copy) (format nil "~a copy" (db-connection-name connection)))
+    (let ((password (read-db-password (db-passwords-file) (db-connection-id connection))))
+      (when password (write-db-password (db-passwords-file) (db-connection-id copy) password)))
     (setf *db-connections* (let ((at (1+ (position connection *db-connections*))))
                              (append (subseq *db-connections* 0 at) (list copy) (nthcdr at *db-connections*))))
     (save-db-connections)
@@ -413,6 +456,8 @@
                            (close-db-connection connection :quietly t))
                          (setf *db-connections* (remove connection *db-connections*))
                          (save-db-connections)
+                         (when (db-connection-server-p connection)
+                           (write-db-password (db-passwords-file) (db-connection-id connection) nil))
                          (refresh-databases-page)
                          (message "Deleted the connection ~a" (db-connection-name connection)))
                      (editor-error (e) (message "~a" (editor-error-message e)))))))))
@@ -954,6 +999,57 @@ CONTINUATION with t if they were written."
         (gtk:box-append box (section-heading "DEFINITION"))
         (gtk:box-append box (make-instance 'gtk:label :label create :xalign 0.0 :selectable t :wrap t
                                                       :margin-start 12 :margin-end 12 :css-classes '("monospace")))))))
+
+;;; Completing SQL: table and column names from the buffer's connection,
+;;; when it's open, and keywords
+
+(defparameter *sql-keywords*
+  '("SELECT" "FROM" "WHERE" "INSERT" "INTO" "VALUES" "UPDATE" "SET" "DELETE" "JOIN" "LEFT" "RIGHT" "INNER"
+    "OUTER" "FULL" "CROSS" "ON" "USING" "GROUP" "BY" "ORDER" "HAVING" "LIMIT" "OFFSET" "AS" "AND" "OR" "NOT"
+    "NULL" "IS" "IN" "LIKE" "ILIKE" "BETWEEN" "DISTINCT" "COUNT" "SUM" "AVG" "MIN" "MAX" "COALESCE" "CREATE"
+    "TABLE" "VIEW" "INDEX" "UNIQUE" "DROP" "ALTER" "ADD" "COLUMN" "PRIMARY" "KEY" "FOREIGN" "REFERENCES"
+    "DEFAULT" "CHECK" "CASE" "WHEN" "THEN" "ELSE" "END" "UNION" "ALL" "EXCEPT" "INTERSECT" "EXISTS" "BEGIN"
+    "COMMIT" "ROLLBACK" "RETURNING" "WITH" "ASC" "DESC" "TRUE" "FALSE" "INTEGER" "TEXT" "REAL" "BLOB"
+    "VARCHAR" "BOOLEAN" "DATE" "TIMESTAMP" "SERIAL" "EXPLAIN" "ANALYZE" "PRAGMA" "VACUUM")
+  "The words SQL completion offers besides the tables and columns.")
+
+(defvar *db-schema-cache* (make-hash-table :test 'equal)
+  "Connection id → (tables . table → column names), for completion; cleared when the page refreshes.")
+
+(defun db-schema (connection)
+  "CONNECTION's tables and their columns, if it's open (cached)."
+  (let ((db (connection-database connection)))
+    (when db
+      (or (gethash (db-connection-id connection) *db-schema-cache*)
+          (setf (gethash (db-connection-id connection) *db-schema-cache*)
+                (ignore-errors
+                 (sb-thread:with-mutex ((db-lock db))
+                   (let ((tables (mapcar (lambda (x) (getf x :name)) (db-tables db))))
+                     (cons tables (loop for table in tables
+                                        collect (cons table (mapcar (lambda (c) (getf c :name)) (db-columns db table)))))))))))))
+
+(defun sql-completions (prefix buffer)
+  "Completions for PREFIX in a SQL BUFFER: after table. that table's columns,
+else tables, columns and keywords (in the case PREFIX is typed in)."
+  (let* ((connection (find-db-connection (buffer-local buffer :db-connection)))
+         (schema (and connection (db-schema connection)))
+         (dot (position #\. prefix :from-end t))
+         (lower (and (plusp (length prefix)) (lower-case-p (char prefix (if dot (min (1+ dot) (1- (length prefix))) 0))))))
+    (if dot
+        (let* ((qualifier (subseq prefix 0 dot))
+               (columns (cdr (assoc qualifier (cdr schema) :test #'string-equal))))
+          (mapcar (lambda (c) (list (format nil "~a.~a" qualifier c) nil nil :column)) columns))
+        (let ((seen (make-hash-table :test 'equalp)) (items '()))
+          (flet ((add (name kind)
+                   (unless (gethash name seen)
+                     (setf (gethash name seen) t)
+                     (push (list name nil nil kind) items))))
+            (dolist (table (car schema)) (add table :table))
+            (loop for (nil . columns) in (cdr schema) do (dolist (c columns) (add c :column)))
+            (dolist (k *sql-keywords*) (add (if lower (string-downcase k) k) :keyword)))
+          (nreverse items)))))
+
+(push (cons 'sql-mode 'sql-completions) *mode-completers*)
 
 ;;; SQL consoles and the Results page
 

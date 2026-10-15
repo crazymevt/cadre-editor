@@ -2,10 +2,11 @@
 
 ## Unreleased
 
-- **Databases**: a page of database connections (SQLite for now), saved with
+- **Databases**: a page of database connections (SQLite and PostgreSQL), saved with
   the project or for you alone. Tables open in tabs with a filter above each
   column, sorting and paging, and can be edited (changes are saved in one
-  transaction); a SQL console runs statements into a Results page.
+  transaction); a SQL console runs statements into a Results page. SQL
+  files are highlighted (tree-sitter) and complete table and column names.
 - **API requests**: a front end to curl. Requests are kept in the project's
   `.http` files (REST Client / JetBrains format), with environments in
   `http-client.env.json` and secrets kept outside the project; responses

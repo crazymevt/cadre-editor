@@ -4144,6 +4144,13 @@ CREATE VIEW adults AS SELECT name, age FROM people WHERE age >= 18;")
 
 (then 300
   (check "a SQL console is a SQL buffer" (eq 'sql-mode (buffer-major-mode (current-buffer))))
+  (let ((names (mapcar #'first (cadre-ui::sql-completions "peo" (current-buffer)))))
+    (check "SQL completion offers the connection's tables" (member "people" names :test #'string=) names))
+  (check "a table's columns after its name and a dot"
+         (equal '("people.id" "people.name" "people.age" "people.notes")
+                (mapcar #'first (cadre-ui::sql-completions "people." (current-buffer)))))
+  (check "and keywords in the case typed"
+         (member "select" (mapcar #'first (cadre-ui::sql-completions "sel" (current-buffer))) :test #'string=))
   (insert-at-cursor "select name, age from people order by name;
 select * from nowhere;
 create table later (x)")
@@ -4153,6 +4160,8 @@ create table later (x)")
 (then-when ((search "row" (results-label)) :timeout 10)
   (check "Run Statement runs the statement at the cursor" (search "3 rows" (results-label)) (results-label))
   (check "into the Results page" (string= "results" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "SQL is highlighted (with the SQL grammar installed)"
+         (or (not (tree-sitter-language-installed-p "sql")) (buffer-local (current-buffer) :ts-document)))
   (screenshot "db-06-results")
   (set-cursor 1 3)
   (call-command 'db-run-statement))
@@ -4197,7 +4206,8 @@ create table later (x)")
                      (body (let ((b (make-string length))) (read-sequence b stream) b))
                      (path (second (uiop:split-string line :separator " "))))
                 (multiple-value-bind (type reply)
-                    (cond ((search "/xml" path) (values "application/xml" "<people><person id=\"1\"><name>Ann</name></person></people>"))
+                    (cond ((search "/login" path) (values "application/json" "{\"token\": \"fresh123\", \"user\": {\"id\": 9}}"))
+                          ((search "/xml" path) (values "application/xml" "<people><person id=\"1\"><name>Ann</name></person></people>"))
                           ((search "/html" path) (values "text/html" "<!doctype html><html><body><p>Hi</p></body></html>"))
                           (t (values "application/json"
                                      (json-string (jobj "path" path "auth" (or (cdr (assoc "authorization" headers :test #'string=)) "")
@@ -4222,7 +4232,7 @@ create table later (x)")
     (format o "{\"dev\": {\"baseUrl\": \"http://127.0.0.1:~d\"}}~%" *api-port*))
   (ensure-directories-exist (merge-pathnames "api/" *root*))
   (with-open-file (o (merge-pathnames "api/people.http" *root*) :direction :output :if-exists :supersede)
-    (format o "### Who am I~%POST {{baseUrl}}/me~%Authorization: Bearer {{token}}~%Content-Type: application/json~%~%{\"a\": [1, 2]}~%~%### People as XML~%GET {{baseUrl}}/xml~%~%### A page~%GET {{baseUrl}}/html~%"))
+    (format o "### Who am I~%POST {{baseUrl}}/me~%Authorization: Bearer {{token}}~%Content-Type: application/json~%~%{\"a\": [1, 2]}~%~%### People as XML~%GET {{baseUrl}}/xml~%~%### A page~%GET {{baseUrl}}/html~%~%### Log in~%# @capture token = $.token~%POST {{baseUrl}}/login~%"))
   (setf cadre-ui::*api-environment* "dev")
   (write-http-environments (cadre-ui::api-secrets-file) '(("dev" ("token" . "s3cret"))) :private t)
   (call-command 'show-api))
@@ -4328,7 +4338,122 @@ create table later (x)")
   (let ((url (cadre-ui::ap-url (api-tab-page))))
     (check "removing one takes it out of the URL"
            (string= "{{baseUrl}}/search?page=1&tag=a%26b" (gtk:editable-get-text url)) (gtk:editable-get-text url)))
-  (screenshot "api-03-params"))
+  (screenshot "api-03-params")
+  (let ((file (merge-pathnames "api/people.http" *root*)))
+    (cadre-ui::open-api-request (find "Log in" (parse-http-file (uiop:read-file-string file)) :key #'http-request-name :test #'string=)
+                                :file file :send t)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "a request's captures take values from its response"
+         (string= "fresh123" (cdr (assoc "token" cadre-ui::*api-captured* :test #'string=))) cadre-ui::*api-captured*)
+  (check "and say so" (search "captured {{token}}" (api-status-text)) (api-status-text))
+  (check "the page lists what was captured" (member "{{token}}" (label-texts cadre-ui::*api-list*) :test #'string=))
+  (let ((file (merge-pathnames "api/people.http" *root*)))
+    (cadre-ui::open-api-request (first (parse-http-file (uiop:read-file-string file))) :file file)
+    (cadre-ui::send-api-request (api-tab-page))))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "a captured value wins over the secret of the same name"
+         (search "Bearer fresh123" (buffer-string (api-response-buffer))) (buffer-string (api-response-buffer))))
+
+;;; PostgreSQL on the Databases page, against a server started here (skipped
+;;; where PostgreSQL isn't installed)
+(section "postgres" :needs ("databases"))
+(defvar *pg-bin* (let ((d (probe-file "/opt/homebrew/opt/postgresql@17/bin/"))) (and d (namestring d))))
+(defvar *pg-port* nil)
+(defvar *pg-data* nil)
+
+(then 50
+  (when *pg-bin*
+    (let* ((dir (merge-pathnames "pg/" *root*))
+           (data (merge-pathnames "data/" dir))
+           (pw (merge-pathnames "pw" dir))
+           (socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+      (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
+      (setf *pg-port* (nth-value 1 (sb-bsd-sockets:socket-name socket)))
+      (sb-bsd-sockets:socket-close socket)
+      (ensure-directories-exist dir)
+      (with-open-file (o pw :direction :output) (write-line "secret" o))
+      (uiop:run-program (list (concatenate 'string *pg-bin* "initdb") "-D" (namestring data) "-U" "cadre"
+                              "--auth=scram-sha-256" (format nil "--pwfile=~a" (namestring pw)) "-E" "UTF8" "--no-locale")
+                        :output nil :error-output nil)
+      (sb-posix:setenv "LC_ALL" "en_US.UTF-8" 1)
+      (uiop:run-program (list (concatenate 'string *pg-bin* "pg_ctl") "-D" (namestring data) "-w" "-l" (namestring (merge-pathnames "log" dir))
+                              "-o" (format nil "-p ~d -k /tmp -c listen_addresses=127.0.0.1" *pg-port*) "start")
+                        :output nil :error-output nil)
+      (setf *pg-data* data)
+      (push (lambda () (ignore-errors (uiop:run-program (list (concatenate 'string *pg-bin* "pg_ctl") "-D" (namestring data)
+                                                              "-m" "immediate" "stop")
+                                                        :output nil :error-output nil)))
+            sb-ext:*exit-hooks*)
+      (let ((db (open-postgres :host "127.0.0.1" :port *pg-port* :user "cadre" :password "secret")))
+        (db-run db "CREATE TABLE orders (id serial PRIMARY KEY, item text NOT NULL, qty integer, placed date DEFAULT current_date);
+INSERT INTO orders (item, qty) VALUES ('Apple', 3), ('banana', 12), ('Cherry', 7);")
+        (db-close db))
+      (call-command 'db-add-connection))))
+
+(then 300
+  (when *pg-bin*
+    (let ((dialog cadre-ui::*db-connection-dialog*))
+      (adw:combo-row-set-selected (getf dialog :kind) 1)
+      (check "choosing PostgreSQL asks for a server, not a file"
+             (and (gtk:widget-get-visible (getf dialog :host)) (gtk:widget-get-visible (getf dialog :password))))
+      (gtk:editable-set-text (getf dialog :name) "shop")
+      (gtk:editable-set-text (getf dialog :host) "127.0.0.1")
+      (gtk:editable-set-text (getf dialog :port) (princ-to-string *pg-port*))
+      (gtk:editable-set-text (getf dialog :user) "cadre")
+      (gtk:editable-set-text (getf dialog :password) "secret")
+      (adw:switch-row-set-active (getf dialog :in-project) t)
+      (gtk:widget-activate (getf dialog :test)))))
+
+(then-when ((or (null *pg-bin*) (plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note))))) :timeout 10)
+  (when *pg-bin*
+    (let ((dialog cadre-ui::*db-connection-dialog*))
+      (check "Test Connection reaches the server" (search "PostgreSQL" (gtk:label-get-text (getf dialog :note)))
+             (gtk:label-get-text (getf dialog :note)))
+      (screenshot "pg-01-dialog")
+      (funcall (getf dialog :save-it)))))
+
+(then 300
+  (when *pg-bin*
+    (let ((saved (uiop:read-file-string (project-db-connections-file *root*))))
+      (check "the project's connection file has the server, not the password"
+             (and (search "127.0.0.1" saved) (not (search "secret" saved))) saved))
+    (check "the password is kept outside the project"
+           (string= "secret" (read-db-password (cadre-ui::db-passwords-file)
+                                               (db-connection-id (db-connection-named "shop")))))
+    (cadre-ui::open-db-connection (db-connection-named "shop"))
+    (cadre-ui::open-db-table (db-connection-named "shop") "orders")))
+
+(then 400
+  (when *pg-bin*
+    (let ((page (db-page)))
+      (check "a PostgreSQL table opens in a tab" (= 3 (length (cadre-ui::dbt-rows page))))
+      (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 2 1) "an"))))
+
+(then 700
+  (when *pg-bin*
+    (let ((page (db-page)))
+      (check "a filter finds text in any case" (= 1 (cadre-ui::dbt-total page)) (cadre-ui::dbt-rows page))
+      (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 2 1) "")
+      (cadre-ui::filter-db-table page)
+      (check "rows come in key order" (equal '(1 2 3) (mapcar (lambda (r) (aref r 0)) (cadre-ui::dbt-rows page))))
+      (cadre-ui::set-db-cell page 0 2 "4")
+      (call-command 'save-buffer))))
+
+(then 400
+  (when *pg-bin*
+    (let ((db (open-postgres :host "127.0.0.1" :port *pg-port* :user "cadre" :password "secret")))
+      (check "editing a cell and saving writes it to the server"
+             (equalp '(#(4)) (db-result-rows (db-run db "SELECT qty FROM orders WHERE item = 'Apple'")))
+             (list (db-result-rows (db-run db "SELECT item, qty FROM orders ORDER BY id"))
+                   (gtk:label-get-text (cadre-ui::window-status-message *window*))))
+      (db-close db))
+    (screenshot "pg-02-table")
+    (cadre-ui::close-db-connection (db-connection-named "shop"))
+    ;; Stop the server now: the run deletes its folder on the way out.
+    (uiop:run-program (list (concatenate 'string *pg-bin* "pg_ctl") "-D" (namestring *pg-data*) "-m" "fast" "stop")
+                      :output nil :error-output nil :ignore-error-status t)))
 
 (let* ((only (or (uiop:getenv "ONLY") ""))
        (sections (selected-sections only)))

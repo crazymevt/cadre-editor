@@ -81,7 +81,7 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
 
 (defparameter *tree-sitter-modes*
   '((javascript-mode . "javascript") (typescript-mode . "typescript") (tsx-mode . "tsx") (json-mode . "json")
-    (html-mode . "html") (css-mode . "css") (xml-mode . "xml"))
+    (html-mode . "html") (css-mode . "css") (xml-mode . "xml") (sql-mode . "sql"))
   "Major mode → its tree-sitter language.")
 
 (defun tree-sitter-language-for-mode (mode)
@@ -93,7 +93,9 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
     ("json" :url "https://github.com/tree-sitter/tree-sitter-json" :tag "v0.24.8")
     ("html" :url "https://github.com/tree-sitter/tree-sitter-html" :tag "v0.23.2")
     ("css" :url "https://github.com/tree-sitter/tree-sitter-css" :tag "v0.23.2")
-    ("xml" :url "https://github.com/tree-sitter-grammars/tree-sitter-xml" :tag "v0.7.0"))
+    ("xml" :url "https://github.com/tree-sitter-grammars/tree-sitter-xml" :tag "v0.7.0")
+    ;; Its releases leave out the generated parser.c; the gh-pages branch has it.
+    ("sql" :url "https://github.com/DerekStride/tree-sitter-sql" :tag "gh-pages"))
   "Grammar repositories, by name, at the versions Cadre builds.")
 
 (defparameter *ecma-outline*
@@ -149,7 +151,14 @@ Homebrew's tree-sitter, /usr/local or /usr, whichever has it."
      :block-comment ("<!--" "-->")
      :highlights (("xml" "queries/xml/highlights.scm"))
      ;; The root's children: a whole document's elements would be too many.
-     :outline "(document root: (element (content (element [(STag (Name) @name) (EmptyElemTag (Name) @name)]) @definition.element)))"))
+     :outline "(document root: (element (content (element [(STag (Name) @name) (EmptyElemTag (Name) @name)]) @definition.element)))")
+    (:name "sql" :title "SQL" :repos ("sql") :source "sql/src/"
+     :symbol "tree_sitter_sql" :extensions ("sql") :comment "--" :block-comment ("/*" "*/")
+     :highlights (("sql" "queries/highlights.scm"))
+     :outline "(create_table (object_reference name: (identifier) @name)) @definition.table
+(create_view (object_reference name: (identifier) @name)) @definition.view
+(create_index (identifier) @name) @definition.index
+(create_function (object_reference name: (identifier) @name)) @definition.function"))
   "The languages Cadre knows: their grammar (repositories, source folder in
 the first, the function returning it), file types, :comment (a line comment)
 or :block-comment (start and end), highlight query files (and :precedence,

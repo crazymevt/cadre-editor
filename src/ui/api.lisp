@@ -28,7 +28,7 @@
   (saved-name nil)                      ; its name there, to find it again
   (name "")
   (options '())
-  buffer method url headers-box params-box body-view send-button status response-stack
+  buffer method url headers-box params-box captures-box body-view send-button status response-stack
   (syncing nil)                         ; true while the URL and the Params rows update each other
   response-view                         ; an editor view of the response body, highlighted by its type
   response-headers pretty-button copy-body-button run response loading)
@@ -58,10 +58,15 @@
 
 (defvar *api-environment* nil "The environment chosen on the API page, or nil.")
 
+(defvar *api-captured* '()
+  "Values captured from responses, (name . value) each: {{variables}} until
+Cadre quits (or the folder changes). Never written anywhere.")
+
 (defun api-environments () (read-http-environments (api-environments-file)))
 
 (defun api-lookup (file-variables)
   (http-variable-lookup :file-variables file-variables
+                        :captured *api-captured*
                         :environment (http-environment-variables (api-environments) *api-environment*)
                         :secrets (http-environment-variables (read-http-environments (api-secrets-file))
                                                              *api-environment*)))
@@ -200,6 +205,16 @@
                                 (list (cons "Copy as curl" (lambda () (copy-request-as-curl request :file file)))
                                       (cons "Delete…" (lambda () (delete-api-request file request))))))))
           (gtk:list-box-append *api-list* row)))
+      (when *api-captured*
+        (let ((row (make-instance 'adw:expander-row :title "Captured" :title-lines 1
+                                                    :subtitle (format nil "~d value~:p from responses" (length *api-captured*)))))
+          (adw:expander-row-add-suffix row (flat-button "Clear" "Forget the captured values"
+                                                        (lambda () (setf *api-captured* '()) (refresh-api-page))))
+          (loop for (name . value) in *api-captured*
+                do (adw:expander-row-add-row
+                    row (one-line-row :title (format nil "{{~a}}" name)
+                                      :subtitle (if (> (length value) 12) (format nil "~a…" (subseq value 0 12)) value))))
+          (gtk:list-box-append *api-list* row)))
       (let ((history (api-history)))
         (when history
           (let ((row (make-instance 'adw:expander-row :title "History" :title-lines 1
@@ -220,6 +235,7 @@
   (show-sidebar-page *window* "api" :toggle nil))
 
 (defun api-project-changed ()
+  (setf *api-captured* '())
   (refresh-api-page))
 
 (add-hook '*after-save-hook*
@@ -298,12 +314,12 @@
   (unless (ap-loading page)
     (setf (buffer-modified-p (ap-buffer page)) t)))
 
-(defun pair-row (box name value &key on-change (what "header"))
+(defun pair-row (box name value &key on-change (what "header") (placeholders '("Name" "Value")))
   "A row of BOX: entries for a name and a value, and a button removing it.
 ON-CHANGE is called after either changes, or the row goes."
   (let* ((row (make-instance 'gtk:box :spacing 4))
-         (name-entry (make-instance 'gtk:entry :placeholder-text "Name" :text name :width-chars 18))
-         (value-entry (make-instance 'gtk:entry :placeholder-text "Value" :text value :hexpand t))
+         (name-entry (make-instance 'gtk:entry :placeholder-text (first placeholders) :text name :width-chars 18))
+         (value-entry (make-instance 'gtk:entry :placeholder-text (second placeholders) :text value :hexpand t))
          (remove (make-instance 'gtk:button :icon-name "list-remove-symbolic" :css-classes '("flat")
                                             :tooltip-text (format nil "Remove the ~a" what))))
     (dolist (e (list name-entry value-entry))
@@ -331,6 +347,10 @@ ON-CHANGE is called after either changes, or the row goes."
 
 (defun add-header-row (page &optional (name "") (value ""))
   (pair-row (ap-headers-box page) name value :on-change (lambda () (api-changed page))))
+
+(defun add-capture-row (page &optional (name "") (path ""))
+  (pair-row (ap-captures-box page) name path :what "capture" :on-change (lambda () (api-changed page))
+                                              :placeholders '("Variable" "$.path, header Name, or status")))
 
 ;;; Params: the URL's query, as rows. Each follows the other.
 
@@ -365,7 +385,10 @@ ON-CHANGE is called after either changes, or the row goes."
    :url (string-trim " " (gtk:editable-get-text (ap-url page)))
    :headers (box-pairs (ap-headers-box page))
    :body (string-trim '(#\Newline #\Space #\Tab #\Return) (text-string (gtk:text-view-get-buffer (ap-body-view page))))
-   :options (ap-options page)))
+   :options (let ((captures (box-pairs (ap-captures-box page)))
+                  (options (copy-list (ap-options page))))
+              (remf options :captures)
+              (if captures (list* :captures captures options) options))))
 
 (defun option-switch (page title subtitle option &key invert)
   (let ((row (make-instance 'adw:switch-row :title title :subtitle subtitle
@@ -387,6 +410,7 @@ ON-CHANGE is called after either changes, or the row goes."
                                           :tooltip-text "Send the request (Enter in the URL)"))
          (headers (make-instance 'gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 6))
          (params (make-instance 'gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 6))
+         (captures (make-instance 'gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 4))
          (body (make-instance 'gtk:text-view :monospace t :wrap-mode :word-char :top-margin 6 :left-margin 8
                                              :right-margin 8 :bottom-margin 6 :vexpand t))
          (request-stack (make-instance 'gtk:stack :vexpand t))
@@ -407,7 +431,7 @@ ON-CHANGE is called after either changes, or the row goes."
          (save-body (flat-button "Save…" "Save the response body to a file" (lambda () (save-response-body page))))
          (timeout-row (make-instance 'adw:action-row :title "Timeout" :subtitle "Seconds before giving up")))
     (setf (ap-method page) method (ap-url page) url (ap-send-button page) send (ap-headers-box page) headers
-          (ap-params-box page) params
+          (ap-params-box page) params (ap-captures-box page) captures
           (ap-body-view page) body (ap-status page) status (ap-response-stack page) response-stack
           (ap-response-view page) response-view (ap-response-headers page) response-headers
           (ap-pretty-button page) pretty
@@ -415,6 +439,7 @@ ON-CHANGE is called after either changes, or the row goes."
     (gtk:drop-down-set-selected method (or (position (http-request-method request) *http-methods* :test #'string-equal) 0))
     (loop for (name . value) in (http-request-headers request) do (add-header-row page name value))
     (show-url-params page)
+    (loop for (name . path) in (getf (ap-options page) :captures) do (add-capture-row page name path))
     (gtk:text-buffer-set-text (gtk:text-view-get-buffer body) (http-request-body request) -1)
     (gtk:spin-button-set-value timeout (coerce (or (getf (ap-options page) :timeout) 60) 'double-float))
     (gtk:widget-set-valign timeout :center)
@@ -465,7 +490,19 @@ ON-CHANGE is called after either changes, or the row goes."
                                 (gtk:label :xalign 0.0 :css-classes '("dim-label" "caption")
                                            :label "Set a Content-Type header to match (application/json, …)"))))
                           "body" "Body")
-    (gtk:stack-add-titled request-stack (make-instance 'gtk:scrolled-window :hscrollbar-policy :never :child options)
+    (gtk:stack-add-titled request-stack
+                          (gtk:build
+                            (gtk:scrolled-window :hscrollbar-policy :never
+                              (gtk:box :orientation :vertical
+                                options
+                                (gtk:label :label "CAPTURE FROM THE RESPONSE" :xalign 0.0 :margin-start 12 :margin-top 14
+                                           :css-classes '("caption-heading" "dim-label"))
+                                (gtk:label :xalign 0.0 :margin-start 12 :wrap t :css-classes '("dim-label" "caption")
+                                           :label "Values for {{variables}} in the requests sent after this one, such as a login's token. Kept until Cadre quits, never written to a file.")
+                                captures
+                                (gtk:box :margin-start 8 :margin-top 4 :margin-bottom 8
+                                  (flat-button "Add Capture" "Capture a value from the response"
+                                               (lambda () (gtk:widget-grab-focus (add-capture-row page))))))))
                           "options" "Options")
     (gtk:stack-set-visible-child-name request-stack
                                       (cond ((url-query-parameters (http-request-url request)) "params")
@@ -590,7 +627,20 @@ ON-CHANGE is called after either changes, or the row goes."
                                    (format nil "~{~a~%~}" (mapcar (lambda (h) (format nil "~a: ~a" (car h) (cdr h)))
                                                                  (http-response-headers response)))
                                    -1)
-         (gtk:widget-set-visible (ap-copy-body-button page) t))))
+         (gtk:widget-set-visible (ap-copy-body-button page) t)
+         (capture-from-response page response))))
+
+(defun capture-from-response (page response)
+  "Keep the values the request's captures take from RESPONSE, and say so."
+  (let ((captures (getf (http-request-options (page-request page)) :captures)))
+    (when captures
+      (multiple-value-bind (found missing) (capture-response-values response captures)
+        (loop for (name . value) in found
+              do (setf *api-captured* (cons (cons name value) (remove name *api-captured* :key #'car :test #'string=))))
+        (show-api-status page (format nil "~a~@[ · captured ~{{{~a}}~^, ~}~]~@[ · not found: ~{~a~^, ~}~]"
+                                      (gtk:label-get-text (ap-status page)) (mapcar #'car found) missing)
+                         (if missing "warning" (if (< (http-response-status response) 300) "success" "warning")))
+        (when found (refresh-api-page))))))
 
 (defun make-response-view ()
   "A read-only editor view for response bodies, highlighted like a file of their type."

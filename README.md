@@ -848,12 +848,15 @@ New Project's **GTK application** kind starts a project ready for this:
 ### Databases
 
 The Databases page (the cylinder in the activity bar) keeps your database
-connections. SQLite comes first, through the `libsqlite3` macOS and Linux
-already have; other databases can be added later as backends.
+connections: SQLite files, through the `libsqlite3` macOS and Linux already
+have, and PostgreSQL servers, through cl-postgres (nothing to install; no
+SSL yet).
 
 - **+** adds a connection: a name, the database file (**Choose…** an existing
-  one or **New…** for an empty one), **Read-only**, and **Save with the
-  project**. A project's connections go in its `.cadre/databases.sexp`, with
+  one or **New…** for an empty one) or, for PostgreSQL, the host, port,
+  database, user and password, **Read-only**, and **Save with the
+  project**. A password is never saved with the connection: it's kept in
+  `~/.config/cadre/secrets/database-passwords.json`, which only you can read. A project's connections go in its `.cadre/databases.sexp`, with
   the file's path relative to the project, so you can commit them; the others
   are yours alone, in `~/.config/cadre/databases.sexp`. **Test Connection**
   tries it.
@@ -863,7 +866,8 @@ already have; other databases can be added later as backends.
 - An open connection lists its tables and views. A table opens in a tab, a
   page of rows at a time (`*db-page-size*`, 100), with a filter above each
   column: text the column contains, or `=`, `!=`, `<`, `>`, `<=`, `>=` a value,
-  `NULL` or `!NULL`. Click a column's name to sort by it (again: descending;
+  `NULL` or `!NULL` (text is found in any case). Rows come in key order
+  until you click a column's name to sort by it (again: descending;
   again: unsorted). **Structure** shows the columns, indexes, foreign keys and
   the `CREATE` statement; ⤓ saves the rows shown as CSV.
 - A table with a key can be edited (not a view, or a read-only connection):
@@ -873,7 +877,11 @@ already have; other databases can be added later as backends.
   Changes are colored and held until **Save** (`Ctrl+S`) writes them all in
   one transaction, or **Discard** drops them; closing the tab asks.
 - A **SQL console** is a SQL buffer tied to a connection; any `.sql` file
-  can be too (it asks which the first time). The Results page in the panel
+  can be too (it asks which the first time). SQL is highlighted, with an
+  outline of its tables and views, once its grammar is installed
+  (`M-x install-language-grammar`, SQL). Completion (`Ctrl+Space`, or as
+  you type) offers the open connection's tables, their columns (all, or one
+  table's after `orders.`) and SQL's keywords. The Results page in the panel
   shows the rows (up to `*db-result-limit*`, 500), how long it took, or how
   many rows changed; **Copy as CSV** copies them, and **Stop** stops a slow
   query.
@@ -922,6 +930,12 @@ Content-Type: application/json
   in `~/.config/cadre/secrets/`, readable only by you, so they're never
   committed (🔑 edits them). `{{$guid}}`, `{{$timestamp}}`,
   `{{$isoTimestamp}}` and `{{$randomInt}}` are made up when sent.
+- **Capture** values from a response for the requests after it, such as a
+  login's token: in a request's Options, or in the file as
+  `# @capture token = $.token` (a JSON path like `$.data[0].id`,
+  `header Location`, or `status`). Captured values come before the
+  environment and the secrets, are listed on the page (with Clear), and are
+  kept only until Cadre quits.
 - Copy as curl (in a tab, or a request's ⋮ menu) copies a command line with
   the values filled in; the paste button imports one (as a browser's Copy
   as cURL gives).

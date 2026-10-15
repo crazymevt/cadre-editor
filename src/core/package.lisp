@@ -192,7 +192,9 @@
    #:db-connection-id #:db-connection-name #:db-connection-kind #:db-connection-path
    #:db-connection-read-only #:db-connection-scope #:db-connection-description
    #:read-db-connections #:write-db-connections #:project-db-connections-file #:db-connection-file
-   #:path-for-connection #:open-database #:open-database-kind #:open-sqlite #:sqlite-version
+   #:path-for-connection #:db-connection-host #:db-connection-port #:db-connection-database
+   #:db-connection-user #:db-connection-server-p #:read-db-password #:write-db-password #:open-postgres
+   #:open-database #:open-database-kind #:open-sqlite #:sqlite-version
    #:database #:db-lock #:db-read-only-p #:db-close #:db-open-p #:db-interrupt #:db-execute #:db-run
    #:db-tables #:db-columns #:db-indexes #:db-foreign-keys #:db-create-statement #:db-row-key
    #:db-result #:make-db-result #:db-result-columns #:db-result-rows #:db-result-more
@@ -214,4 +216,5 @@
    #:http-response-headers #:http-response-body #:http-response-size #:http-response-milliseconds
    #:http-response-content-type #:http-response-url #:http-response-error #:response-body-text #:response-body-mode
    #:http-request-curl-command #:shell-words #:parse-curl-command #:base64-string
-   #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters))
+   #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters
+   #:json-path-value #:capture-response-values))
