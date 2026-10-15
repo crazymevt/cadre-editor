@@ -1,6 +1,6 @@
 # Racket and Clojure in Cadre — plan
 
-**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R4 are built.
+**Status:** Draft 2, 2026-10-14; open questions decided (section 6). R0 to R4 are built, and R5 except docs pages and shadow-cljs (3.1).
 
 Cadre is built for Common Lisp. This plan adds Racket and Clojure as
 first-class languages: the same structural editing, and as much of the live
@@ -356,11 +356,52 @@ Each milestone ends with `make test` and the relevant smoke sections passing
 | R2 | **Connection protocol** (built): `language-connection` + `backend-*` generics; Swank ported with no change in behaviour; pages hide what a connection can't do | new `core/backend.lisp`, the UI files that call Swank | L |
 | R3 | **Clojure live** (built; see 2.4 for what moved to R5): pages and commands a connection can't do hidden; status bar, REPL and Debugger pages following the buffer's language; `gtk-thread-source` only for Common Lisp; project detection (`deps.edn`, `project.clj`, `bb.edn`), a New Project template, bencode, nREPL connection, connect and jack-in, REPL, eval/load, completion, arglists, docs; with cider-nrepl: go to definition, xref, stack traces, macroexpand, test page; clj-kondo Problems | new `core/nrepl/`, `ui/repl.lisp`, `ui/debugger.lisp` | L |
 | R4 | **Racket live** (built; see 2.5 for what moved to R5): project detection (`info.rkt`), a New Project template, `vendor/cadre-racket/` back end; start/connect, module-aware REPL, eval/run, completion, docs links, check-syntax definitions/references/unbound identifiers, macroexpand, `raco make`/`raco test` | new `vendor/cadre-racket/main.rkt`, `core/racket/backend.lisp`, `ui/racket.lisp`, `ui/language-repl.lisp` | L |
-| R5 | **Polish:** Clojure stack traces and Racket errortrace on the Debugger page, a Tests page, the inspector, program input, clj-kondo, a Clojure New Project template (done: deps.edn, src, test with the :test alias); docs pages, Claude tools through the back end (done: the language from a `language` argument, the named buffer or the current file; Swank-only tools refuse other languages), `.cljfmt.edn`, `:style/indent`, ClojureScript via shadow-cljs, Scribble, CI jobs that run nREPL and Racket headless | various | M |
+| R5 | **Polish** (built, except docs pages and shadow-cljs; see 3.1): CI runs the Racket and nREPL tests; program input; clj-kondo on save; `.cljfmt.edn` and `:style/indent`; Racket rename; Clojure and Racket errors on the Debugger page; Clojure tests and inspector; Claude tools by language; a Clojure New Project template; Scribble's @-expressions | various | M |
 
 R0 and R1 are useful alone: Racket and Clojure files edit well with no
 process running. R3 and R4 are independent of each other once R2 is done,
 so they can be built in parallel (in separate sessions or branches).
+
+### 3.1 R5 as built (2026-10-14)
+
+- **CI:** the test workflow installs Racket (the full distribution) and the
+  Clojure CLI. `CADRE_REQUIRE_LANGUAGES` makes their live tests fail, not
+  skip, when either is missing.
+- **Program input:** `backend-send-input` answers a program reading its
+  standard input: Swank's `:emacs-return-string` (which the Racket back end
+  takes too) or nREPL's `stdin`. nREPL's `need-input` and the Racket back
+  end's asking input port become `:read-string` events, and the language's
+  REPL tab takes the next line.
+- **clj-kondo:** saving a Clojure file lints its text when
+  `*clj-kondo-command*` is installed; findings go to Problems.
+- **Clojure indentation:** a project's `.cljfmt.edn` (`:indents`,
+  `:extra-indents`, `:block`/`:inner` rules) is read when a file opens.
+  cider-nrepl's state messages bring each macro's `:style/indent`. Both make
+  those heads indent as body forms (cljfmt's `[:block n]` argument count
+  isn't followed yet).
+- **Racket rename:** Rename Symbol in a Racket file renames the binding at
+  the cursor and its uses in the file (check-syntax), in one undo step.
+- **Debugger page:** Clojure and Racket errors arrive already unwound, as
+  post-mortem levels: message, type, stack (frames with a source open it),
+  Dismiss and Ask Claude. Clojure's stack is cider-nrepl's
+  `analyze-last-stacktrace`; Racket's is the exception's context, which
+  without errortrace shows little for tail calls (errortrace isn't used:
+  it slows everything).
+- **Clojure tests and inspector:** Run Tests in Namespace (cider-nrepl's
+  `test-var-query`) puts failures in Problems at their lines, with a summary
+  in the status bar (Problems, not a separate Tests page). Inspect uses
+  cider-nrepl's inspector on the Inspector page.
+- **Scribble:** a Scribble dialect lexes @-expressions, their bodies as
+  prose. Multi-line strings and block comments inside an @-expression's
+  code drop back to plain Racket lexing at the line's end.
+- **Not done:**
+  - **Docs pages.** Racket's docs are HTML, and the HyperSpec tab draws
+    docsets. Describe already shows the signature, contracts and the
+    installed page's link. A Racket docset generator is its own project.
+    A Clojure docset from ClojureDocs needs its license checked first.
+  - **ClojureScript through shadow-cljs.** It needs Node, which this
+    machine doesn't have to test against, and a second connection per
+    project (CIDER's clj and cljs REPLs side by side).
 
 ## 4. Testing
 
