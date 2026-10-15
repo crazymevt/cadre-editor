@@ -1,8 +1,8 @@
 # Databases and API requests — what's next
 
-**Status:** 2026-10-15. The Databases page (SQLite) and the API page (curl,
-`.http` files) are built (`ff4c878`, `873a475`). This is the list of what
-they still lack, in the order it's being built. Tick an item when it lands.
+**Status:** 2026-10-15. The Databases page and the API page are built
+(`ff4c878`, `873a475`), and the first seven items below have landed. The
+rest is for later.
 
 ## Order
 
@@ -17,13 +17,13 @@ they still lack, in the order it's being built. Tick an item when it lands.
 5. [x] **Databases: MySQL / MariaDB.**
 6. [x] **API: form and multipart bodies**, with file uploads (curl `-F`).
 7. [x] **API: cookies**, a jar for each environment.
-8. [ ] **Databases: reopen table tabs and SQL consoles** with the session.
-9. [ ] **Databases: SQL console history**, kept between sessions.
 
 ## Later
 
 ### Databases
 
+- [ ] Reopen table tabs and SQL consoles with the session.
+- [ ] SQL console history, kept between sessions.
 - [ ] SSL for PostgreSQL and MySQL (cl+ssl), and schemas other than the
       current one.
 - [ ] Run a project `.sql` file from the Databases page.
