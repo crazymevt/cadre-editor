@@ -72,6 +72,8 @@ command. Menus and buttons use it."
         (restore-session win))
     (setup-clipboard)
     (gtk:window-present (window-gtk-window win))
+    ;; GTK has read GSK_DEBUG now; the programs Cadre starts don't get it.
+    (glib:idle-add glib:+priority-default+ (lambda () (restore-full-redraws) nil))
     (let ((view (selected-view win)))
       (when view (focus-view view)))
     (unless *keybinding-profile*
@@ -88,6 +90,7 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
   (when init-file (load-init-file))
   (apply-saved-options)
   (start-session-log)
+  (use-full-redraws)
   (unwind-protect
        (adw:run-application *application-id*
                             (lambda (app) (activate app :project project :files files))
@@ -104,6 +107,29 @@ tests. With INIT-FILE nil, init.lisp is not loaded (safe mode)."
       (ignore-errors (stop-clojure *clojure-process*)))
     (when *racket-process*
       (ignore-errors (kill-inferior-lisp *racket-process*)))))
+
+;;; On macOS, GTK repaints only what changed into a window buffer that,
+;;; once the window is maximized (no rounded corners, so drawn in opaque
+;;; tiles) and a dialog has dimmed it, can come back empty: everything but
+;;; the dialog's tiles shows what's behind the window. Repainting every
+;;; frame whole (GSK_DEBUG=full-redraw) avoids it, for a little more work
+;;; on the GPU.
+
+(defvar *gsk-debug-before* :unset "GSK_DEBUG before Cadre set it, to give back.")
+
+(defun use-full-redraws ()
+  (when (macos-p)
+    (let ((old (uiop:getenv "GSK_DEBUG")))
+      (setf *gsk-debug-before* old)
+      (unless (and old (search "full-redraw" old))
+        (sb-posix:setenv "GSK_DEBUG" (if (plusp (length old)) (format nil "~a,full-redraw" old) "full-redraw") 1)))))
+
+(defun restore-full-redraws ()
+  (unless (eq *gsk-debug-before* :unset)
+    (if *gsk-debug-before*
+        (sb-posix:setenv "GSK_DEBUG" *gsk-debug-before* 1)
+        (sb-posix:unsetenv "GSK_DEBUG"))
+    (setf *gsk-debug-before* :unset)))
 
 ;;; The macOS app (scripts/build-app.lisp saves an image that starts here)
 
