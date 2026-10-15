@@ -44,6 +44,16 @@
                     (or (asdf:system-license system) "")
                     (namestring (asdf:system-source-directory system)))))))))
 
+;; qmynd weakly depends on cl+ssl, so it's loaded wherever it's installed,
+;; and the saved core would reopen the OpenSSL it found (Homebrew's, on
+;; macOS) at startup. Cadre connects to MySQL with :ssl nil, so it never
+;; needs it: close the libraries, and the core doesn't look for them.
+(when (find-package "CL+SSL")
+  (dolist (library '("LIBSSL" "LIBCRYPTO"))
+    (let ((name (find-symbol library "CL+SSL")))
+      (when (and name (cffi:foreign-library-loaded-p name))
+        (cffi:close-foreign-library name)))))
+
 (let ((path (merge-pathnames "build/app/cadre.core" (truename "."))))
   (format t "~&Saving ~a~%" path)
   (sb-ext:save-lisp-and-die path
