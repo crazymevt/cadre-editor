@@ -4399,6 +4399,53 @@ create table later (x)")
     (gtk:stack-set-visible-child-name stack "auth"))
   (screenshot "api-04-auth"))
 
+(then 100
+  (cadre-ui::open-api-request (make-http-request :method "POST" :url (format nil "http://127.0.0.1:~d/form" *api-port*))))
+
+(then 300
+  (let ((page (api-tab-page)))
+    (gtk:drop-down-set-selected (cadre-ui::ap-body-mode-dropdown page) 1)
+    (cadre-ui::add-form-row page "name" "Ann Bo")
+    (cadre-ui::add-form-row page "x" "1&2")
+    (check "a Form body is its fields, encoded, with its Content-Type"
+           (and (string= "name=Ann%20Bo&x=1%262" (http-request-body (cadre-ui::page-request page)))
+                (string= "application/x-www-form-urlencoded"
+                         (http-request-header (cadre-ui::page-request page) "Content-Type")))
+           (cadre-ui::page-request page))
+    (cadre-ui::send-api-request page)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "and is sent so" (search "name=Ann%20Bo&x=1%262" (buffer-string (api-response-buffer))))
+  (with-open-file (o (merge-pathnames "api/upload.txt" *root*) :direction :output :if-exists :supersede)
+    (write-string "uploaded text" o))
+  (cadre-ui::open-api-request (make-http-request :name "Upload" :method "POST"
+                                                 :url (format nil "http://127.0.0.1:~d/upload" *api-port*))))
+
+(then 300
+  (let ((page (api-tab-page)))
+    (gtk:drop-down-set-selected (cadre-ui::ap-body-mode-dropdown page) 2)
+    (let ((first-row (first (cadre-ui::box-rows (cadre-ui::ap-multipart-box page)))))
+      (destructuring-bind (name value file) (cdr (assoc first-row (cadre-ui::ap-multipart-rows page)))
+        (declare (ignore file))
+        (gtk:editable-set-text name "note")
+        (gtk:editable-set-text value "hello")))
+    (cadre-ui::add-multipart-row page :name "doc" :value (namestring (merge-pathnames "api/upload.txt" *root*)) :file t)
+    (check "Multipart sets its Content-Type"
+           (search "multipart/form-data" (http-request-header (cadre-ui::page-request page) "Content-Type")))
+    (cadre-ui::send-api-request page)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (let ((echoed (buffer-string (api-response-buffer))))
+    (check "a multipart request sends its text parts and files"
+           (and (search "name=\\\"note\\\"" echoed) (search "hello" echoed)
+                (search "filename=\\\"upload.txt\\\"" echoed) (search "uploaded text" echoed))
+           echoed))
+  (let ((page (api-tab-page)))
+    (setf (cadre-ui::ap-name page) "Upload")
+    (cadre-ui::write-api-request page (merge-pathnames "api/people.http" *root*) (cadre-ui::page-request page)))
+  (let ((text (uiop:read-file-string (merge-pathnames "api/people.http" *root*))))
+    (check "saved, its file is beside the .http file: < ./upload.txt" (search "< ./upload.txt" text) text)))
+
 ;;; PostgreSQL on the Databases page, against a server started here (skipped
 ;;; where PostgreSQL isn't installed)
 (section "postgres" :needs ("databases"))

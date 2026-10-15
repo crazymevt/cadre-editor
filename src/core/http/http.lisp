@@ -556,6 +556,92 @@ found and the names that weren't."
                                     (format nil "~a=~a" (percent-encode-component name) (percent-encode-component value))))))
     (format nil "~a~@[?~{~a~^&~}~]~a" base pairs fragment)))
 
+;;; Bodies: text, a form, multipart parts, or a file
+
+(defun http-request-content-type (request)
+  (string-downcase (or (http-request-header request "Content-Type") "")))
+
+(defun multipart-boundary (request)
+  "The boundary of REQUEST's multipart/form-data body, or nil if it isn't one."
+  (let ((type (or (http-request-header request "Content-Type") "")))
+    (when (search "multipart/form-data" (string-downcase type))
+      (multiple-value-bind (m g) (ppcre:scan-to-strings "(?i)boundary=\"?([^\";]+)\"?" type)
+        (and m (aref g 0))))))
+
+(defun form-body-pairs (body)
+  "An application/x-www-form-urlencoded BODY's (name . value) pairs, decoded."
+  (url-query-parameters (concatenate 'string "?" (string-trim '(#\Space #\Newline #\Return #\Tab) body))))
+
+(defun pairs-form-body (pairs)
+  "PAIRS ((name . value) each) as an application/x-www-form-urlencoded body."
+  (let ((url (url-with-query-parameters "" pairs)))
+    (if (plusp (length url)) (subseq url 1) "")))
+
+(defun body-file-reference (body)
+  "The file a body of the form \"< path\" sends, or nil."
+  (let ((body (string-trim '(#\Space #\Newline #\Return #\Tab) body)))
+    (and (uiop:string-prefix-p "< " body) (not (find #\Newline body))
+         (string-trim " " (subseq body 2)))))
+
+(defun parse-multipart-body (body boundary)
+  "BODY's parts, plists of :name and either :value (text) or :file (a path,
+from a \"< path\" line), with :filename and :type when given."
+  (let ((parts '()) (part nil) (state nil) (content '()))
+    (flet ((finish ()
+             (when part
+               (let* ((text (string-right-trim '(#\Newline #\Return) (format nil "~{~a~^~%~}" (reverse content))))
+                      (file (body-file-reference text)))
+                 ;; Always in this order: :name, :value or :file, :filename, :type.
+                 (push (append (list :name (getf part :name))
+                               (if file (list :file file) (list :value text))
+                               (and (getf part :filename) (list :filename (getf part :filename)))
+                               (and (getf part :type) (list :type (getf part :type))))
+                       parts)))
+             (setf part nil content '())))
+      (dolist (line (uiop:split-string body :separator '(#\Newline)))
+        (let ((line (string-right-trim '(#\Return) line)))
+          (cond ((string= line (format nil "--~a--" boundary)) (finish) (setf state :done))
+                ((string= line (format nil "--~a" boundary)) (finish) (setf part (list :name "") state :headers))
+                ((eq state :headers)
+                 (cond ((string= (string-trim " " line) "") (setf state :content))
+                       ((uiop:string-prefix-p "content-disposition:" (string-downcase line))
+                        (multiple-value-bind (m g) (ppcre:scan-to-strings "(?i)\\bname=\"([^\"]*)\"" line)
+                          (when m (setf (getf part :name) (aref g 0))))
+                        (multiple-value-bind (m g) (ppcre:scan-to-strings "(?i)filename=\"([^\"]*)\"" line)
+                          (when m (setf (getf part :filename) (aref g 0)))))
+                       ((uiop:string-prefix-p "content-type:" (string-downcase line))
+                        (setf (getf part :type) (string-trim " " (subseq line (1+ (position #\: line))))))))
+                ((eq state :content) (push line content)))))
+      (finish))
+    (nreverse parts)))
+
+(defun render-multipart-body (parts boundary)
+  "PARTS (as PARSE-MULTIPART-BODY gives them) as a multipart body with BOUNDARY."
+  (with-output-to-string (out)
+    (dolist (part parts)
+      (format out "--~a~%Content-Disposition: form-data; name=\"~a\"~@[; filename=\"~a\"~]~%~@[Content-Type: ~a~%~]~%~a~%"
+              boundary (getf part :name)
+              (or (getf part :filename) (and (getf part :file) (file-namestring (getf part :file))))
+              (getf part :type)
+              (if (getf part :file) (format nil "< ~a" (getf part :file)) (or (getf part :value) ""))))
+    (format out "--~a--" boundary)))
+
+(defun body-path (path directory)
+  "PATH (from a body's \"< path\") as a full path: relative to DIRECTORY, the .http file's."
+  (let ((path (expand-tilde path)))
+    (loop while (uiop:string-prefix-p "./" path) do (setf path (subseq path 2)))
+    (uiop:native-namestring
+     (if (and directory (not (uiop:absolute-pathname-p (uiop:parse-native-namestring path))))
+         (merge-pathnames (uiop:parse-native-namestring path) (uiop:ensure-directory-pathname directory))
+         (uiop:parse-native-namestring path)))))
+
+(defun relative-body-path (path directory)
+  "PATH as written in a .http file in DIRECTORY: ./name when it's under it."
+  (let ((base (and directory (uiop:native-namestring (uiop:ensure-directory-pathname directory)))))
+    (if (and base (uiop:string-prefix-p base path))
+        (concatenate 'string "./" (subseq path (length base)))
+        path)))
+
 ;;; curl
 
 (defun curl-config-string (string)
@@ -572,9 +658,12 @@ found and the names that weren't."
                (t (write-char c out))))
     (write-char #\" out)))
 
-(defun curl-config (request &key body-file header-file output-file)
-  "The curl config (curl -K) that sends REQUEST (its variables already put in)."
-  (let ((options (http-request-options request)))
+(defun curl-config (request &key body-file header-file output-file directory)
+  "The curl config (curl -K) that sends REQUEST (its variables already put in).
+Files a body names (\"< path\") are relative to DIRECTORY."
+  (let ((options (http-request-options request))
+        (boundary (multipart-boundary request))
+        (file (body-file-reference (http-request-body request))))
     (with-output-to-string (out)
       (flet ((option (name &optional value)
                (if value
@@ -585,9 +674,19 @@ found and the names that weren't."
             (option "head")
             (option "request" (http-request-method request)))
         (loop for (name . value) in (http-request-headers request)
-              do (option "header" (format nil "~a: ~a" name value)))
-        (when (and body-file (plusp (length (http-request-body request))))
-          (option "data-binary" (format nil "@~a" (uiop:native-namestring body-file))))
+              ;; curl writes a multipart body's Content-Type, with its own boundary.
+              unless (and boundary (string-equal name "Content-Type"))
+                do (option "header" (format nil "~a: ~a" name value)))
+        (cond (boundary
+               (dolist (part (parse-multipart-body (http-request-body request) boundary))
+                 (if (getf part :file)
+                     (option "form" (format nil "~a=@\"~a\"~@[;filename=\"~a\"~]~@[;type=~a~]" (getf part :name)
+                                            (body-path (getf part :file) directory)
+                                            (getf part :filename) (getf part :type)))
+                     (option "form-string" (format nil "~a=~a" (getf part :name) (getf part :value))))))
+              (file (option "data-binary" (format nil "@~a" (body-path file directory))))
+              ((and body-file (plusp (length (http-request-body request))))
+               (option "data-binary" (format nil "@~a" (uiop:native-namestring body-file)))))
         (unless (getf options :no-redirect) (option "location"))
         (when (getf options :insecure) (option "insecure"))
         (option "max-time" (princ-to-string (or (getf options :timeout) 60)))
@@ -624,23 +723,26 @@ dump of them: after redirects, there is one block for each response)."
 
 (defstruct (curl-run (:conc-name curl-run-)) process files)
 
-(defun start-curl (request)
-  "Start curl sending REQUEST (variables put in). FINISH-CURL waits for it."
-  (let* ((directory (uiop:ensure-directory-pathname
-                     (merge-pathnames (format nil "cadre-curl-~a/" (subseq (random-token) 0 12)) (uiop:temporary-directory))))
-         (body (merge-pathnames "request-body" directory))
-         (headers (merge-pathnames "response-headers" directory))
-         (output (merge-pathnames "response-body" directory)))
-    (ensure-directories-exist directory)
-    (sb-posix:chmod (uiop:native-namestring directory) #o700)
+(defun start-curl (request &key directory)
+  "Start curl sending REQUEST (variables put in); files its body names are
+relative to DIRECTORY. FINISH-CURL waits for it."
+  (let* ((work (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "cadre-curl-~a/" (subseq (random-token) 0 12)) (uiop:temporary-directory))))
+         (body (merge-pathnames "request-body" work))
+         (headers (merge-pathnames "response-headers" work))
+         (output (merge-pathnames "response-body" work)))
+    (ensure-directories-exist work)
+    (sb-posix:chmod (uiop:native-namestring work) #o700)
     (when (plusp (length (http-request-body request)))
       (with-open-file (out body :direction :output :external-format :utf-8)
         (write-string (http-request-body request) out)))
     (let ((process (uiop:launch-program (list "curl" "--config" "-") :input :stream :output :stream
                                                                       :error-output :stream)))
       (with-open-stream (in (uiop:process-info-input process))
-        (write-string (curl-config request :body-file body :header-file headers :output-file output) in))
-      (make-curl-run :process process :files (list directory headers output)))))
+        (write-string (curl-config request :body-file body :header-file headers :output-file output
+                                           :directory directory)
+                      in))
+      (make-curl-run :process process :files (list work headers output)))))
 
 (defun finish-curl (run)
   "Wait for RUN's curl; its HTTP-RESPONSE."
@@ -675,9 +777,9 @@ dump of them: after redirects, there is one block for each response)."
 (defun cancel-curl (run)
   (ignore-errors (uiop:terminate-process (curl-run-process run))))
 
-(defun send-http-request (request)
+(defun send-http-request (request &key directory)
   "Send REQUEST (variables put in) and wait for its response."
-  (finish-curl (start-curl request)))
+  (finish-curl (start-curl request :directory directory)))
 
 ;;; Copying and pasting curl command lines
 
@@ -686,8 +788,8 @@ dump of them: after redirects, there is one block for each response)."
       string
       (format nil "'~a'" (ppcre:regex-replace-all "'" string "'\\\\''"))))
 
-(defun http-request-curl-command (request)
-  "A curl command line that sends REQUEST."
+(defun http-request-curl-command (request &key directory)
+  "A curl command line that sends REQUEST (files its body names relative to DIRECTORY)."
   (let ((options (http-request-options request)))
     (with-output-to-string (out)
       (format out "curl")
@@ -695,10 +797,21 @@ dump of them: after redirects, there is one block for each response)."
             ((not (string= (http-request-method request) "GET"))
              (format out " -X ~a" (http-request-method request))))
       (format out " ~a" (shell-quote (http-request-url request)))
-      (loop for (name . value) in (http-request-headers request)
-            do (format out " \\~%  -H ~a" (shell-quote (format nil "~a: ~a" name value))))
-      (when (plusp (length (http-request-body request)))
-        (format out " \\~%  --data-raw ~a" (shell-quote (http-request-body request))))
+      (let ((boundary (multipart-boundary request))
+            (file (body-file-reference (http-request-body request))))
+        (loop for (name . value) in (http-request-headers request)
+              unless (and boundary (string-equal name "Content-Type"))
+                do (format out " \\~%  -H ~a" (shell-quote (format nil "~a: ~a" name value))))
+        (cond (boundary
+               (dolist (part (parse-multipart-body (http-request-body request) boundary))
+                 (format out " \\~%  -F ~a"
+                         (shell-quote (if (getf part :file)
+                                          (format nil "~a=@~a~@[;type=~a~]" (getf part :name)
+                                                  (body-path (getf part :file) directory) (getf part :type))
+                                          (format nil "~a=~a" (getf part :name) (getf part :value)))))))
+              (file (format out " \\~%  --data-binary ~a" (shell-quote (format nil "@~a" (body-path file directory)))))
+              ((plusp (length (http-request-body request)))
+               (format out " \\~%  --data-raw ~a" (shell-quote (http-request-body request))))))
       (unless (getf options :no-redirect) (format out " -L"))
       (when (getf options :insecure) (format out " -k")))))
 
@@ -741,7 +854,7 @@ backslash-newline continuing the line."
   (let ((words (shell-words (string-trim '(#\Space #\Newline #\Tab #\Return) text))))
     (when (and words (string= (car (last (uiop:split-string (first words) :separator "/"))) "curl"))
       (let ((request (make-http-request))
-            (method nil) (data '()) (get nil) (head nil)
+            (method nil) (data '()) (get nil) (head nil) (forms '())
             (words (rest words)))
         (flet ((header (name value)
                  (setf (http-request-headers request)
@@ -757,11 +870,27 @@ backslash-newline continuing the line."
                                 (when colon (header (string-trim " " (subseq h 0 colon)) (string-trim " " (subseq h (1+ colon)))))))
                              ((member word '("-d" "--data" "--data-raw" "--data-binary" "--data-ascii" "--data-urlencode")
                                       :test #'string=)
-                              (push (value) data))
+                              ;; @file: curl sends the file; a body of "< file" does.
+                              (let ((v (value)))
+                                (push (if (and (uiop:string-prefix-p "@" v) (string/= word "--data-raw"))
+                                          (format nil "< ~a" (subseq v 1))
+                                          v)
+                                      data)))
                              ((string= word "--json")
                               (push (value) data)
                               (unless (http-request-header request "Content-Type") (header "Content-Type" "application/json"))
                               (unless (http-request-header request "Accept") (header "Accept" "application/json")))
+                             ((member word '("-F" "--form" "--form-string") :test #'string=)
+                              (let* ((field (value)) (equals (position #\= field))
+                                     (name (if equals (subseq field 0 equals) field))
+                                     (value (if equals (subseq field (1+ equals)) "")))
+                                (push (if (and (uiop:string-prefix-p "@" value) (string/= word "--form-string"))
+                                          (let ((semi (position #\; value)))
+                                            (list* :name name :file (subseq value 1 semi)
+                                                   (multiple-value-bind (m g) (ppcre:scan-to-strings ";type=([^;]+)" value)
+                                                     (and m (list :type (aref g 0))))))
+                                          (list :name name :value value))
+                                      forms)))
                              ((member word '("-u" "--user") :test #'string=)
                               (header "Authorization" (format nil "Basic ~a" (base64-string (value)))))
                              ((member word '("-A" "--user-agent") :test #'string=) (header "User-Agent" (value)))
@@ -777,13 +906,16 @@ backslash-newline continuing the line."
                                 (when s (setf (getf (http-request-options request) :timeout) s))))
                              ;; Options that take a value Cadre doesn't use.
                              ((member word '("-o" "--output" "-w" "--write-out" "-x" "--proxy" "-c" "--cookie-jar"
-                                             "--connect-timeout" "-D" "--dump-header" "-F" "--form" "--retry"
+                                             "--connect-timeout" "-D" "--dump-header" "--retry"
                                              "--cacert" "--cert" "--key" "-E")
                                       :test #'string=)
                               (pop words))
                              ((uiop:string-prefix-p "-" word))
                              ((string= (http-request-url request) "") (setf (http-request-url request) word))))))
           (setf data (reverse data))
+          (when forms
+            (setf (http-request-body request) (render-multipart-body (reverse forms) "CadreBoundary"))
+            (header "Content-Type" "multipart/form-data; boundary=CadreBoundary"))
           (cond (get
                  (when data
                    (setf (http-request-url request)
@@ -794,7 +926,7 @@ backslash-newline continuing the line."
                                   (member (char (string-left-trim " " (http-request-body request)) 0) '(#\{ #\[)))
                         (header "Content-Type" "application/x-www-form-urlencoded"))))
           (setf (http-request-method request)
-                (cond (method) (head "HEAD") ((and data (not get)) "POST") (t "GET")))
+                (cond (method) (head "HEAD") ((and (or data forms) (not get)) "POST") (t "GET")))
           (when (and (not (string= (http-request-url request) ""))
                      (not (string= (http-request-body request) ""))
                      (char= (char (string-left-trim " " (http-request-body request)) 0) #\{)

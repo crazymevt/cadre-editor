@@ -15,7 +15,7 @@ they still lack, in the order it's being built. Tick an item when it lands.
 4. [x] **API: an Auth tab**: Bearer, Basic and API key, writing the header
    with the secret in a `{{variable}}`.
 5. [x] **Databases: MySQL / MariaDB.**
-6. [ ] **API: form and multipart bodies**, with file uploads (curl `-F`).
+6. [x] **API: form and multipart bodies**, with file uploads (curl `-F`).
 7. [ ] **API: cookies**, a jar for each environment.
 8. [ ] **Databases: reopen table tabs and SQL consoles** with the session.
 9. [ ] **Databases: SQL console history**, kept between sessions.

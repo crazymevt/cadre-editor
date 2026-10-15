@@ -32,7 +32,10 @@
   (syncing nil)                         ; true while the URL and the Params rows update each other
   response-view                         ; an editor view of the response body, highlighted by its type
   response-headers pretty-button copy-body-button run response loading
-  (auth '()))                           ; the Auth tab's widgets, a plist
+  (auth '())                            ; the Auth tab's widgets, a plist
+  (body-mode :text)                     ; :text, :form or :multipart
+  body-mode-dropdown body-stack form-box multipart-box
+  (multipart-rows '()))                 ; row → (name-entry value-entry file-toggle)
 
 ;;; Where things are kept
 
@@ -449,6 +452,156 @@ ON-CHANGE is called after either changes, or the row goes."
              (message "~@[Kept {{~a}} in the secrets; ~]the request sends ~a: ~a"
                       (and value variable) (car header) (cdr header)))))))
 
+;;; The body: text, a form's fields, or multipart parts (text or files)
+
+(defparameter *body-modes* '((:text . "Text") (:form . "Form") (:multipart . "Multipart")))
+(defparameter *multipart-boundary* "CadreBoundary")
+
+(defun page-boundary (page)
+  (or (multipart-boundary (make-http-request :headers (box-pairs (ap-headers-box page)))) *multipart-boundary*))
+
+(defun multipart-parts (page)
+  (loop for row in (box-rows (ap-multipart-box page))
+        for (name-entry value-entry file) = (cdr (assoc row (ap-multipart-rows page)))
+        for name = (and name-entry (string-trim " " (gtk:editable-get-text name-entry)))
+        when (plusp (length name))
+          collect (if (gtk:toggle-button-get-active file)
+                      (list :name name :file (gtk:editable-get-text value-entry))
+                      (list :name name :value (gtk:editable-get-text value-entry)))))
+
+(defun page-body (page)
+  "The body PAGE's Body tab describes, as the .http file has it."
+  (ecase (ap-body-mode page)
+    (:text (string-trim '(#\Newline #\Space #\Tab #\Return) (text-string (gtk:text-view-get-buffer (ap-body-view page)))))
+    (:form (pairs-form-body (box-pairs (ap-form-box page))))
+    (:multipart (let ((parts (multipart-parts page)))
+                  (if parts (render-multipart-body parts (page-boundary page)) "")))))
+
+(defun add-form-row (page &optional (name "") (value ""))
+  (pair-row (ap-form-box page) name value :what "field" :on-change (lambda () (api-changed page))))
+
+(defun add-multipart-row (page &key (name "") (value "") file)
+  "A row of the Multipart body: a name, and a value or (with File on) a file's path."
+  (let* ((box (ap-multipart-box page))
+         (row (make-instance 'gtk:box :spacing 4))
+         (name-entry (make-instance 'gtk:entry :placeholder-text "Name" :text name :width-chars 14))
+         (value-entry (make-instance 'gtk:entry :placeholder-text (if file "File" "Value") :text value :hexpand t))
+         (toggle (make-instance 'gtk:toggle-button :label "File" :active (and file t) :css-classes '("flat")
+                                                   :tooltip-text "Send a file (its path) instead of the text"))
+         (choose (make-instance 'gtk:button :label "Choose…" :css-classes '("flat")))
+         (remove (make-instance 'gtk:button :icon-name "list-remove-symbolic" :css-classes '("flat")
+                                            :tooltip-text "Remove the part")))
+    (dolist (e (list name-entry value-entry))
+      (gobject:connect e :changed (lambda (e) (declare (ignore e)) (api-changed page))))
+    (gobject:connect toggle :toggled (lambda (b)
+                                       (gtk:entry-set-placeholder-text value-entry (if (gtk:toggle-button-get-active b) "File" "Value"))
+                                       (api-changed page)))
+    (gobject:connect choose :clicked
+                     (lambda (b) (declare (ignore b))
+                       (gio:async (gtk:file-dialog-open (gtk:file-dialog-new) (window-gtk-window *window*))
+                                  (lambda (f)
+                                    (gtk:editable-set-text value-entry (gio:file-get-path f))
+                                    (gtk:toggle-button-set-active toggle t)
+                                    (when (string= (string-trim " " (gtk:editable-get-text name-entry)) "")
+                                      (gtk:editable-set-text name-entry "file")))
+                                  :error (lambda (e) (declare (ignore e))))))
+    (gobject:connect remove :clicked (lambda (b) (declare (ignore b))
+                                       (gtk:box-remove box row)
+                                       (setf (ap-multipart-rows page) (remove row (ap-multipart-rows page) :key #'car))
+                                       (api-changed page)))
+    (dolist (w (list name-entry value-entry toggle choose remove)) (gtk:box-append row w))
+    (gtk:box-append box row)
+    (push (list row name-entry value-entry toggle) (ap-multipart-rows page))
+    row))
+
+(defun show-body (page body mode)
+  "Fill the Body tab's MODE (:text, :form or :multipart) from BODY."
+  (ecase mode
+    (:text (gtk:text-buffer-set-text (gtk:text-view-get-buffer (ap-body-view page)) body -1))
+    (:form (dolist (row (box-rows (ap-form-box page))) (gtk:box-remove (ap-form-box page) row))
+     (loop for (name . value) in (form-body-pairs body) do (add-form-row page name value)))
+    (:multipart (dolist (row (box-rows (ap-multipart-box page))) (gtk:box-remove (ap-multipart-box page) row))
+     (setf (ap-multipart-rows page) '())
+     (dolist (part (parse-multipart-body body (page-boundary page)))
+       (add-multipart-row page :name (getf part :name) :value (or (getf part :file) (getf part :value) "")
+                               :file (getf part :file))))))
+
+(defun request-body-mode (request)
+  (let ((type (http-request-content-type request)))
+    (cond ((search "multipart/form-data" type) :multipart)
+          ((search "application/x-www-form-urlencoded" type) :form)
+          (t :text))))
+
+(defun set-body-mode (page mode)
+  "Show the body as MODE, carrying what it holds over, and set the Content-Type to match."
+  (let ((old (ap-body-mode page)))
+    (unless (eq old mode)
+      (let ((body (page-body page)))
+        (setf (ap-body-mode page) mode)
+        (case mode
+          (:form (set-page-header page "Content-Type" "application/x-www-form-urlencoded")
+           (show-body page (if (eq old :text) body "") :form))
+          (:multipart (set-page-header page "Content-Type" (format nil "multipart/form-data; boundary=~a" *multipart-boundary*))
+           (show-body page (if (eq old :text) "" body) :multipart)
+           (unless (box-rows (ap-multipart-box page)) (add-multipart-row page)))
+          (:text (show-body page body :text)))
+        (gtk:stack-set-visible-child-name (ap-body-stack page) (string-downcase mode))
+        (api-changed page)))))
+
+(defun make-body-widget (page request body-view)
+  (let* ((mode (request-body-mode request))
+         (dropdown (gtk:drop-down-new-from-strings (mapcar #'cdr *body-modes*)))
+         (stack (make-instance 'gtk:stack :vexpand t))
+         (form (make-instance 'gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 6))
+         (multipart (make-instance 'gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 6)))
+    (setf (ap-body-mode-dropdown page) dropdown (ap-body-stack page) stack
+          (ap-form-box page) form (ap-multipart-box page) multipart (ap-body-mode page) mode)
+    (gtk:stack-add-named stack
+                         (gtk:build
+                           (gtk:box :orientation :vertical
+                             (gtk:scrolled-window :vexpand t body-view)
+                             (gtk:box :margin-start 8 :margin-bottom 4 :spacing 6
+                               (flat-button "Format JSON" "Lay the body out as JSON"
+                                            (lambda () (let ((b (gtk:text-view-get-buffer body-view)))
+                                                         (handler-case (progn (parse-json (text-string b))
+                                                                              (gtk:text-buffer-set-text b (format-json (text-string b)) -1))
+                                                           (error () (message "The body isn't JSON"))))))
+                               (gtk:label :xalign 0.0 :css-classes '("dim-label" "caption")
+                                          :label "Set a Content-Type header to match (application/json, …); < ./file sends a file"))))
+                         "text")
+    (gtk:stack-add-named stack
+                         (gtk:build
+                           (gtk:scrolled-window :hscrollbar-policy :never
+                             (gtk:box :orientation :vertical
+                               form
+                               (gtk:box :margin-start 8 :margin-top 4
+                                 (flat-button "Add Field" "Add a form field"
+                                              (lambda () (gtk:widget-grab-focus (add-form-row page))))))))
+                         "form")
+    (gtk:stack-add-named stack
+                         (gtk:build
+                           (gtk:scrolled-window :hscrollbar-policy :never
+                             (gtk:box :orientation :vertical
+                               multipart
+                               (gtk:box :margin-start 8 :margin-top 4 :spacing 6
+                                 (flat-button "Add Part" "Add a text or file part"
+                                              (lambda () (add-multipart-row page)))
+                                 (gtk:label :xalign 0.0 :css-classes '("dim-label" "caption")
+                                            :label "Files are sent as they are when the request goes, read from where they are")))))
+                         "multipart")
+    (unless (eq mode :text) (show-body page (http-request-body request) mode))
+    (gtk:drop-down-set-selected dropdown (position mode *body-modes* :key #'car))
+    (gtk:stack-set-visible-child-name stack (string-downcase mode))
+    (gobject:connect dropdown "notify::selected"
+                     (lambda (d p) (declare (ignore p))
+                       (set-body-mode page (car (nth (gtk:drop-down-get-selected d) *body-modes*)))))
+    (gtk:build
+      (gtk:box :orientation :vertical
+        (gtk:box :margin-start 8 :margin-top 6 :spacing 6
+          (gtk:label :label "Body" :css-classes '("dim-label"))
+          dropdown)
+        stack))))
+
 ;;; Params: the URL's query, as rows. Each follows the other.
 
 (defun add-param-row (page &optional (name "") (value ""))
@@ -481,7 +634,7 @@ ON-CHANGE is called after either changes, or the row goes."
    :method (nth (gtk:drop-down-get-selected (ap-method page)) *http-methods*)
    :url (string-trim " " (gtk:editable-get-text (ap-url page)))
    :headers (box-pairs (ap-headers-box page))
-   :body (string-trim '(#\Newline #\Space #\Tab #\Return) (text-string (gtk:text-view-get-buffer (ap-body-view page))))
+   :body (page-body page)
    :options (let ((captures (box-pairs (ap-captures-box page)))
                   (options (copy-list (ap-options page))))
               (remf options :captures)
@@ -537,7 +690,8 @@ ON-CHANGE is called after either changes, or the row goes."
     (loop for (name . value) in (http-request-headers request) do (add-header-row page name value))
     (show-url-params page)
     (loop for (name . path) in (getf (ap-options page) :captures) do (add-capture-row page name path))
-    (gtk:text-buffer-set-text (gtk:text-view-get-buffer body) (http-request-body request) -1)
+    (when (eq (request-body-mode request) :text)
+      (gtk:text-buffer-set-text (gtk:text-view-get-buffer body) (http-request-body request) -1))
     (gtk:spin-button-set-value timeout (coerce (or (getf (ap-options page) :timeout) 60) 'double-float))
     (gtk:widget-set-valign timeout :center)
     (adw:action-row-add-suffix timeout-row timeout)
@@ -574,19 +728,7 @@ ON-CHANGE is called after either changes, or the row goes."
                                 (gtk:box :margin-start 8 :margin-top 4
                                   (flat-button "Add Header" "Add a header" (lambda () (add-header-row page) (api-changed page)))))))
                           "headers" "Headers")
-    (gtk:stack-add-titled request-stack
-                          (gtk:build
-                            (gtk:box :orientation :vertical
-                              (gtk:scrolled-window :vexpand t body)
-                              (gtk:box :margin-start 8 :margin-bottom 4 :spacing 6
-                                (flat-button "Format JSON" "Lay the body out as JSON"
-                                             (lambda () (let ((b (gtk:text-view-get-buffer body)))
-                                                          (handler-case (progn (parse-json (text-string b))
-                                                                               (gtk:text-buffer-set-text b (format-json (text-string b)) -1))
-                                                            (error () (message "The body isn't JSON"))))))
-                                (gtk:label :xalign 0.0 :css-classes '("dim-label" "caption")
-                                           :label "Set a Content-Type header to match (application/json, …)"))))
-                          "body" "Body")
+    (gtk:stack-add-titled request-stack (make-body-widget page request body) "body" "Body")
     (gtk:stack-add-titled request-stack (make-auth-widget page request) "auth" "Auth")
     (gtk:stack-add-titled request-stack
                           (gtk:build
@@ -659,6 +801,10 @@ ON-CHANGE is called after either changes, or the row goes."
                     missing (rest missing) *api-environment*))
     resolved))
 
+(defun page-directory (page)
+  "Where files the body names (< ./file) are: beside its .http file, else the project's folder."
+  (or (and (ap-file page) (uiop:pathname-directory-pathname (ap-file page))) (api-project)))
+
 (defun send-or-cancel (page)
   (handler-case (if (ap-run page) (cancel-api-request page) (send-api-request page))
     (editor-error (e) (show-api-status page (editor-error-message e) "error"))))
@@ -673,7 +819,7 @@ ON-CHANGE is called after either changes, or the row goes."
   (let* ((request (page-request page))
          (resolved (progn (when (string= (http-request-url request) "") (editor-error "Type the URL first"))
                           (resolved-request request :file (ap-file page))))
-         (run (start-curl resolved)))
+         (run (start-curl resolved :directory (page-directory page))))
     (setf (ap-run page) run)
     (gtk:button-set-label (ap-send-button page) "Cancel")
     (gtk:widget-remove-css-class (ap-send-button page) "suggested-action")
@@ -919,13 +1065,32 @@ ON-CHANGE is called after either changes, or the row goes."
          (gtk:editable-set-text (ap-url page) (http-request-url request))
          (dolist (row (box-rows (ap-headers-box page))) (gtk:box-remove (ap-headers-box page) row))
          (loop for (name . value) in (http-request-headers request) do (add-header-row page name value))
-         (gtk:text-buffer-set-text (gtk:text-view-get-buffer (ap-body-view page)) (http-request-body request) -1))
+         (show-body page (http-request-body request) (ap-body-mode page)))
     (setf (ap-loading page) nil)))
+
+(defun request-with-relative-files (request directory)
+  "REQUEST with the files its body names written relative to DIRECTORY (./photo.png) when they're under it."
+  (let ((copy (copy-http-request request))
+        (boundary (multipart-boundary request))
+        (file (body-file-reference (http-request-body request))))
+    (cond (boundary
+           (setf (http-request-body copy)
+                 (render-multipart-body (mapcar (lambda (part)
+                                                  (if (getf part :file)
+                                                      (let ((p (copy-list part)))
+                                                        (setf (getf p :file) (relative-body-path (getf part :file) directory))
+                                                        p)
+                                                      part))
+                                                (parse-multipart-body (http-request-body request) boundary))
+                                        boundary)))
+          (file (setf (http-request-body copy) (format nil "< ~a" (relative-body-path file directory)))))
+    copy))
 
 (defun write-api-request (page file request)
   "Write REQUEST into FILE (replacing the one PAGE was saved as there). Returns t."
   (handler-case
-      (let* ((text (if (probe-file file) (uiop:read-file-string file) ""))
+      (let* ((request (request-with-relative-files request (uiop:pathname-directory-pathname file)))
+             (text (if (probe-file file) (uiop:read-file-string file) ""))
              (old (and (equal (and (ap-file page) (namestring (ap-file page))) (namestring file))
                        (find (ap-saved-name page) (parse-http-file text) :key #'http-request-name :test #'equal)))
              (same-name (find (http-request-name request) (parse-http-file text) :key #'http-request-name :test #'equal))
@@ -974,7 +1139,8 @@ ON-CHANGE is called after either changes, or the row goes."
 (defun copy-request-as-curl (request &key file)
   "Copy a curl command for REQUEST, with its variables' values put in when they all have one."
   (let ((resolved (handler-case (resolved-request request :file file) (editor-error () nil))))
-    (copy-to-clipboard (http-request-curl-command (or resolved request)))
+    (copy-to-clipboard (http-request-curl-command (or resolved request)
+                                                  :directory (or (and file (uiop:pathname-directory-pathname file)) (api-project))))
     (message "Copied the curl command~:[ (with its {{variables}}: some have no value)~;~]" resolved)))
 
 (define-command api-import-curl ()

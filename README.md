@@ -931,6 +931,11 @@ Content-Type: application/json
   in `~/.config/cadre/secrets/`, readable only by you, so they're never
   committed (🔑 edits them). `{{$guid}}`, `{{$timestamp}}`,
   `{{$isoTimestamp}}` and `{{$randomInt}}` are made up when sent.
+- The **Body** is text (`< ./payload.json` sends a file as it is), a
+  **Form** (fields, sent `application/x-www-form-urlencoded`) or
+  **Multipart** (text parts and files, sent `multipart/form-data` as
+  `curl -F` does). Multipart parts are kept in the file in the usual form,
+  a file as `< ./photo.png` beside the `.http` file.
 - **Auth** sets up authentication: a Bearer token, Basic (username and
   password) or an API key header. **Use** keeps the secret in this project's
   secrets and gives the request the header with a `{{variable}}`

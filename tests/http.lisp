@@ -152,6 +152,36 @@ POST https://x.test/login
   (is equal '("Authorization" . "Bearer {{t}}") (c:auth-header :bearer "t"))
   (is equal '("X-Token" . "{{k}}") (c:auth-header :api-key "k" :header "X-Token")))
 
+(define-test http-bodies :parent cadre-tests
+  (is equal '(("a" . "1") ("b" . "two words")) (c:form-body-pairs "a=1&b=two%20words"))
+  (is string= "a=1&b=two%20words&c=x%26y" (c:pairs-form-body '(("a" . "1") ("b" . "two words") ("c" . "x&y"))))
+  (is string= "./data/x.json" (c:body-file-reference "  < ./data/x.json
+"))
+  (is equal nil (c:body-file-reference "{\"a\": 1}"))
+  (let* ((parts '((:name "title" :value "Hello
+world") (:name "photo" :file "./cat.png" :type "image/png")))
+         (body (c:render-multipart-body parts "B0"))
+         (request (c:make-http-request :method "POST" :url "https://x.test/up" :body body
+                                       :headers '(("Content-Type" . "multipart/form-data; boundary=B0")))))
+    (is string= "B0" (c:multipart-boundary request))
+    (is equal '((:name "title" :value "Hello
+world") (:name "photo" :file "./cat.png" :filename "cat.png" :type "image/png"))
+        (c:parse-multipart-body body "B0"))
+    (let ((config (c:curl-config request :directory #p"/home/me/api/")))
+      (true (search "form-string = \"title=Hello\\nworld\"" config))
+      (true (search "form = \"photo=@\\\"/home/me/api/cat.png\\\";filename=\\\"cat.png\\\";type=image/png\"" config))
+      (false (search "Content-Type" config)))
+    ;; Copied as a command line and pasted back.
+    (let ((again (c:parse-curl-command (c:http-request-curl-command request :directory #p"/home/me/api/"))))
+      (is equal '((:name "title" :value "Hello
+world") (:name "photo" :file "/home/me/api/cat.png" :filename "cat.png" :type "image/png"))
+          (c:parse-multipart-body (c:http-request-body again) (c:multipart-boundary again)))))
+  (is string= "< /tmp/x.json" (c:http-request-body (c:parse-curl-command "curl -X PUT --data-binary @/tmp/x.json https://x.test")))
+  (true (search "data-binary = \"@/home/me/api/x.json\""
+                (c:curl-config (c:make-http-request :method "POST" :url "u" :body "< ./x.json") :directory #p"/home/me/api/")))
+  (is string= "./sub/a.png" (c:relative-body-path "/home/me/api/sub/a.png" #p"/home/me/api/"))
+  (is string= "/elsewhere/a.png" (c:relative-body-path "/elsewhere/a.png" #p"/home/me/api/")))
+
 (define-test query-parameters :parent cadre-tests
   (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
       (c:url-query-parameters "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"))
@@ -248,6 +278,27 @@ POST https://x.test/login
              (is = 302 (c:http-response-status
                         (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)
                                                                   :options '(:no-redirect t)))))
+             ;; A file as the body, and a multipart upload, from files beside the .http file.
+             (let ((dir (uiop:ensure-directory-pathname
+                         (merge-pathnames (format nil "cadre-body-~d/" (random 1000000)) (uiop:temporary-directory)))))
+               (ensure-directories-exist dir)
+               (unwind-protect
+                    (progn
+                      (with-open-file (o (merge-pathnames "p.json" dir) :direction :output) (write-string "{\"from\": \"file\"}" o))
+                      (let ((sent (c:send-http-request (c:make-http-request :method "POST" :url (format nil "http://127.0.0.1:~d/f" port)
+                                                                            :body "< ./p.json")
+                                                       :directory dir)))
+                        (is string= "{\"from\": \"file\"}" (c:jget (c:parse-json (c:http-response-body sent)) "body")))
+                      (let* ((body (c:render-multipart-body '((:name "note" :value "hi") (:name "doc" :file "./p.json")) "XB"))
+                             (sent (c:send-http-request
+                                    (c:make-http-request :method "POST" :url (format nil "http://127.0.0.1:~d/m" port) :body body
+                                                         :headers '(("Content-Type" . "multipart/form-data; boundary=XB")))
+                                    :directory dir))
+                             (echoed (c:jget (c:parse-json (c:http-response-body sent)) "body")))
+                        (true (search "name=\"note\"" echoed))
+                        (true (search "filename=\"p.json\"" echoed))
+                        (true (search "{\"from\": \"file\"}" echoed))))
+                 (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
              (let ((failed (c:send-http-request (c:make-http-request :url "http://127.0.0.1:1/"))))
                (true (c:http-response-error failed))))
         (sb-bsd-sockets:socket-close socket)
