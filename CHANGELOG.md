@@ -1,6 +1,32 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
+
+New tools for Lisp work, databases and HTTP APIs. The packages are named as
+in 1.0.0, with 1.1.0 for the version.
+
+### Lisp tools
+
+- **Profiler**: Profile Form runs the form at the cursor under sb-sprof;
+  Profile All Threads samples the whole Lisp, a running app included, until
+  Stop. Functions are listed by self and total time, with callers and
+  callees, or drawn as a flame graph that zooms on click.
+- **Tests page** (Project › Test Explorer): a project's Parachute and FiveAM
+  tests, Clojure's `deftest`s and Racket's `test-case`s, each passed or
+  failed, with Run All, Run Failed and ▶; a failure shows its checks, and
+  clicking a test goes to it.
+- **Threads page** (Lisp › Threads): the Lisp's threads, to debug (interrupt
+  into the debugger) or kill.
+- **Libraries**: a system's `:depends-on`, with Remove, and a search of
+  Quicklisp's systems; Add edits the `.asd` as text, keeping its layout and
+  comments, and loads the library.
+- **Expand in Place** (`Ctrl+K Ctrl+E`, `C-c M-e`) replaces the macro form at
+  the cursor with its expansion in the file; Collapse (`Ctrl+K Ctrl+U`) or
+  Undo folds it back, and saving collapses first.
+- **Scratch buffer** (`Ctrl+K Shift+S`, `C-x M-s`) for each project, kept
+  between sessions outside the project.
+
+### Projects, databases and APIs
 
 - **Outline: the whole project.** The Outline page's Project view lists every
   Lisp, Racket and Clojure definition in the project, grouped by package or
@@ -22,6 +48,11 @@
   authentication with the secret kept outside the project.
 - New Lisp Project is now **New Project** (`M-x new-project`), since it
   makes Racket packages and Clojure projects too.
+
+### Fixes
+
+- macOS: with the window maximized and a dialog open, the rest of the
+  window no longer goes see-through.
 
 ## 1.0.0
 

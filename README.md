@@ -7,7 +7,7 @@ interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4)
 
 ![Cadre editing Lisp, with Claude explaining the code in the side panel](docs/screenshot.png)
 
-**Status:** version 1.0.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
+**Status:** version 1.1.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
 editing Common Lisp, Racket and Clojure ([docs/RACKET-CLOJURE.md](docs/RACKET-CLOJURE.md)).
 See [docs/DESIGN.md](docs/DESIGN.md) for the design and the milestones it was built in:
 
