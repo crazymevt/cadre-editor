@@ -68,19 +68,51 @@ the error output, and whether it failed."
 (defun eval-error-reason (error-output)
   (if (plusp (length error-output)) (string-trim '(#\Newline #\Space) error-output) "Evaluation failed"))
 
-(defun nrepl-value-callbacks (on-ok on-abort)
+(defun stacktrace-frame (frame)
+  "A cider-nrepl stack frame as (name file line column), or nil for its
+own tooling frames and repeats."
+  (let ((flags (dict-get frame "flags")))
+    (unless (intersection '("tooling" "dup") flags :test #'equal)
+      (let ((url (dict-get frame "file-url")))
+        (list (or (dict-get frame "name") (dict-get frame "method") "?")
+              (and (stringp url) (> (length url) 5) (string= "file:" url :end2 5) (subseq url 5))
+              (dict-get frame "line")
+              nil)))))
+
+(defun nrepl-report-stacktrace (connection)
+  "Ask cider-nrepl for the last error's stack (its root cause's) and send it
+to the handler as (:post-mortem message class frames), as Cadre's Racket
+back end does."
+  (let ((op (cond ((nrepl-op-p connection "analyze-last-stacktrace") "analyze-last-stacktrace")
+                  ((nrepl-op-p connection "stacktrace") "stacktrace"))))
+    (when op
+      (nrepl-send connection (list (cons "op" op))
+                  :on-abort (lambda (reason) (declare (ignore reason)))
+                  :on-done (lambda (responses)
+                             (let ((root (car (last (remove-if-not (lambda (m) (dict-get m "class")) responses)))))
+                               (when root
+                                 (nrepl-event connection
+                                              (list :post-mortem
+                                                    (or (dict-get root "message") "")
+                                                    (dict-get root "class")
+                                                    (remove nil (mapcar #'stacktrace-frame
+                                                                        (dict-get root "stacktrace"))))))))))))
+
+(defun nrepl-value-callbacks (connection on-ok on-abort)
   (lambda (values error-output failed)
     (if failed
-        (when on-abort (funcall on-abort (eval-error-reason error-output)))
+        (progn
+          (nrepl-report-stacktrace connection)
+          (when on-abort (funcall on-abort (eval-error-reason error-output))))
         (when on-ok (funcall on-ok (format nil "=> ~a" (or (car (last values)) "nil")))))))
 
 (defmethod backend-eval ((connection nrepl-connection) string &key package on-ok on-abort)
   (nrepl-eval-request connection string :ns package :on-abort on-abort
-                      :on-done (nrepl-value-callbacks on-ok on-abort)))
+                      :on-done (nrepl-value-callbacks connection on-ok on-abort)))
 
 (defmethod backend-eval-region ((connection nrepl-connection) string &key package on-ok on-abort)
   (nrepl-eval-request connection string :ns package :on-abort on-abort
-                      :on-done (nrepl-value-callbacks on-ok on-abort)))
+                      :on-done (nrepl-value-callbacks connection on-ok on-abort)))
 
 (defun clojure-error-location (error-output)
   "The place a Clojure compiler error names, \"… at (/path/f.clj:5:17)\", as
@@ -158,14 +190,16 @@ the values, the error output and whether it failed."
   (nrepl-load-file connection path :on-abort on-abort
                    :on-done (lambda (values error-output failed)
                               (if failed
-                                  (when on-abort (funcall on-abort (eval-error-reason error-output)))
+                                  (progn (nrepl-report-stacktrace connection)
+                                         (when on-abort (funcall on-abort (eval-error-reason error-output))))
                                   (when on-ok (funcall on-ok (car (last values))))))))
 
 (defmethod backend-repl-eval ((connection nrepl-connection) string &key on-ok on-abort &allow-other-keys)
   ;; Errors were already shown as the REPL's error output.
   (nrepl-eval-request connection string :ns (connection-package connection) :repl t :on-abort on-abort
                       :on-done (lambda (values error-output failed)
-                                 (declare (ignore values error-output failed))
+                                 (declare (ignore values error-output))
+                                 (when failed (nrepl-report-stacktrace connection))
                                  (when on-ok (funcall on-ok nil)))))
 
 (defmethod backend-set-package ((connection nrepl-connection) name &key on-ok on-abort)

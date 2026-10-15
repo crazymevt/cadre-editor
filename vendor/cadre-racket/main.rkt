@@ -244,6 +244,40 @@
 (define (error-result e)
   (cons ':error (cons (exn-text e) (error-place e))))
 
+;; A run-time error's stack goes to Cadre's Debugger page as
+;; (:post-mortem message type frames), frames being (name file line column)
+;; from the exception's context (errortrace isn't used: it slows everything).
+;; Syntax and read errors are notes in Problems instead.
+
+(define this-file (variable-reference->module-source (#%variable-reference)))
+
+(define (exn-type-name e)
+  (define name (format "~a" (vector-ref (struct->vector e) 0)))
+  (if (string-prefix? name "struct:") (substring name 7) name))
+
+(define (exn-frames e)
+  ;; Frames with a source or a procedure's name (not "body of …" alone, which
+  ;; is the module running), not this back end's, repeats collapsed.
+  (define frames
+    (for/list ([c (continuation-mark-set->context (exn-continuation-marks e))]
+               #:unless (let ([loc (cdr c)]) (and loc (equal? (srcloc-source loc) this-file)))
+               #:when (or (cdr c) (and (car c) (not (regexp-match? #rx"^body of " (format "~a" (car c)))))))
+      (define loc (cdr c))
+      (define source (and loc (srcloc-source loc)))
+      (list (format "~a" (or (car c) "(anonymous)"))
+            (cond [(path? source) (path->string source)] [(string? source) source] [else #f])
+            (and loc (srcloc-line loc))
+            (and loc (srcloc-column loc)))))
+  (define collapsed
+    (for/list ([f frames] [i (in-naturals)]
+               #:unless (and (> i 0) (equal? f (list-ref frames (sub1 i)))))
+      f))
+  (if (> (length collapsed) 80) (take collapsed 80) collapsed))
+
+(define (report-error! e)
+  (unless (or (exn:fail:syntax? e) (exn:fail:read? e) (not (exn? e)))
+    (send `(:post-mortem ,(exn-text e) ,(exn-type-name e) ,(exn-frames e)))))
+
 ;;; Identifiers, documentation and definitions
 
 (define the-xref #f)
@@ -593,11 +627,16 @@
     [(:connection-info)
      `(:implementation ,(format "Racket ~a" (version)) :package ,repl-package :prompt ,(package-prompt repl-package))]
     [(:eval)
-     (call-evaluating (λ () (eval-text (ns) (first args) 'eval)))]
+     (call-evaluating
+      (λ ()
+        (with-handlers ([exn:fail? (λ (e) (report-error! e) (raise e))])
+          (eval-text (ns) (first args) 'eval))))]
     [(:repl-eval)
      (call-evaluating
       (λ ()
-        (with-handlers ([exn:fail? (λ (e) (send `(:write-string ,(format "~a\n" (exn-text e)) nil)))]
+        (with-handlers ([exn:fail? (λ (e)
+                                     (send `(:write-string ,(format "~a\n" (exn-text e)) nil))
+                                     (report-error! e))]
                         [exn:break? (λ (e) (send `(:write-string "; Interrupted\n" nil)))])
           (for ([stx (read-all-syntax (first args) 'repl)])
             (for ([v (printed-values (eval-in repl-namespace stx #:interaction? #t))])
@@ -618,7 +657,7 @@
      (define path (first args))
      (call-evaluating
       (λ ()
-        (with-handlers ([exn:fail? error-result])
+        (with-handlers ([exn:fail? (λ (e) (report-error! e) (error-result e))])
           (enter-package! path (run-module path))
           '(:ok))))]
     [(:set-package)

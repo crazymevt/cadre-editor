@@ -3167,6 +3167,15 @@ and the number of items MODEL itself shows."
     (check "the Clojure REPL evaluates what is typed" (search "42" (buffer-string (current-buffer)))
            (buffer-string (current-buffer)))
     (screenshot "50-clojure-repl")
+    (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(/ 1 0)"))
+    (call-command 'cadre-ui::repl-return)))
+
+(then-when ((or (not *have-clojure*) (cadre-ui::post-mortem-p (first cadre-ui::*debug-levels*))) :timeout 30)
+  (when *have-clojure*
+    (check "a Clojure error's stack shows on the Debugger page"
+           (and (equal "java.lang.ArithmeticException" (second (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))
+                (cadre-ui::dl-frames (first cadre-ui::*debug-levels*))))
+    (call-command 'cadre-ui::debugger-abort)
     (call-command 'cadre-ui::clojure-disconnect)))
 
 (then-when ((or (not *have-clojure*) (null (cadre-ui::clojure-connection))) :timeout 30)
@@ -3259,6 +3268,16 @@ and the number of items MODEL itself shows."
     (check "the Racket REPL evaluates what is typed, in the module" (search "42" (buffer-string (current-buffer)))
            (buffer-string (current-buffer)))
     (screenshot "52-racket-repl")
+    (cadre-ui::with-buffer-repl () (cadre-ui::set-repl-input "(car 5)"))
+    (call-command 'cadre-ui::repl-return)))
+
+(then-when ((or (not *have-racket*) (cadre-ui::post-mortem-p (first cadre-ui::*debug-levels*))) :timeout 30)
+  (when *have-racket*
+    (check "a Racket error shows on the Debugger page"
+           (search "car" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))))
+    (screenshot "53-racket-error")
+    (call-command 'cadre-ui::debugger-abort)
+    (check "Dismiss closes it" (null cadre-ui::*debug-levels*))
     (open-file-path (merge-pathnames "rkt-demo/demo.rkt" *root*))))
 
 (then 500

@@ -6,6 +6,11 @@
 ;;;; backtrace. Opening a frame shows its locals (click a value to inspect
 ;;;; it) and lets you evaluate in the frame, show its source, restart it or
 ;;;; return from it. Nested errors stack up as levels; the innermost shows.
+;;;;
+;;;; Clojure and Racket errors have unwound by the time Cadre hears of them:
+;;;; their connections send (:post-mortem message type frames), shown as a
+;;;; level with no restarts, whose frames go to their source when clicked.
+;;;; Dismiss (or a) closes it.
 
 (in-package #:cadre-ui)
 
@@ -13,7 +18,10 @@
   connection thread level condition restarts
   (frames '())                          ; frame structures fetched so far
   (complete nil)                        ; true once every frame is fetched
-  (gui-backtrace nil))                  ; the GTK thread's backtrace, for an error from in-main-thread
+  (gui-backtrace nil)                   ; the GTK thread's backtrace, for an error from in-main-thread
+  (locations nil))                      ; a post-mortem's frame locations (plists), or nil for Swank's
+
+(defun post-mortem-p (level) (and level (dl-locations level) t))
 
 (defvar *debug-levels* '() "Debugger levels waiting, innermost first.")
 (defvar *debugger-box* nil)
@@ -75,9 +83,70 @@ into, x over and o out. Only without modifiers."
           (render-level level)))))
 
 (defun render-level (level)
-  (if (stepping-level-p level)
-      (render-stepping level)
-      (render-error-level level)))
+  (cond ((post-mortem-p level) (render-post-mortem level))
+        ((stepping-level-p level) (render-stepping level))
+        (t (render-error-level level))))
+
+;;; Errors from Clojure and Racket, already unwound
+
+(defun render-post-mortem (level)
+  (destructuring-bind (text type) (dl-condition level)
+    (gtk:box-append *debugger-box* (label text :wrap t :selectable t :css-classes '("title-4")))
+    (gtk:box-append *debugger-box*
+                    (label (format nil "~a — ~a" type (connection-implementation (dl-connection level)))
+                           :css-classes '("dim-label")))
+    (gtk:box-append *debugger-box*
+                    (gtk:build
+                      (gtk:box :spacing 6 :margin-top 4
+                        (gtk:button :label "_Dismiss" :use-underline t :tooltip-text "Close this error (a)"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'debugger-abort)))
+                        (gtk:button :label "Ask Claude" :tooltip-text "Send the error and stack to Claude"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
+    (gtk:box-append *debugger-box* (label "Stack" :margin-top 6 :css-classes '("heading")))
+    (unless (dl-frames level)
+      (gtk:box-append *debugger-box*
+                      (label "No frames with a source: the error happened at the top level, or in a tail call."
+                             :wrap t :css-classes '("dim-label"))))
+    (loop for frame in (dl-frames level)
+          for location in (dl-locations level)
+          do (let ((location location))
+               (gtk:box-append *debugger-box*
+                               (gtk:build
+                                 (gtk:button :css-classes '("flat") :sensitive (and (getf location :file) t)
+                                             :on-clicked (lambda (b) (declare (ignore b))
+                                                           (handler-case (goto-location location)
+                                                             (editor-error (e) (message "~a" (editor-error-message e)))))
+                                   (gtk:label :label (format nil "~3d: ~a" (frame-number frame) (frame-description frame))
+                                              :xalign 0.0 :ellipsize :end :css-classes '("monospace")))))))))
+
+(defun debugger-post-mortem (connection message type frames)
+  "Show an error from CONNECTION (Clojure or Racket) that has already
+unwound: MESSAGE, its TYPE, and FRAMES as (name file line column)."
+  (let ((level (make-debug-level
+                :connection connection :thread :post-mortem :level 1 :condition (list message type)
+                :complete t
+                :frames (loop for (name file line) in frames for n from 0
+                              collect (make-frame n (format nil "~a~@[  (~a~@[:~d~])~]"
+                                                            name (and file (file-namestring file)) line)
+                                                  nil))
+                ;; A plist per frame, with something in it so a frame-less error is still a post-mortem.
+                :locations (or (loop for (nil file line column) in frames
+                                     collect (if file
+                                                 (list :file file :line (max 0 (1- (or line 1))) :column (or column 0))
+                                                 (list :none t)))
+                               (list (list :none t))))))
+    (setf *debug-levels* (cons level (remove-if #'post-mortem-p *debug-levels*)))
+    (debugger-render)
+    (set-panel-visible *window* t)
+    (panel-show (window-panel *window*) "debugger")
+    (panel-set-title (window-panel *window*) "debugger" "Debugger ●")))
+
+(defun dismiss-post-mortem (level)
+  (setf *debug-levels* (remove level *debug-levels*))
+  (debugger-render)
+  (unless *debug-levels*
+    (panel-set-title (window-panel *window*) "debugger" "Debugger")
+    (panel-hide-page (window-panel *window*) "debugger")))
 
 (defun render-error-level (level)
   (destructuring-bind (text type &rest more) (dl-condition level)
@@ -336,6 +405,7 @@ into, x over and o out. Only without modifiers."
 
 (defun invoke-restart-number (n)
   (let ((level (or (first *debug-levels*) (editor-error "Not in the debugger"))))
+    (when (post-mortem-p level) (editor-error "This error has already unwound: there are no restarts"))
     (when (>= n (length (dl-restarts level))) (editor-error "No restart ~d" n))
     (rex (dl-connection level)
          (swank-call "swank:invoke-nth-restart-for-emacs" (dl-level level) n)
@@ -343,8 +413,11 @@ into, x over and o out. Only without modifiers."
          :on-abort (lambda (reason) (declare (ignore reason))))))
 
 (define-command debugger-abort ()
-  "Leave the debugger with the restart that returns to the top level."
+  "Leave the debugger with the restart that returns to the top level (or
+dismiss a Clojure or Racket error)."
   (let* ((level (or (first *debug-levels*) (editor-error "Not in the debugger"))))
+    (when (post-mortem-p level)
+      (return-from debugger-abort (dismiss-post-mortem level)))
     (invoke-restart-number (or (restart-position level "ABORT") (1- (length (dl-restarts level)))))))
 
 (define-command debugger-continue ()

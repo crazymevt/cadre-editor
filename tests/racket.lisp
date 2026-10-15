@@ -114,6 +114,15 @@ nil if there is no Racket."
                  ;; Code from a file runs in its module, which is run first.
                  (is string= "=> 12" (backend-value #'c:backend-eval conn "(area 3 4)" :package path))
                  (is string= "=> 10" (backend-value #'c:backend-eval conn "(twice 5)" :package path))
+                 ;; A run-time error's stack comes as a :post-mortem event.
+                 (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
+                 (ignore-errors (backend-value #'c:backend-eval conn "(list (area 'x 2))" :package path))
+                 (true (wait-for (lambda () (find :post-mortem *events* :key #'first))))
+                 (let ((event (find :post-mortem *events* :key #'first)))
+                   (true (search "contract" (third event)) "the exception's type")
+                   (true (listp (fourth event)) "its frames")
+                   (false (find-if (lambda (f) (search "body of" (first f))) (fourth event))
+                          "without the module body's frames"))
                  ;; Redefining a function in the module changes its callers.
                  (multiple-value-bind (notes ok)
                      (c:parse-compilation-result

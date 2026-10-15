@@ -90,6 +90,8 @@ prompt (another module's or namespace's, perhaps), keeping what is typed there."
   (let ((*repl* (language-repl language)))
     (case (first event)
       (:write-string (repl-output (second event) (third event)))
+      (:post-mortem (destructuring-bind (text type frames) (rest event)
+                      (debugger-post-mortem connection text type frames)))
       (:read-string
        (repl-start-reading connection (second event) (third event))
        (show-language-repl language)

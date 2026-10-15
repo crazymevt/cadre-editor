@@ -92,6 +92,11 @@ the process; nil if there is no Clojure CLI."
                              (handler-case (progn (backend-value #'c:backend-eval conn "(/ 1 0)") "")
                                (error (e) (princ-to-string e))))
                      "an error aborts the request")
+               (true (wait-for (lambda () (find :post-mortem *events* :key #'first)))
+                     "its stack comes from cider-nrepl")
+               (let ((event (find :post-mortem *events* :key #'first)))
+                 (is string= "java.lang.ArithmeticException" (third event))
+                 (true (fourth event) "with frames"))
                ;; Loading a file, then looking at what it defines.
                (let ((file (merge-pathnames "probe/core.clj" dir)))
                  (ensure-directories-exist file)
