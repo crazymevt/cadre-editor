@@ -73,6 +73,7 @@
                (:file "language-docs")
                (:file "projects")
                (:file "databases")
+               (:file "api")
                (:file "gtk-app")
                (:file "run-app")
                (:file "bindings")
@@ -82,7 +83,7 @@
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "cl-ppcre" "cffi" "docset")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "sb-md5" "cl-ppcre" "cffi" "docset")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -145,7 +146,8 @@
                (:module "database"
                 :serial t
                 :components ((:file "database")
-                             (:file "sqlite")))))
+                             (:file "sqlite")))
+               (:file "http" :pathname "http/http")))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -165,5 +167,6 @@
                (:file "racket")
                (:file "claude")
                (:file "terminal")
-               (:file "database"))
+               (:file "database")
+               (:file "http"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

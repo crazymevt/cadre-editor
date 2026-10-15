@@ -95,5 +95,6 @@ has a size, try again shortly."
           (set-sidebar-visible win t)
           (when (string= name "systems") (refresh-systems))
           (when (string= name "databases") (refresh-databases-page))
+          (when (string= name "api") (refresh-api-page))
           (when (string= name "outline") (refresh-outline :force t))
           (when (string= name "git") (git-changed) (refresh-source-control))))))

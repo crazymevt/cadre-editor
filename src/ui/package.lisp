@@ -16,6 +16,8 @@
            #:new-file #:open-file #:open-folder #:save-buffer #:save-buffer-as #:save-all
            #:close-tab #:next-tab #:previous-tab
            #:show-databases #:db-add-connection #:db-run-statement #:db-run-all-sql #:db-choose-connection
+           #:show-api #:api-new-request #:api-import-curl #:api-edit-environments #:api-edit-secrets
+           #:api-send-request-at-cursor
            #:toggle-sidebar #:toggle-panel #:toggle-layout #:use-automatic-layout #:show-output
            #:use-standard-keys #:use-emacs-keys #:keyboard-quit #:quit
            #:forward-char #:backward-char #:next-line #:previous-line

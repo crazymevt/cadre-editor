@@ -19,7 +19,7 @@
    ;; modes
    #:define-major-mode #:find-major-mode #:major-mode-for-file
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
-   #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p #:sql-mode
+   #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p #:sql-mode #:http-mode
    ;; buffers
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
@@ -198,4 +198,20 @@
    #:db-result #:make-db-result #:db-result-columns #:db-result-rows #:db-result-more
    #:db-result-changes #:db-result-milliseconds #:db-value-text #:db-result-csv
    #:quote-sql-identifier #:parse-column-filter #:where-sql #:table-select-sql #:table-count-sql
-   #:update-row-sql #:insert-row-sql #:delete-row-sql #:sql-statement-ranges #:sql-statement-at))
+   #:update-row-sql #:insert-row-sql #:delete-row-sql #:sql-statement-ranges #:sql-statement-at
+   ;; API requests (.http files and curl)
+   #:http-request #:make-http-request #:copy-http-request #:http-request-p #:http-request-name
+   #:http-request-method #:http-request-url #:http-request-headers #:http-request-body
+   #:http-request-options #:http-request-start #:http-request-end #:http-request-header
+   #:http-request-title #:*http-methods* #:parse-http-file #:render-http-request
+   #:replace-http-request #:append-http-request #:remove-http-request
+   #:http-variable-names #:substitute-http-variables #:resolve-http-request #:http-variable-lookup
+   #:project-http-environments-file #:read-http-environments #:write-http-environments
+   #:http-environment-names #:http-environment-variables #:set-http-environment-variable
+   #:http-secrets-file-name #:find-literal-secrets #:move-secrets-out
+   #:curl-config #:start-curl #:finish-curl #:cancel-curl #:send-http-request
+   #:http-response #:make-http-response #:http-response-status #:http-response-reason
+   #:http-response-headers #:http-response-body #:http-response-size #:http-response-milliseconds
+   #:http-response-content-type #:http-response-url #:http-response-error #:response-body-text #:response-body-mode
+   #:http-request-curl-command #:shell-words #:parse-curl-command #:base64-string
+   #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters))

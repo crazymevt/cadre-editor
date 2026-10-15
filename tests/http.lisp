@@ -1,0 +1,216 @@
+(in-package #:cadre-tests)
+
+;;; API requests (core http/): .http files, variables, secrets and curl
+
+(defparameter *sample-http* "@baseUrl = https://api.example.com
+@version = v2
+
+### List users
+# @no-redirect
+GET {{baseUrl}}/{{version}}/users
+  ?page=1
+  &size=10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Add a user
+# @timeout 5
+POST {{baseUrl}}/users HTTP/1.1
+Content-Type: application/json
+
+{
+  \"name\": \"Ann\"
+}
+
+###
+// @name ping
+https://example.com/ping
+")
+
+(define-test http-files :parent cadre-tests
+  (multiple-value-bind (requests variables) (c:parse-http-file *sample-http*)
+    (is equal '(("baseUrl" . "https://api.example.com") ("version" . "v2")) variables)
+    (is = 3 (length requests))
+    (destructuring-bind (list add ping) requests
+      (is string= "List users" (c:http-request-name list))
+      (is string= "GET" (c:http-request-method list))
+      (is string= "{{baseUrl}}/{{version}}/users?page=1&size=10" (c:http-request-url list))
+      (is string= "Bearer {{token}}" (c:http-request-header list "authorization"))
+      (is eq t (getf (c:http-request-options list) :no-redirect))
+      (is string= "POST" (c:http-request-method add))
+      (is string= "{{baseUrl}}/users" (c:http-request-url add))
+      (is = 5 (getf (c:http-request-options add) :timeout))
+      (is string= (format nil "{~%  \"name\": \"Ann\"~%}") (c:http-request-body add))
+      (is string= "ping" (c:http-request-name ping))
+      (is string= "https://example.com/ping" (c:http-request-url ping))
+      (is string= "GET https://example.com/ping" (c:http-request-title (c:make-http-request :url "https://example.com/ping")))
+      ;; Rewriting one request leaves the others, and the file variables, as they were.
+      (let* ((changed (c:copy-http-request add)))
+        (setf (c:http-request-body changed) "{\"name\": \"Bo\"}")
+        (let ((text (c:replace-http-request *sample-http* add changed)))
+          (is string= "{\"name\": \"Bo\"}" (c:http-request-body (second (c:parse-http-file text))))
+          (is string= "ping" (c:http-request-name (third (c:parse-http-file text))))
+          (is equal variables (nth-value 1 (c:parse-http-file text)))))
+      (let ((text (c:append-http-request *sample-http* (c:make-http-request :name "New" :url "https://x.test/"))))
+        (is equal '("List users" "Add a user" "ping" "New")
+            (mapcar #'c:http-request-name (c:parse-http-file text))))
+      (is equal '("Add a user" "ping")
+          (mapcar #'c:http-request-name (c:parse-http-file (c:remove-http-request *sample-http* list))))))
+  ;; What it writes, it reads back.
+  (let* ((request (c:make-http-request :name "R" :method "PUT" :url "https://x.test/a"
+                                       :headers '(("A" . "1") ("B" . "two: 2")) :body "line 1
+line 2" :options '(:insecure t :timeout 9)))
+         (back (first (c:parse-http-file (c:render-http-request request)))))
+    (is equalp (list "R" "PUT" "https://x.test/a" '(("A" . "1") ("B" . "two: 2")) "line 1
+line 2")
+        (list (c:http-request-name back) (c:http-request-method back) (c:http-request-url back)
+              (c:http-request-headers back) (c:http-request-body back)))
+    (is eq t (getf (c:http-request-options back) :insecure))
+    (is = 9 (getf (c:http-request-options back) :timeout)))
+  (is equal '() (c:parse-http-file "# just a comment
+")))
+
+(define-test http-variables :parent cadre-tests
+  (let* ((request (first (c:parse-http-file *sample-http*)))
+         (lookup (c:http-variable-lookup :file-variables '(("baseUrl" . "{{host}}/api") ("version" . "v2"))
+                                         :environment '(("host" . "https://dev.test") ("token" . "public"))
+                                         :secrets '(("token" . "s3cret")))))
+    (multiple-value-bind (resolved missing) (c:resolve-http-request request lookup)
+      (is equal '() missing)
+      (is string= "https://dev.test/api/v2/users?page=1&size=10" (c:http-request-url resolved))
+      (is string= "Bearer s3cret" (c:http-request-header resolved "Authorization"))
+      ;; The request itself still has its variables.
+      (is string= "Bearer {{token}}" (c:http-request-header request "Authorization")))
+    (is equal '("nope") (nth-value 1 (c:resolve-http-request (c:make-http-request :url "{{nope}}/{{$guid}}")
+                                                             (constantly nil))))
+    (is = 36 (length (c:http-request-url (c:resolve-http-request (c:make-http-request :url "{{$guid}}") (constantly nil)))
+                     ))))
+
+(define-test http-environments :parent cadre-tests
+  (let ((file (merge-pathnames (format nil "cadre-env-~d/secret.json" (random 1000000)) (uiop:temporary-directory))))
+    (unwind-protect
+         (let ((envs (c:set-http-environment-variable
+                      (c:set-http-environment-variable '() "dev" "token" "abc") "$shared" "who" "me")))
+           (c:write-http-environments file envs :private t)
+           (is = #o600 (logand #o777 (sb-posix:stat-mode (sb-posix:stat (uiop:native-namestring file)))))
+           (let ((read (c:read-http-environments file)))
+             (is equal '("dev") (c:http-environment-names read))
+             (is equal '(("token" . "abc") ("who" . "me")) (c:http-environment-variables read "dev"))
+             (is equal '(("who" . "me")) (c:http-environment-variables read nil))))
+      (uiop:delete-directory-tree (uiop:pathname-directory-pathname file) :validate t :if-does-not-exist :ignore)))
+  (true (ppcre:scan "^myproj-[0-9a-f]{12}\\.json$" (c:http-secrets-file-name #p"/tmp/x/myproj/"))))
+
+(define-test http-secrets :parent cadre-tests
+  (let* ((request (c:make-http-request :url "https://x.test/a?api_key=K123&q=1"
+                                       :headers '(("Authorization" . "Bearer abc.def") ("Accept" . "*/*")
+                                                  ("X-Api-Key" . "{{key}}"))
+                                       :body "{\"user\": \"ann\", \"password\": \"hunter2\", \"nested\": {\"client_secret\": \"zz\"}}"))
+         (found (c:find-literal-secrets request)))
+    (is equal '("token" "api_key" "password" "client_secret") (mapcar (lambda (s) (getf s :variable)) found))
+    (is equal '("abc.def" "K123" "hunter2" "zz") (mapcar (lambda (s) (getf s :value)) found))
+    (let ((moved (c:move-secrets-out request found)))
+      (is string= "Bearer {{token}}" (c:http-request-header moved "Authorization"))
+      (is string= "https://x.test/a?api_key={{api_key}}&q=1" (c:http-request-url moved))
+      (true (search "\"password\": \"{{password}}\"" (c:http-request-body moved)))
+      (is equal '() (c:find-literal-secrets moved)))))
+
+(define-test query-parameters :parent cadre-tests
+  (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
+      (c:url-query-parameters "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"))
+  (is equal '() (c:url-query-parameters "{{baseUrl}}/users"))
+  (is string= "https://x.test/s?q=a%20b&tag=%CE%BB&token={{token}}&flag#top"
+      (c:url-with-query-parameters "https://x.test/s?old=1#top"
+                                   '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . "") ("" . "dropped"))))
+  (is string= "{{baseUrl}}/users" (c:url-with-query-parameters "{{baseUrl}}/users?x=1" '()))
+  (is string= "a&b=c%26d" (subseq (c:url-with-query-parameters "u" '(("a" . "") ("b" . "c&d"))) 2))
+  ;; Reading what it wrote gives the same parameters.
+  (let ((params '(("name" . "Ann & Bo") ("x" . "1+1=2") ("path" . "/a/b"))))
+    (is equal params (c:url-query-parameters (c:url-with-query-parameters "https://x.test/" params)))))
+
+(define-test curl-commands :parent cadre-tests
+  (is equal '("curl" "-H" "A: b c" "it's" "" "x\"y" "joined")
+      (c:shell-words "curl -H 'A: b c' \\
+  it\\'s '' \"x\\\"y\" join\"ed\""))
+  (let ((request (c:parse-curl-command "curl 'https://x.test/u?a=1' -H 'Accept: application/json' \\
+  -H \"Authorization: Bearer t0k\" --data-raw '{\"n\":1}' --compressed -k")))
+    (is string= "POST" (c:http-request-method request))
+    (is string= "https://x.test/u?a=1" (c:http-request-url request))
+    (is string= "{\"n\":1}" (c:http-request-body request))
+    (is string= "application/json" (c:http-request-header request "Content-Type"))
+    (is eq t (getf (c:http-request-options request) :insecure))
+    ;; Copied out, pasted back.
+    (let ((again (c:parse-curl-command (c:http-request-curl-command request))))
+      (is string= (c:http-request-url request) (c:http-request-url again))
+      (is equal (c:http-request-headers request) (c:http-request-headers again))
+      (is string= (c:http-request-body request) (c:http-request-body again))))
+  (is string= "Basic dXNlcjpwYXNz" (c:http-request-header (c:parse-curl-command "curl -u user:pass https://x.test") "Authorization"))
+  (is string= "DELETE" (c:http-request-method (c:parse-curl-command "curl -XDELETE https://x.test/1")))
+  (is string= "https://x.test/s?q=a" (c:http-request-url (c:parse-curl-command "curl -G -d q=a https://x.test/s")))
+  (is equal nil (c:parse-curl-command "wget https://x.test"))
+  (is string= "aGk=" (c:base64-string "hi")))
+
+;;; A server for curl to talk to: it answers each request with what it got, as JSON.
+
+(defun serve-http-echo (socket)
+  (loop
+    (let ((client (handler-case (sb-bsd-sockets:socket-accept socket) (error () (return)))))
+      (let ((stream (sb-bsd-sockets:socket-make-stream client :input t :output t :element-type :default
+                                                              :external-format :latin-1 :buffering :full)))
+        (unwind-protect
+             (let* ((request-line (string-right-trim '(#\Return) (read-line stream)))
+                    (headers (loop for line = (string-right-trim '(#\Return) (read-line stream))
+                                   until (string= line "")
+                                   collect (let ((colon (position #\: line)))
+                                             (cons (string-downcase (subseq line 0 colon))
+                                                   (string-trim " " (subseq line (1+ colon)))))))
+                    (length (let ((l (cdr (assoc "content-length" headers :test #'string=)))) (if l (parse-integer l) 0)))
+                    (body (let ((s (make-string length))) (read-sequence s stream) s))
+                    (parts (uiop:split-string request-line :separator " "))
+                    (redirect (search "/redirect" (second parts)))
+                    (reply (c:json-string (c:jobj "method" (first parts) "path" (second parts)
+                                                  "auth" (or (cdr (assoc "authorization" headers :test #'string=)) "")
+                                                  "body" body))))
+               (if redirect
+                   (format stream "HTTP/1.1 302 Found~c~cLocation: /landed~c~cContent-Length: 0~c~c~c~c"
+                           #\Return #\Newline #\Return #\Newline #\Return #\Newline #\Return #\Newline)
+                   (format stream "HTTP/1.1 201 Created~c~cContent-Type: application/json~c~cX-Echo: yes~c~cContent-Length: ~d~c~c~c~c~a"
+                           #\Return #\Newline #\Return #\Newline #\Return #\Newline (length reply)
+                           #\Return #\Newline #\Return #\Newline reply))
+               (finish-output stream))
+          (close stream))))))
+
+(define-test curl-sends :parent cadre-tests
+  (let ((socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+    (setf (sb-bsd-sockets:sockopt-reuse-address socket) t)
+    (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
+    (sb-bsd-sockets:socket-listen socket 5)
+    (let ((port (nth-value 1 (sb-bsd-sockets:socket-name socket)))
+          (thread nil))
+      (setf thread (sb-thread:make-thread (lambda () (serve-http-echo socket)) :name "http echo"))
+      (unwind-protect
+           (let ((response (c:send-http-request
+                            (c:make-http-request :method "POST" :url (format nil "http://127.0.0.1:~d/things?x=1" port)
+                                                 :headers '(("Authorization" . "Bearer s3cret") ("Content-Type" . "application/json"))
+                                                 :body "{\"name\": \"λ\"}"))))
+             (is equal nil (c:http-response-error response))
+             (is = 201 (c:http-response-status response))
+             (is string= "Created" (c:http-response-reason response))
+             (is string= "yes" (cdr (assoc "X-Echo" (c:http-response-headers response) :test #'string-equal)))
+             (let ((json (c:parse-json (c:http-response-body response))))
+               (is string= "POST" (c:jget json "method"))
+               (is string= "/things?x=1" (c:jget json "path"))
+               (is string= "Bearer s3cret" (c:jget json "auth"))
+               ;; The body went, and came back, as UTF-8.
+               (is string= "{\"name\": \"λ\"}" (c:jget json "body")))
+             (true (search (format nil "~%  \"method\"") (c:response-body-text response)))
+             ;; Redirects are followed unless the request says not to.
+             (let ((followed (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)))))
+               (is = 201 (c:http-response-status followed))
+               (is string= "/landed" (c:jget (c:parse-json (c:http-response-body followed)) "path")))
+             (is = 302 (c:http-response-status
+                        (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)
+                                                                  :options '(:no-redirect t)))))
+             (let ((failed (c:send-http-request (c:make-http-request :url "http://127.0.0.1:1/"))))
+               (true (c:http-response-error failed))))
+        (sb-bsd-sockets:socket-close socket)
+        (ignore-errors (sb-thread:join-thread thread :timeout 2))))))

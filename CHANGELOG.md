@@ -6,6 +6,12 @@
   the project or for you alone. Tables open in tabs with a filter above each
   column, sorting and paging, and can be edited (changes are saved in one
   transaction); a SQL console runs statements into a Results page.
+- **API requests**: a front end to curl. Requests are kept in the project's
+  `.http` files (REST Client / JetBrains format), with environments in
+  `http-client.env.json` and secrets kept outside the project; responses
+  show status, time, headers and a body highlighted (and laid out) as JSON,
+  XML or HTML. Saving offers to move secrets out of the file; curl commands
+  can be copied and pasted.
 - New Lisp Project is now **New Project** (`M-x new-project`), since it
   makes Racket packages and Clojure projects too.
 

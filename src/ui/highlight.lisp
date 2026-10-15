@@ -190,6 +190,8 @@ faces that come from what the connected Lisp knows."
                      (setf (buffer-local buffer :highlight-pending) nil)
                      (when *window*
                        (dolist (view (append (buffer-views *window* buffer)
+                                             ;; Views inside a tab's own widget (an API response).
+                                             (buffer-local buffer :embedded-views)
                                              (and (repl-view) (eq (view-buffer (repl-view)) buffer)
                                                   (list (repl-view)))))
                          (highlight-view view)

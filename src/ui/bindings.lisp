@@ -451,6 +451,13 @@
   "C-c C-b" 'db-run-all-sql
   "C-c C-d" 'db-choose-connection)
 
+;;; .http files (api.lisp): send the request at the cursor.
+(bind-keys (mode-profile-keymap 'http-mode :standard)
+  "C-RET" 'api-send-request-at-cursor)
+
+(bind-keys (mode-profile-keymap 'http-mode :emacs)
+  "C-c C-c" 'api-send-request-at-cursor)
+
 ;;; Markdown. Emacs keys follow markdown-mode's; Standard ones VS Code's.
 (bind-keys (mode-profile-keymap 'markdown-mode :standard)
   "C-k v" 'markdown-preview

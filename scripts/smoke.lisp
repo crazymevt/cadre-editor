@@ -4177,6 +4177,159 @@ create table later (x)")
     (check "Close closes its tables' tabs"
            (notany (lambda (title) (search "— app" title)) (tab-titles)) (tab-titles))))
 
+;;; API requests (api.lisp): .http files, environments, secrets, curl, and responses by type
+(section "api")
+(defvar *api-port* nil)
+(defun api-serve (socket)
+  "Answer each request: /xml with XML, /html with HTML, anything else with JSON of what came."
+  (loop
+    (let ((client (handler-case (sb-bsd-sockets:socket-accept socket) (error () (return)))))
+      (let ((stream (sb-bsd-sockets:socket-make-stream client :input t :output t :element-type :default
+                                                              :external-format :utf-8 :buffering :full)))
+        (ignore-errors
+         (unwind-protect
+              (let* ((line (string-right-trim '(#\Return) (read-line stream)))
+                     (headers (loop for h = (string-right-trim '(#\Return) (read-line stream))
+                                    until (string= h "")
+                                    collect (let ((c (position #\: h)))
+                                              (cons (string-downcase (subseq h 0 c)) (string-trim " " (subseq h (1+ c)))))))
+                     (length (let ((l (cdr (assoc "content-length" headers :test #'string=)))) (if l (parse-integer l) 0)))
+                     (body (let ((b (make-string length))) (read-sequence b stream) b))
+                     (path (second (uiop:split-string line :separator " "))))
+                (multiple-value-bind (type reply)
+                    (cond ((search "/xml" path) (values "application/xml" "<people><person id=\"1\"><name>Ann</name></person></people>"))
+                          ((search "/html" path) (values "text/html" "<!doctype html><html><body><p>Hi</p></body></html>"))
+                          (t (values "application/json"
+                                     (json-string (jobj "path" path "auth" (or (cdr (assoc "authorization" headers :test #'string=)) "")
+                                                        "body" body)))))
+                  (let ((octets (sb-ext:string-to-octets reply :external-format :utf-8)))
+                    (format stream "HTTP/1.1 200 OK~c~cContent-Type: ~a~c~cContent-Length: ~d~c~c~c~c~a"
+                            #\Return #\Newline type #\Return #\Newline (length octets) #\Return #\Newline #\Return #\Newline reply)))
+                (finish-output stream))
+           (close stream)))))))
+(defun api-tab-page () (buffer-local (current-buffer) :api-page))
+(defun api-status-text () (gtk:label-get-text (cadre-ui::ap-status (api-tab-page))))
+(defun api-response-buffer () (view-buffer (cadre-ui::ap-response-view (api-tab-page))))
+
+(then 50
+  (let ((socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+    (setf (sb-bsd-sockets:sockopt-reuse-address socket) t)
+    (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
+    (sb-bsd-sockets:socket-listen socket 5)
+    (setf *api-port* (nth-value 1 (sb-bsd-sockets:socket-name socket)))
+    (sb-thread:make-thread (lambda () (api-serve socket)) :name "smoke api server"))
+  (with-open-file (o (merge-pathnames "http-client.env.json" *root*) :direction :output :if-exists :supersede)
+    (format o "{\"dev\": {\"baseUrl\": \"http://127.0.0.1:~d\"}}~%" *api-port*))
+  (ensure-directories-exist (merge-pathnames "api/" *root*))
+  (with-open-file (o (merge-pathnames "api/people.http" *root*) :direction :output :if-exists :supersede)
+    (format o "### Who am I~%POST {{baseUrl}}/me~%Authorization: Bearer {{token}}~%Content-Type: application/json~%~%{\"a\": [1, 2]}~%~%### People as XML~%GET {{baseUrl}}/xml~%~%### A page~%GET {{baseUrl}}/html~%"))
+  (setf cadre-ui::*api-environment* "dev")
+  (write-http-environments (cadre-ui::api-secrets-file) '(("dev" ("token" . "s3cret"))) :private t)
+  (call-command 'show-api))
+
+(then 300
+  (check "the API page lists the project's .http files and their requests"
+         (let ((texts (label-texts cadre-ui::*api-list*)))
+           (and (member "api/people.http" texts :test #'string=) (member "Who am I" texts :test #'string=)))
+         (label-texts cadre-ui::*api-list*))
+  (check "and the environments" (string= "dev" (gtk:string-object-get-string
+                                                  (gtk:drop-down-get-selected-item cadre-ui::*api-environment-dropdown*))))
+  (check "secrets are kept outside the project, readable only by you"
+         (and (not (uiop:string-prefix-p (namestring *root*) (namestring (cadre-ui::api-secrets-file))))
+              (= #o600 (logand #o777 (sb-posix:stat-mode (sb-posix:stat (namestring (cadre-ui::api-secrets-file))))))))
+  (let ((file (merge-pathnames "api/people.http" *root*)))
+    (cadre-ui::open-api-request (first (parse-http-file (uiop:read-file-string file))) :file file :send t)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "a request opens in a tab" (member "Who am I" (tab-titles) :test #'string=) (tab-titles))
+  (check "Send fills in the environment's variables and secrets"
+         (search "Bearer s3cret" (buffer-string (api-response-buffer))) (buffer-string (api-response-buffer)))
+  (check "a JSON response is laid out, as JSON" (and (eq 'json-mode (buffer-major-mode (api-response-buffer)))
+                                                    (search (format nil "{~%  \"path\"") (buffer-string (api-response-buffer)))))
+  (check "the status says how long it took" (ppcre:scan "^200 OK · \\d+ ms · \\d+ B$" (api-status-text)) (api-status-text))
+  (check "and the request is still saved with {{variables}}"
+         (search "{{token}}" (uiop:read-file-string (merge-pathnames "api/people.http" *root*))))
+  (screenshot "api-01-json")
+  (let ((file (merge-pathnames "api/people.http" *root*)))
+    (cadre-ui::open-api-request (second (parse-http-file (uiop:read-file-string file))) :file file :send t)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "an XML response is laid out, as XML"
+         (and (eq 'xml-mode (buffer-major-mode (api-response-buffer)))
+              (search (format nil "<people>~%  <person") (buffer-string (api-response-buffer))))
+         (buffer-string (api-response-buffer)))
+  (gtk:toggle-button-set-active (cadre-ui::ap-pretty-button (api-tab-page)) nil)
+  (check "Pretty off shows it as it came"
+         (search "<people><person" (buffer-string (api-response-buffer))))
+  (let ((file (merge-pathnames "api/people.http" *root*)))
+    (cadre-ui::open-api-request (third (parse-http-file (uiop:read-file-string file))) :file file :send t)))
+
+(then-when ((search "200" (api-status-text)) :timeout 15)
+  (check "an HTML response is shown as HTML" (eq 'html-mode (buffer-major-mode (api-response-buffer))))
+  (screenshot "api-02-html")
+  ;; A new request with a token typed in.
+  (cadre-ui::open-api-request
+   (parse-curl-command (format nil "curl http://127.0.0.1:~d/new -H 'Authorization: Bearer abc123'" *api-port*))))
+
+(then 300
+  (check "a pasted curl command opens as a request, unsaved"
+         (and (buffer-modified-p (current-buffer))
+              (string= "Bearer abc123" (http-request-header (cadre-ui::page-request (api-tab-page)) "Authorization"))))
+  (call-command 'save-buffer))
+
+(then 300
+  (let ((dialog cadre-ui::*api-save-dialog*))
+    (check "Save asks where in the project it goes"
+           (member (truename (merge-pathnames "api/people.http" *root*)) (getf dialog :paths)
+                   :test (lambda (a b) (equal a (probe-file b))))
+           (getf dialog :paths))
+    (gtk:editable-set-text (getf dialog :name) "New one")
+    (funcall (getf dialog :save-it))))
+
+(then 300
+  (check "and offers to move the token out of it" cadre-ui::*api-secrets-dialog*)
+  (funcall (getf cadre-ui::*api-secrets-dialog* :answer) "move")
+  (adw:dialog-close (getf cadre-ui::*api-secrets-dialog* :dialog)))
+
+(then 300
+  (let ((text (uiop:read-file-string (merge-pathnames "api/people.http" *root*))))
+    (check "Move to Secrets leaves a {{variable}} in the file"
+           (and (search "### New one" text) (search "Bearer {{token}}" text) (not (search "abc123" text))) text))
+  (check "and puts the token in the secrets"
+         (string= "abc123" (cdr (assoc "token" (http-environment-variables (read-http-environments (cadre-ui::api-secrets-file)) "dev")
+                                       :test #'string=))))
+  (check "the tab is saved, and named" (member "New one" (tab-titles) :test #'string=) (tab-titles))
+  (check "the page lists it" (member "New one" (label-texts cadre-ui::*api-list*) :test #'string=)))
+
+(then 100
+  (call-command 'api-new-request))
+
+(then 300
+  (let* ((page (api-tab-page))
+         (url (cadre-ui::ap-url page)))
+    (gtk:editable-set-text url "{{baseUrl}}/search?q=two%20words&page=1")
+    (check "typing a URL with a query fills in Params"
+           (equal '(("q" . "two words") ("page" . "1")) (cadre-ui::box-pairs (cadre-ui::ap-params-box page)))
+           (cadre-ui::box-pairs (cadre-ui::ap-params-box page)))
+    (let ((row (cadre-ui::add-param-row page)))
+      (gtk:editable-set-text (gtk:widget-get-first-child row) "tag")
+      (gtk:editable-set-text (gtk:widget-get-next-sibling (gtk:widget-get-first-child row)) "a&b"))
+    (check "a parameter added in Params goes into the URL, encoded"
+           (string= "{{baseUrl}}/search?q=two%20words&page=1&tag=a%26b" (gtk:editable-get-text url))
+           (gtk:editable-get-text url))
+    (let ((stack (loop for w = (cadre-ui::ap-params-box page) then (gtk:widget-get-parent w)
+                       until (typep w 'gtk:stack) finally (return w))))
+      (gtk:stack-set-visible-child-name stack "params"))))
+
+(then 300
+  (gtk:widget-activate (gtk:widget-get-last-child (first (cadre-ui::box-rows (cadre-ui::ap-params-box (api-tab-page)))))))
+
+(then 400
+  (let ((url (cadre-ui::ap-url (api-tab-page))))
+    (check "removing one takes it out of the URL"
+           (string= "{{baseUrl}}/search?page=1&tag=a%26b" (gtk:editable-get-text url)) (gtk:editable-get-text url)))
+  (screenshot "api-03-params"))
+
 (let* ((only (or (uiop:getenv "ONLY") ""))
        (sections (selected-sections only)))
   (when (uiop:getenv "SMOKE_LIST")

@@ -299,7 +299,11 @@ it when the project has an :entry-point)."
                   (gtk:toggle-button :id :databases-button :icon-name "cadre-database-symbolic"
                                      :tooltip-text "Databases" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
-                                                   (show-sidebar-page win "databases"))))
+                                                   (show-sidebar-page win "databases")))
+                  (gtk:toggle-button :id :api-button :icon-name "cadre-api-symbolic"
+                                     :tooltip-text "API requests" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "api"))))
                 (gtk:separator :orientation :vertical)
                 (gtk:paned :id :side-paned :orientation :horizontal :position 260
                            :shrink-start-child nil :resize-start-child nil
@@ -360,7 +364,8 @@ it when the project has an :entry-point)."
                                                   (cons "outline" (id :outline-button))
                                                   (cons "git" (id :git-button))
                                                   (cons "systems" (id :systems-button))
-                                                  (cons "databases" (id :databases-button)))))
+                                                  (cons "databases" (id :databases-button))
+                                                  (cons "api" (id :api-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
@@ -373,6 +378,7 @@ it when the project has an :entry-point)."
         (gtk:stack-add-named stack (make-source-control-widget) "git")
         (gtk:stack-add-named stack (make-systems-widget) "systems")
         (gtk:stack-add-named stack (make-databases-widget) "databases")
+        (gtk:stack-add-named stack (make-api-widget) "api")
         (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
         (gtk:stack-add-named stack (make-empty-page) "empty")
@@ -411,6 +417,7 @@ it when the project has an :entry-point)."
     (refresh-systems)
     (update-run-button)
     (databases-project-changed)
+    (api-project-changed)
     (claude-follow-folder directory)
     (let ((name (car (last (pathname-directory directory)))))
       (adw:window-title-set-title (window-title win) name)
