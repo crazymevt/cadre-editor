@@ -44,6 +44,7 @@
                (:file "stepper")
                (:file "profiler")
                (:file "threads")
+               (:file "test-explorer")
                (:file "scratch")
                (:file "systems")
                (:file "libraries")
@@ -129,7 +130,9 @@
                              (:file "tools")
                              (:file "image")
                              (:static-file "profiler-remote.lisp")
-                             (:file "profiler")))
+                             (:file "profiler")
+                             (:static-file "test-runner-remote.lisp")
+                             (:file "test-runner")))
                (:module "nrepl"
                 :serial t
                 :components ((:file "bencode")
@@ -181,5 +184,6 @@
                (:file "mysql")
                (:file "http")
                (:file "profiler")
-               (:file "libraries"))
+               (:file "libraries")
+               (:file "test-runner"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

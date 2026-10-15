@@ -2686,11 +2686,16 @@ d" 0 0)
 (then 300
   (call-command 'cadre-ui::run-tests))
 
-(then-when ((search "Passed:" (repl-text)) :timeout 120)
-  (check "Run Tests runs the project's tests in the REPL" (search "Testing system smoke-app" (repl-text)))
-  (check "and their results show there" (search "Passed:" (repl-text))
-         (let ((level (first cadre-ui::*debug-levels*)))
-           (and level (cadre-ui::dl-condition level))))
+(then-when ((let ((page cadre-ui::*tests-page*))
+              (and (cadre-ui::tsp-tests page) (not (cadre-ui::tsp-running page))
+                   (every #'source-test-status (cadre-ui::tsp-tests page))))
+            :timeout 120)
+  (check "Run Tests runs the project's parachute tests on the Tests page"
+         (equal "tests" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "and they pass"
+         (every (lambda (test) (eq :passed (source-test-status test))) (cadre-ui::tsp-tests cadre-ui::*tests-page*))
+         (mapcar (lambda (test) (list (source-test-name test) (source-test-status test) (source-test-messages test)))
+                 (cadre-ui::tsp-tests cadre-ui::*tests-page*)))
   (check "with no errors along the way"
          (not (search "Error:" (subseq (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))
                                        (or (search "Created smoke-app" (cadre-ui::panel-output-string (cadre-ui::window-panel *window*))) 0))))
@@ -4215,6 +4220,79 @@ and the number of items MODEL itself shows."
 
 (then-when ((null (smoke-thread)) :timeout 20)
   (check "Kill ends it" t))
+
+;;; The Tests page (the test explorer)
+(section "test-explorer")
+(defun tests-page () cadre-ui::*tests-page*)
+(defun explorer-test (name) (find name (cadre-ui::tsp-tests (tests-page)) :key #'source-test-name :test #'string=))
+(defun test-project () (merge-pathnames "smoke-tests/" *new-parent*))
+(defun write-test-file (expected)
+  (with-open-file (o (merge-pathnames "tests.lisp" (test-project)) :direction :output :if-exists :supersede)
+    (write-string (test-file-text expected) o)))
+(defun test-file-text (expected)
+  (format nil "(defpackage #:smoke-tests (:use #:cl #:parachute))
+(in-package #:smoke-tests)
+
+(define-test arithmetic
+  (is = 2 (+ 1 1)))
+
+(define-test broken
+  (is = ~d (+ 1 1)))
+
+(define-test outer)
+
+(define-test inner :parent outer
+  (true t))
+" expected))
+(connect-lisp)
+(load-quicklisp)
+
+(then 100
+  ;; Earlier sections open other folders: this one's project is under *root*.
+  (unless (equal (namestring (truename (cadre-ui::window-project *window*))) (namestring (truename *root*)))
+    (cadre-ui::set-window-project *window* *root*))
+  (ensure-directories-exist (test-project))
+  (with-open-file (o (merge-pathnames "smoke-tests.asd" (test-project)) :direction :output :if-exists :supersede)
+    (format o "(defsystem \"smoke-tests\" :depends-on (\"parachute\") :components ((:file \"tests\")))~%"))
+  (write-test-file 3)
+  (open-file-path (merge-pathnames "tests.lisp" (test-project))))
+
+(then-when ((find-buffer "tests.lisp") :timeout 10)
+  (call-command 'cadre-ui::show-test-explorer))
+
+(then 300
+  (check "the Tests page lists the tests in the source"
+         (equal '("arithmetic" "broken" "outer" "inner") (mapcar #'source-test-name (cadre-ui::tsp-tests (tests-page))))
+         (mapcar #'source-test-name (cadre-ui::tsp-tests (tests-page))))
+  (check "before anything runs" (notany #'source-test-status (cadre-ui::tsp-tests (tests-page))))
+  (call-command 'cadre-ui::run-all-tests))
+
+(then-when ((and (not (cadre-ui::tsp-running (tests-page))) (source-test-status (explorer-test "arithmetic"))) :timeout 120)
+  (check "Run All shows each test's result"
+         (equal '(:passed :failed :passed :passed) (mapcar #'source-test-status (cadre-ui::tsp-tests (tests-page))))
+         (mapcar #'source-test-status (cadre-ui::tsp-tests (tests-page))))
+  (check "with what failed" (search "evaluated to" (or (first (source-test-messages (explorer-test "broken"))) ""))
+         (source-test-messages (explorer-test "broken")))
+  (check "and the tab counts the failures" (equal "Tests (1 ✗)" (panel-page-title "tests")) (panel-page-title "tests")))
+
+(then 1100                              ; file times are to the second: let ASDF see the change
+  (screenshot "test-explorer")
+  ;; Fix the test in its tab, unsaved: Run Failed saves it first.
+  (let ((buffer (find-buffer "tests.lisp")))
+    (cadre-ui::replace-text-between (buffer-text buffer) 0 (length (buffer-string buffer)) (test-file-text 2)))
+  (call-command 'cadre-ui::run-failed-tests))
+
+(then-when ((and (not (cadre-ui::tsp-running (tests-page))) (eq :passed (source-test-status (explorer-test "broken")))) :timeout 60)
+  (check "Run Failed saves and runs the fixed test again, loading the change"
+         (eq :passed (source-test-status (explorer-test "broken")))
+         (source-test-messages (explorer-test "broken")))
+  (let ((row (loop for row being the hash-keys of cadre-ui::*test-rows* using (hash-value test)
+                   when (equal "broken" (source-test-name test)) return row)))
+    (when row (gtk:widget-activate row))))
+
+(then-when ((find-buffer "tests.lisp") :timeout 10)
+  (check "clicking a test goes to it" (= 6 (cadre-ui::cursor-line-column (current-view)))
+         (cadre-ui::cursor-line-column (current-view))))
 
 ;;; The Terminal page (VTE)
 (section "terminal")

@@ -300,6 +300,14 @@ it and what it called, and Go to Definition to open its source. **Flame
 Graph** draws the stacks from the top down, each call as wide as the samples
 it was in: click a box to zoom into it, and one above to zoom back out.
 
+**Tests** (Project › Test Explorer) lists the project's parachute and
+FiveAM tests, found in its files, by file. **Run All** runs them, **Run
+Failed** the ones that failed, and ▶ one test (with the tests inside it).
+Each run saves the project's files and loads its systems again first, so it
+tests the code as it is now. A failed test shows its failed checks; click a
+test to go to it. In a test file, Debug › Run This Test (right-click) runs the
+test the cursor is in.
+
 **Threads** (Lisp › Threads; its tab also appears when an app starts) lists
 the Lisp's threads: a server's, a GTK app's, background work. **Debug**
 interrupts one and opens the debugger in it, with its backtrace and locals;

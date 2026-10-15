@@ -15,7 +15,7 @@ systems, running tests and refactoring. Tick an item when it lands.
 3. [x] **Threads page.** The Lisp's threads, with Debug (interrupt it and
    open the debugger in that thread) and Kill: for servers, GTK apps,
    background work.
-4. [ ] **Test explorer.** The project's tests (parachute, FiveAM) with pass
+4. [x] **Test explorer.** The project's tests (parachute, FiveAM) with pass
    or fail for each; run one, or the failed ones again; jump from a failure
    to its code.
 5. [ ] **Macroexpansion in place**, like Emacs's macrostep: expand a macro

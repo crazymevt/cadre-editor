@@ -188,16 +188,19 @@ fetched: asdf:test-system only finds what is already installed."
                root)))
 
 (define-command run-tests ()
-  "Run the project's tests (asdf:test-system) in the connected Lisp's REPL,
-after saving the project's files. A failing test's error opens the debugger."
+  "Run the project's tests: parachute and FiveAM tests on the Tests page,
+others with asdf:test-system in the REPL. Saves the project's files first."
   (let ((root (project-root-or-error)))
-    (call-with-test-system
+    (test-project
      root
-     (lambda (system)
-       (save-project-then root
-                          (lambda ()
-                            (run-in-repl (format nil "Testing system ~a" system)
-                                         (run-tests-form root system))))))))
+     (lambda ()
+       (call-with-test-system
+        root
+        (lambda (system)
+          (save-project-then root
+                             (lambda ()
+                               (run-in-repl (format nil "Testing system ~a" system)
+                                            (run-tests-form root system))))))))))
 
 (define-command run-tests-in-new-lisp ()
   "Run the project's tests in a fresh Lisp (make test, or asdf:test-system),

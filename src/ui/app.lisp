@@ -55,6 +55,7 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "trace" (make-trace-widget))
       (panel-set-page-child panel "profiler" (make-profiler-widget))
       (panel-set-page-child panel "threads" (make-threads-widget))
+      (panel-set-page-child panel "tests" (make-tests-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
       (panel-set-page-child panel "terminal" (make-terminal-widget))
       ;; However the Claude tab is opened (its tab, a key, the menu), find out
@@ -66,6 +67,7 @@ command. Menus and buttons use it."
                            (cond ((equal name "claude") (check-claude-status))
                                  ((equal name "trace") (trace-page-shown))
                                  ((equal name "threads") (threads-page-shown))
+                                 ((equal name "tests") (tests-page-shown))
                                  ((equal name "terminal") (terminal-page-shown)))))))
     (update-connection-status)
     (let ((directory (initial-project project)))

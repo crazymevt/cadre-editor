@@ -169,6 +169,11 @@
    #:profile-function #:make-profile-function #:profile-function-name #:profile-function-definition
    #:profile-function-self #:profile-function-total #:profile-function-callers #:profile-function-callees
    #:sort-profile-functions #:find-profile-function #:flame-node-at #:flame-boxes #:flame-path-to #:flame-depth
+   ;; the test explorer
+   #:+test-runner-helper+ #:source-test #:make-source-test #:source-test-name #:source-test-key
+   #:source-test-framework #:source-test-package #:source-test-parent #:source-test-line #:source-test-file
+   #:source-test-status #:source-test-messages #:test-key #:source-tests #:parse-test-results
+   #:apply-test-results #:test-roots #:test-run-groups #:fiveam-source-p
    ;; what the image knows
    #:*image-classes* #:classifiable-name-p #:image-classify-source #:parse-image-classes
    #:surely-called-p #:local-function-names #:evaluated-place-p #:cl-function-p

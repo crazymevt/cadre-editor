@@ -82,7 +82,8 @@ in the REPL, which also fetches what Quicklisp must."
    system
    (lambda ()
      (run-in-repl (format nil "Loading system ~a~@[ from ~a~]" system (and directory (uiop:native-namestring directory)))
-                  (load-system-form directory system)))))
+                  (load-system-form directory system))
+     (add-tests-tab (or directory (current-project-root))))))
 
 (define-command load-project ()
   "Load the open folder's ASDF system into the Lisp (choosing one if there are several)."
@@ -281,10 +282,12 @@ that one, and its ▶."
                    :on-clicked (lambda (b) (declare (ignore b)) (load-system-in-repl directory name)))
        (gtk:button :label "Reload" :tooltip-text "Compile every file again and load it; notes go to Problems"
                    :on-clicked (lambda (b) (declare (ignore b)) (reload-system name)))
-       (gtk:button :label "Test" :tooltip-text "Run the system's tests (asdf:test-system) in the REPL"
+       (gtk:button :label "Test" :tooltip-text "Run the project's tests on the Tests page (or, if they aren't parachute or FiveAM tests, asdf:test-system in the REPL)"
                    :on-clicked (lambda (b) (declare (ignore b))
-                                 (run-in-repl (format nil "Testing system ~a" name)
-                                              (test-system-form directory name))))
+                                 (test-project directory
+                                               (lambda ()
+                                                 (run-in-repl (format nil "Testing system ~a" name)
+                                                              (test-system-form directory name))))))
        (gtk:button :label "Libraries" :tooltip-text "What the system depends on, and adding a library from Quicklisp"
                    :on-clicked (lambda (b) (declare (ignore b)) (show-libraries directory name))))))
   (if (connected-p)

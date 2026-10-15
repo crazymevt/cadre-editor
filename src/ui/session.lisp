@@ -184,6 +184,7 @@ as messages, and an abort without :on-abort says so."
     (traces-disconnected)
     (profiler-disconnected)
     (threads-disconnected)
+    (tests-disconnected)
     (gtk-app-disconnected)
     (image-changed)
     (refresh-systems)
