@@ -74,7 +74,9 @@ nil, there are no line numbers."
             (1+ (gtk:text-iter-get-line-offset iter)))))
 
 (defun focus-view (view)
-  (gtk:widget-grab-focus (view-text-view view)))
+  (gtk:widget-grab-focus (if (buffer-local (view-buffer view) :tab-widget)
+                             (view-widget view)
+                             (view-text-view view))))
 
 (defun scroll-to-cursor (view)
   (let ((buffer (view-gtk-buffer view)))

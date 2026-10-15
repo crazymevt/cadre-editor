@@ -19,7 +19,7 @@
    ;; modes
    #:define-major-mode #:find-major-mode #:major-mode-for-file
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
-   #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p
+   #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p #:sql-mode
    ;; buffers
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
@@ -186,4 +186,16 @@
    #:terminal-title-for #:*terminal-default-editor-keys* #:terminal-key-action #:meta-key-bytes
    #:parse-file-reference #:resolve-file-reference
    ;; diffs
-   #:split-lines #:diff-lines #:diff-stats #:replace-unique))
+   #:split-lines #:diff-lines #:diff-stats #:replace-unique
+   ;; databases
+   #:*database-kinds* #:db-connection #:make-db-connection #:copy-db-connection #:db-connection-p
+   #:db-connection-id #:db-connection-name #:db-connection-kind #:db-connection-path
+   #:db-connection-read-only #:db-connection-scope #:db-connection-description
+   #:read-db-connections #:write-db-connections #:project-db-connections-file #:db-connection-file
+   #:path-for-connection #:open-database #:open-database-kind #:open-sqlite #:sqlite-version
+   #:database #:db-lock #:db-read-only-p #:db-close #:db-open-p #:db-interrupt #:db-execute #:db-run
+   #:db-tables #:db-columns #:db-indexes #:db-foreign-keys #:db-create-statement #:db-row-key
+   #:db-result #:make-db-result #:db-result-columns #:db-result-rows #:db-result-more
+   #:db-result-changes #:db-result-milliseconds #:db-value-text #:db-result-csv
+   #:quote-sql-identifier #:parse-column-filter #:where-sql #:table-select-sql #:table-count-sql
+   #:update-row-sql #:insert-row-sql #:delete-row-sql #:sql-statement-ranges #:sql-statement-at))

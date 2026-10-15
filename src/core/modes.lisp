@@ -82,6 +82,9 @@ Lisp, say), from how it starts: XML or HTML at <, JSON at { or [, Lisp at (."
 (define-major-mode image-mode (:title "Image" :extensions ("png" "jpg" "jpeg" "gif" "bmp" "ico" "tif" "tiff" "webp"))
   "A picture, shown rather than edited.")
 
+(define-major-mode sql-mode (:title "SQL" :extensions ("sql"))
+  "SQL, which can be run against a database connection (the Databases page).")
+
 (defun image-file-p (pathname)
   "True if PATHNAME is a picture, which opens to be looked at, not edited."
   (eq (major-mode-for-file pathname) 'image-mode))

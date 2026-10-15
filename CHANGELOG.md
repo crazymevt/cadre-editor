@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Databases**: a page of database connections (SQLite for now), saved with
+  the project or for you alone. Tables open in tabs with a filter above each
+  column, sorting and paging, and can be edited (changes are saved in one
+  transaction); a SQL console runs statements into a Results page.
 - New Lisp Project is now **New Project** (`M-x new-project`), since it
   makes Racket packages and Clojure projects too.
 

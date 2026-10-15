@@ -117,7 +117,17 @@
     (".cadre-chat-tool" :opacity "0.8")
     (".cadre-chat-plan" :background-color "alpha(@accent_bg_color, 0.08)" :border-radius "8px" :padding "8px")
     (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
-                            :padding ("0" "6px") :font-family "monospace")))
+                            :padding ("0" "6px") :font-family "monospace")
+    ;; Database tables and query results (databases.lisp)
+    (".cadre-db-grid" :padding ("0" "0" "24px" "0"))
+    (".cadre-db-grid > *" :padding ("2px" "8px") :border-bottom "1px solid alpha(@view_fg_color, 0.08)")
+    (".cadre-db-grid > .cadre-db-head" :font-weight "bold" :background-color "alpha(@view_fg_color, 0.05)")
+    (".cadre-db-grid > button.cadre-db-head" :border-radius "0" :min-height "0")
+    (".cadre-db-grid entry" :min-height "24px")
+    (".cadre-db-null" :opacity "0.45" :font-style "italic")
+    (".cadre-db-changed" :background-color "alpha(@warning_bg_color, 0.25)")
+    (".cadre-db-new" :background-color "alpha(@success_bg_color, 0.18)")
+    (".cadre-db-deleted" :background-color "alpha(@error_bg_color, 0.18)" :text-decoration "line-through")))
 
 (defun install-icons ()
   "Add Cadre's own icons to the icon theme."
@@ -285,7 +295,11 @@ it when the project has an :entry-point)."
                   (gtk:toggle-button :id :systems-button :icon-name "cadre-system-symbolic"
                                      :tooltip-text "Project" :css-classes '("flat")
                                      :on-clicked (lambda (b) (declare (ignore b))
-                                                   (show-sidebar-page win "systems"))))
+                                                   (show-sidebar-page win "systems")))
+                  (gtk:toggle-button :id :databases-button :icon-name "cadre-database-symbolic"
+                                     :tooltip-text "Databases" :css-classes '("flat")
+                                     :on-clicked (lambda (b) (declare (ignore b))
+                                                   (show-sidebar-page win "databases"))))
                 (gtk:separator :orientation :vertical)
                 (gtk:paned :id :side-paned :orientation :horizontal :position 260
                            :shrink-start-child nil :resize-start-child nil
@@ -345,7 +359,8 @@ it when the project has an :entry-point)."
                                                   (cons "search" (id :search-button))
                                                   (cons "outline" (id :outline-button))
                                                   (cons "git" (id :git-button))
-                                                  (cons "systems" (id :systems-button)))))
+                                                  (cons "systems" (id :systems-button))
+                                                  (cons "databases" (id :databases-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
@@ -357,6 +372,7 @@ it when the project has an :entry-point)."
         (gtk:stack-add-named stack (make-outline-widget) "outline")
         (gtk:stack-add-named stack (make-source-control-widget) "git")
         (gtk:stack-add-named stack (make-systems-widget) "systems")
+        (gtk:stack-add-named stack (make-databases-widget) "databases")
         (gtk:stack-set-visible-child-name stack "explorer"))
       (let ((stack (window-editor-stack win)))
         (gtk:stack-add-named stack (make-empty-page) "empty")
@@ -394,6 +410,7 @@ it when the project has an :entry-point)."
                        (make-explorer directory :on-open-file #'open-file-path))
     (refresh-systems)
     (update-run-button)
+    (databases-project-changed)
     (claude-follow-folder directory)
     (let ((name (car (last (pathname-directory directory)))))
       (adw:window-title-set-title (window-title win) name)

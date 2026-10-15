@@ -4015,6 +4015,168 @@ and the number of items MODEL itself shows."
       (check (format nil "~a: paren colors differ from token colors" (cadre-ui::theme-title theme))
              (null collisions) collisions))))
 
+;;; Databases (databases.lisp): a SQLite file's connection, its tables in tabs, editing, and SQL
+(section "databases")
+(defvar *db-file* (merge-pathnames "data/app.db" *root*))
+(defun db-page () (buffer-local (current-buffer) :db-table))
+(defun db-query (sql)
+  (let ((db (open-sqlite *db-file*)))
+    (unwind-protect (db-result-rows (db-run db sql)) (db-close db))))
+(defun db-connection-named (name)
+  (find name cadre-ui::*db-connections* :key #'db-connection-name :test #'string=))
+(defun results-label ()
+  (gtk:label-get-text (cadre-ui::rp-label (cadre-ui::results-page))))
+
+(then 50
+  (ensure-directories-exist *db-file*)
+  (let ((db (open-sqlite *db-file* :create t)))
+    (db-run db "CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, notes TEXT);
+INSERT INTO people (name, age, notes) VALUES ('Ann', 34, 'first'), ('Bo', 12, NULL), ('Cy', 51, 'two
+lines');
+CREATE TABLE log (message TEXT);
+CREATE VIEW adults AS SELECT name, age FROM people WHERE age >= 18;")
+    (db-close db))
+  (call-command 'db-add-connection))
+
+(then 300
+  (check "Add Database Connection shows the Databases page"
+         (string= "databases" (cadre-ui::sidebar-page *window*)))
+  (let ((dialog cadre-ui::*db-connection-dialog*))
+    (check "the dialog can't save without a file" (not (gtk:widget-get-sensitive (getf dialog :save))))
+    (funcall (getf dialog :use-file) *db-file*)
+    (check "choosing a file names the connection after it"
+           (string= "app" (gtk:editable-get-text (getf dialog :name))))
+    (check "and lets it save" (gtk:widget-get-sensitive (getf dialog :save)))
+    (check "a connection is saved with the project when a folder is open"
+           (adw:switch-row-get-active (getf dialog :in-project)))
+    (gtk:widget-activate (getf dialog :test))))
+
+(then-when ((plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note)))) :timeout 5)
+  (let ((dialog cadre-ui::*db-connection-dialog*))
+    (check "Test Connection opens it" (search "Connected: 3 tables" (gtk:label-get-text (getf dialog :note)))
+           (gtk:label-get-text (getf dialog :note)))
+    (screenshot "db-01-dialog")
+    (funcall (getf dialog :save-it))))
+
+(then 300
+  (let ((connection (db-connection-named "app")))
+    (check "the connection is added" connection)
+    (check "kept in the project's .cadre/databases.sexp, relative to it"
+           (let ((saved (read-db-connections (project-db-connections-file *root*) :project)))
+             (and saved (string= "data/app.db" (db-connection-path (first saved)))))
+           (uiop:read-file-string (project-db-connections-file *root*)))
+    (cadre-ui::open-db-connection connection)))
+
+(then 300
+  (let ((texts (label-texts cadre-ui::*databases-list*)))
+    (check "an open connection lists its tables and views"
+           (every (lambda (name) (member name texts :test #'string=)) '("people" "log" "adults" "SQL Console"))
+           texts))
+  (screenshot "db-02-page")
+  (cadre-ui::open-db-table (db-connection-named "app") "people"))
+
+(then 300
+  (check "a table opens in a tab" (member "people — app" (tab-titles) :test #'string=) (tab-titles))
+  (let ((page (db-page)))
+    (check "showing its rows" (= 3 (length (cadre-ui::dbt-rows page))))
+    (check "and how many" (search "Rows 1–3 of 3" (gtk:label-get-text (cadre-ui::dbt-info page)))
+           (gtk:label-get-text (cadre-ui::dbt-info page)))
+    (check "a table with a key can be edited" (cadre-ui::dbt-editable-p page))
+    (screenshot "db-03-table")
+    ;; The age column's filter.
+    (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 3 1) ">20")))
+
+(then 700
+  (let ((page (db-page)))
+    (check "typing a filter filters the rows" (= 2 (cadre-ui::dbt-total page)) (cadre-ui::dbt-total page))
+    (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 3 1) "")
+    (gtk:widget-activate (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 3 1))
+    (cadre-ui::sort-db-table page "age")
+    (cadre-ui::sort-db-table page "age")
+    (check "clicking a column's name twice sorts by it, descending"
+           (equal '("Cy" "Ann" "Bo") (mapcar (lambda (row) (aref row 2)) (cadre-ui::dbt-rows page)))
+           (cadre-ui::dbt-rows page))
+    (cadre-ui::sort-db-table page "age")
+    (cadre-ui::sort-db-table page "id")
+    ;; Ann's age; a new row; Bo deleted.
+    (cadre-ui::set-db-cell page 0 2 "35")
+    (cadre-ui::add-db-row page)
+    (cadre-ui::set-db-cell page 3 1 "Dee")
+    (setf (gethash 1 (cadre-ui::dbt-checked page)) t)
+    (cadre-ui::delete-checked-db-rows page)
+    (check "changes mark the tab unsaved" (member "people — app ●" (tab-titles) :test #'string=) (tab-titles))
+    (check "and show Save" (gtk:widget-get-visible (cadre-ui::dbt-save-button page)))
+    (check "paging is refused until they're saved"
+           (handler-case (progn (cadre-ui::load-db-table page) nil) (editor-error () t)))
+    (screenshot "db-04-changes")
+    (call-command 'save-buffer)))
+
+(then 300
+  (check "Save writes the changes"
+         (equalp '(#("Ann" 35) #("Cy" 51) #("Dee" :null)) (db-query "SELECT name, age FROM people ORDER BY id"))
+         (db-query "SELECT name, age FROM people ORDER BY id"))
+  (check "and the tab is saved" (member "people — app" (tab-titles) :test #'string=) (tab-titles))
+  (let ((page (db-page)))
+    (cadre-ui::set-db-cell page 0 1 :null)
+    (check "a NOT NULL column refuses NULL on Save"
+           (not (cadre-ui::save-db-table page (lambda (ok) (declare (ignore ok))))))
+    (check "leaving the database as it was"
+           (equalp '(#("Ann")) (db-query "SELECT name FROM people WHERE id = 1")))
+    (cadre-ui::discard-db-changes page)
+    (check "Discard drops the changes" (not (buffer-modified-p (current-buffer))))
+    (gtk:toggle-button-set-active
+     (second (find-widgets (cadre-ui::view-widget (current-view))
+                           (lambda (w) (and (typep w 'gtk:toggle-button) (equal "Structure" (gtk:button-get-label w))))))
+     t)
+    (screenshot "db-05-structure")
+    (check "Structure shows the columns and the definition"
+           (let ((texts (label-texts (cadre-ui::dbt-structure page))))
+             (and (member "COLUMNS" texts :test #'string=) (find-if (lambda (s) (search "CREATE TABLE people" s)) texts)))))
+  (cadre-ui::open-db-table (db-connection-named "app") "adults"))
+
+(then 300
+  (check "a view can't be edited" (not (cadre-ui::dbt-editable-p (db-page))))
+  (cadre-ui::open-db-table (db-connection-named "app") "log"))
+
+(then 300
+  (check "a table without a key is edited by rowid" (equal '(:rowid) (cadre-ui::dbt-key (db-page))))
+  (cadre-ui::new-sql-console (db-connection-named "app")))
+
+(then 300
+  (check "a SQL console is a SQL buffer" (eq 'sql-mode (buffer-major-mode (current-buffer))))
+  (insert-at-cursor "select name, age from people order by name;
+select * from nowhere;
+create table later (x)")
+  (set-cursor 2 3)
+  (call-command 'db-run-statement))
+
+(then-when ((search "row" (results-label)) :timeout 10)
+  (check "Run Statement runs the statement at the cursor" (search "3 rows" (results-label)) (results-label))
+  (check "into the Results page" (string= "results" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (screenshot "db-06-results")
+  (set-cursor 1 3)
+  (call-command 'db-run-statement))
+
+(then-when ((search "row" (results-label)) :timeout 10)
+  (check "a query says how long it took" (ppcre:scan "3 rows · \\d+ ms" (results-label)) (results-label))
+  (set-cursor 3 3)
+  (call-command 'db-run-statement))
+
+(then-when ((search "nowhere" (results-label)) :timeout 10)
+  (check "a SQL error shows there" (gtk:widget-has-css-class (cadre-ui::rp-label (cadre-ui::results-page)) "error"))
+  (set-cursor 4 3)
+  (call-command 'db-run-statement))
+
+(then-when ((search "changed" (results-label)) :timeout 10)
+  (check "a statement making a table lists it on the page"
+         (member "later" (label-texts cadre-ui::*databases-list*) :test #'string=))
+  (let ((connection (db-connection-named "app")))
+    (cadre-ui::duplicate-db-connection connection)
+    (check "Duplicate copies a connection" (db-connection-named "app copy"))
+    (cadre-ui::close-db-connection connection)
+    (check "Close closes its tables' tabs"
+           (notany (lambda (title) (search "— app" title)) (tab-titles)) (tab-titles))))
+
 (let* ((only (or (uiop:getenv "ONLY") ""))
        (sections (selected-sections only)))
   (when (uiop:getenv "SMOKE_LIST")

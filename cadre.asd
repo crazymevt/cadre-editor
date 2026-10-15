@@ -72,6 +72,7 @@
                (:file "racket")
                (:file "language-docs")
                (:file "projects")
+               (:file "databases")
                (:file "gtk-app")
                (:file "run-app")
                (:file "bindings")
@@ -140,7 +141,11 @@
                              (:file "diff")))
                (:file "language-docs")
                (:file "edn")
-               (:file "language-projects")))
+               (:file "language-projects")
+               (:module "database"
+                :serial t
+                :components ((:file "database")
+                             (:file "sqlite")))))
 
 (defsystem "cadre/tests"
   :description "Headless tests for cadre/core."
@@ -159,5 +164,6 @@
                (:file "nrepl")
                (:file "racket")
                (:file "claude")
-               (:file "terminal"))
+               (:file "terminal")
+               (:file "database"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

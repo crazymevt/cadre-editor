@@ -441,6 +441,16 @@
     "RET" 'code-newline
     "TAB" 'code-indent))
 
+;;; SQL (databases.lisp): run the statement at the cursor, or the whole file.
+(bind-keys (mode-profile-keymap 'sql-mode :standard)
+  "C-RET" 'db-run-statement
+  "C-S-RET" 'db-run-all-sql)
+
+(bind-keys (mode-profile-keymap 'sql-mode :emacs)
+  "C-c C-c" 'db-run-statement
+  "C-c C-b" 'db-run-all-sql
+  "C-c C-d" 'db-choose-connection)
+
 ;;; Markdown. Emacs keys follow markdown-mode's; Standard ones VS Code's.
 (bind-keys (mode-profile-keymap 'markdown-mode :standard)
   "C-k v" 'markdown-preview

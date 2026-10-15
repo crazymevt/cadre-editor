@@ -97,10 +97,14 @@ picture opens to be looked at (image-view.lisp)."
                         (funcall continuation nil)))))
 
 (defun save-one (win buffer continuation)
-  (if (buffer-file buffer)
-      (write-buffer buffer (buffer-file buffer) continuation)
-      (progn (show-buffer win buffer)
-             (save-buffer-to-chosen-file win buffer continuation))))
+  (cond
+    ;; A buffer that saves itself somewhere else (a database table's edits).
+    ((buffer-local buffer :save-function)
+     (funcall (buffer-local buffer :save-function) continuation))
+    ((buffer-file buffer)
+     (write-buffer buffer (buffer-file buffer) continuation))
+    (t (show-buffer win buffer)
+       (save-buffer-to-chosen-file win buffer continuation))))
 
 (defun save-buffers (win buffers continuation)
   "Save BUFFERS one after another; call CONTINUATION with t if all were saved."

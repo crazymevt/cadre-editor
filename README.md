@@ -845,6 +845,45 @@ New Project's **GTK application** kind starts a project ready for this:
   app, for another editor's REPL) and `make build` (an executable, with
   `gtk4:save-executable`).
 
+### Databases
+
+The Databases page (the cylinder in the activity bar) keeps your database
+connections. SQLite comes first, through the `libsqlite3` macOS and Linux
+already have; other databases can be added later as backends.
+
+- **+** adds a connection: a name, the database file (**Choose…** an existing
+  one or **New…** for an empty one), **Read-only**, and **Save with the
+  project**. A project's connections go in its `.cadre/databases.sexp`, with
+  the file's path relative to the project, so you can commit them; the others
+  are yours alone, in `~/.config/cadre/databases.sexp`. **Test Connection**
+  tries it.
+- A connection's **Open** / **Close**, and its ⋮ menu: New SQL Console,
+  Refresh Tables, Edit…, Duplicate and Delete… (which forgets the connection,
+  not the database). Expanding a closed connection opens it.
+- An open connection lists its tables and views. A table opens in a tab, a
+  page of rows at a time (`*db-page-size*`, 100), with a filter above each
+  column: text the column contains, or `=`, `!=`, `<`, `>`, `<=`, `>=` a value,
+  `NULL` or `!NULL`. Click a column's name to sort by it (again: descending;
+  again: unsorted). **Structure** shows the columns, indexes, foreign keys and
+  the `CREATE` statement; ⤓ saves the rows shown as CSV.
+- A table with a key can be edited (not a view, or a read-only connection):
+  double-click a cell to change it, **+** adds a row (empty cells get the
+  column's default), and checked rows are deleted with 🗑. Right-click a cell
+  to edit long or multi-line text, set it to NULL, copy it, or filter by it.
+  Changes are colored and held until **Save** (`Ctrl+S`) writes them all in
+  one transaction, or **Discard** drops them; closing the tab asks.
+- A **SQL console** is a SQL buffer tied to a connection; any `.sql` file
+  can be too (it asks which the first time). The Results page in the panel
+  shows the rows (up to `*db-result-limit*`, 500), how long it took, or how
+  many rows changed; **Copy as CSV** copies them, and **Stop** stops a slow
+  query.
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Run the statement at the cursor (or the selection) | `Ctrl+Enter` | `C-c C-c` |
+| Run the whole file | `Ctrl+Shift+Enter` | `C-c C-b` |
+| Choose the connection it runs against | `M-x db-choose-connection` | `C-c C-d` |
+
 ### Folding
 
 Lisp forms that span lines, Markdown sections (a heading down to the next

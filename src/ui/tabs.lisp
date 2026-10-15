@@ -104,7 +104,32 @@ one if it has none. Returns the view."
     (when focus (focus-view view))
     view))
 
+(defun add-widget-view (win buffer group)
+  "A tab for BUFFER showing the widget its :tab-widget function makes (a
+database table): the view's text view stays out of sight."
+  (let ((view (make-editor-view buffer :gutter nil)))
+    (setf (slot-value view 'widget) (funcall (buffer-local buffer :tab-widget) view)
+          (gethash (view-widget view) (window-views win)) view
+          (view-group view) group)
+    (let ((focus (gtk:event-controller-focus-new)))
+      (gobject:connect focus :enter (lambda (&rest args) (declare (ignore args))
+                                      (activate-group win (view-group view))))
+      (gtk:widget-add-controller (view-widget view) focus))
+    (adw:tab-view-append (group-tab-view group) (view-widget view))
+    (unless (buffer-local buffer :tab-title-handler)
+      (setf (buffer-local buffer :tab-title-handler)
+            (gobject:connect (buffer-text buffer) :modified-changed
+                             (lambda (b) (declare (ignore b)) (update-tab-titles win buffer)))))
+    (update-tab-titles win buffer)
+    (show-empty-or-tabs win)
+    view))
+
+(defun widget-view-p (view)
+  (and (buffer-local (view-buffer view) :tab-widget) t))
+
 (defun add-view (win buffer &optional (group (window-active-group win)))
+  (when (buffer-local buffer :tab-widget)
+    (return-from add-view (add-widget-view win buffer group)))
   (let* ((preview (buffer-local buffer :preview-of))
          (image (image-buffer-p buffer))
          (hyperspec (hyperspec-buffer-p buffer))
