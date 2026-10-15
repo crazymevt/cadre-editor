@@ -33,7 +33,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: version
         name: Check the tag against cadre.asd
         run: |
@@ -54,7 +54,7 @@ jobs:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
       NOTARY_KEY_CONTENTS: ${{ secrets.NOTARY_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install SBCL, GTK and the tools
         # The runner comes with some of their dependencies installed, maybe
@@ -119,7 +119,7 @@ jobs:
           cat ~/.local/state/cadre/cadre.log
           grep -q 'Cadre exited normally' ~/.local/state/cadre/cadre.log
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cadre-macos
           path: dist/*
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install SBCL and GTK
         run: |
@@ -158,7 +158,7 @@ jobs:
       - name: Install the .deb
         run: sudo apt-get install -y ./dist/cadre_*.deb && test -x /usr/bin/cadre
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cadre-linux
           path: dist/*
@@ -171,7 +171,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
