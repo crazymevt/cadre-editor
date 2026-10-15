@@ -69,8 +69,50 @@ line of output too, and ON-END with the exit code when it ends."
            (glib:call-in-main-thread (lambda () (build-finished code))))))
      :name "cadre build")))
 
+(defparameter *project-markers* '("info.rkt" "deps.edn" "project.clj" "bb.edn")
+  "Files that make a folder a project (besides .asd files).")
+
+(defun project-folder-p (directory)
+  (or (uiop:directory-files directory "*.asd")
+      (some (lambda (name) (probe-file (merge-pathnames name directory))) *project-markers*)))
+
+(defvar *project-root-cache* nil
+  "((file . open-folder) . root): the last CURRENT-PROJECT-ROOT, which the
+status bar asks for as the cursor moves. Saving a file forgets it.")
+
+(add-hook '*after-save-hook* (lambda (buffer) (declare (ignore buffer)) (setf *project-root-cache* nil)))
+
+(defun current-project-root ()
+  "The project the current file is in: the nearest folder above it with an
+.asd, info.rkt, deps.edn, project.clj or bb.edn, looking no higher than the
+open folder; else (or for a file outside the open folder) the open folder. So with a
+folder of several projects open, Run, Build and the Project page act on the
+one you are working in."
+  (let* ((open (and *window* (window-project *window*)))
+         (view (and *window* (selected-view *window*)))
+         (file (and view (buffer-file (view-buffer view))))
+         (top (and open (uiop:ensure-directory-pathname open)))
+         (key (cons (and file (namestring file)) (and open (namestring open)))))
+    (if (equal key (car *project-root-cache*))
+        (cdr *project-root-cache*)
+        (cdr (setf *project-root-cache* (cons key (find-project-root file top open)))))))
+
+(defun find-project-root (file top open)
+  "The nearest project folder above FILE, no higher than TOP; else OPEN. A
+file outside the open folder doesn't count: the folder opened wins."
+  (or (and file
+           (or (null top) (uiop:subpathp (uiop:ensure-absolute-pathname file) top)
+               (let ((real-file (probe-file file)) (real-top (probe-file top)))
+                 (and real-file real-top (uiop:subpathp real-file real-top))))
+             (loop for dir = (uiop:pathname-directory-pathname file) then (uiop:pathname-parent-directory-pathname dir)
+                   repeat 30
+                   when (ignore-errors (project-folder-p dir)) return dir
+                   until (or (and top (equal (namestring dir) (namestring top)))
+                             (equal dir (uiop:pathname-parent-directory-pathname dir)))))
+      open))
+
 (defun project-root-or-error ()
-  (or (and *window* (window-project *window*)) (editor-error "Open a project first")))
+  (or (current-project-root) (editor-error "Open a project first")))
 
 (defun save-project-then (root continuation)
   "Save the changed files under ROOT, then call CONTINUATION."

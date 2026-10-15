@@ -85,7 +85,7 @@ in the REPL, which also fetches what Quicklisp must."
 
 (define-command load-project ()
   "Load the open folder's ASDF system into the Lisp (choosing one if there are several)."
-  (let* ((directory (or (window-project *window*) (editor-error "Open a folder first.")))
+  (let* ((directory (or (current-project-root) (editor-error "Open a folder first.")))
          (systems (or (project-systems directory)
                       (editor-error "No .asd file in ~a" (uiop:native-namestring directory))))
          (last (setting :last-system)))
@@ -108,7 +108,7 @@ ASDF can find the project's systems."
   (with-connection (connection)
     (flet ((ready ()
              (rex connection (swank-call "swank:eval-and-grab-output"
-                                         (asdf-form "nil" (window-project *window*)))
+                                         (asdf-form "nil" (current-project-root)))
                   :on-ok (lambda (v) (declare (ignore v)) (funcall function connection)))))
       (if (eq *asdf-connection* connection)
           (ready)
@@ -198,18 +198,29 @@ it compiled. With nothing to compile, or no plan, just call RUN."
   "Redraw the page's Racket and Clojure sections (projects.lisp), as when a
 REPL starts or stops: not the ASDF systems, which ask the Lisp."
   (when (and *language-sections* *window*)
-    (refresh-language-sections (window-project *window*))))
+    (refresh-language-sections (current-project-root))))
 
 (defun systems-status (format &rest args)
   (gtk:label-set-text *systems-status* (if format (apply #'format nil format args) ""))
   (gtk:widget-set-visible *systems-status* (and format t)))
 
+(defvar *project-page-root* nil "The project the Project page shows (a namestring).")
+
+(defun follow-project-root ()
+  "When the current file is in another project than the page shows, show
+that one, and its ▶."
+  (let ((root (current-project-root)))
+    (unless (equal (and root (namestring root)) *project-page-root*)
+      (refresh-systems)
+      (update-run-button))))
+
 (defun refresh-systems ()
   "List the project's systems again, and ask the Lisp which are loaded."
+  (setf *project-page-root* (let ((root (current-project-root))) (and root (namestring root))))
   (when *systems-list*
     (gtk:list-box-remove-all *systems-list*)
     (setf *system-rows* '())
-    (let* ((directory (window-project *window*))
+    (let* ((directory (current-project-root))
            (entries (and directory (project-system-entries directory)))
            (others (refresh-language-sections directory)))
       (gtk:widget-set-visible *systems-list* (and entries t))

@@ -253,9 +253,14 @@ as messages, and an abort without :on-abort says so."
     (if (member language '(:clojure :racket)) language :common-lisp)))
 
 (defun follow-status-language ()
-  "Show the selected tab's language's connection, if that changed."
+  "Show the selected tab's language's connection, if that changed, and its
+REPL on the REPL page (when the tab is Lisp code of some kind)."
   (unless (eq (status-language) *status-language*)
-    (update-connection-status)))
+    (update-connection-status))
+  (let* ((view (and *window* (selected-view *window*)))
+         (language (and view (mode-dialect-name (buffer-major-mode (view-buffer view))))))
+    (when language (show-repl-language language)))
+  (follow-project-root))
 
 (defun language-starting-p (language)
   (case language

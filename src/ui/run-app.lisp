@@ -197,7 +197,7 @@ any other in the REPL, which takes the input it reads."
   "Show the ▶ button when the project has an app, as ■ while it runs."
   (let ((button (gethash :run-button *named-widgets*)))
     (when (and button *window*)
-      (let* ((root (window-project *window*))
+      (let* ((root (current-project-root))
              (app (current-project-app root))
              (running (app-running-p)))
         (gtk:widget-set-visible button (or running (and app t)))

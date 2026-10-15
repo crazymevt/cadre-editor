@@ -363,7 +363,7 @@ Returns true if it has either."
   "Install what the open folder's Racket package or Clojure project depends on:
 Racket's missing packages, or Clojure's new libraries (into the running REPL
 when it can)."
-  (let* ((directory (or (window-project *window*) (editor-error "Open a project first")))
+  (let* ((directory (or (current-project-root) (editor-error "Open a project first")))
          (kind (clojure-project-kind-here directory)))
     (cond ((probe-file (merge-pathnames "info.rkt" directory)) (install-racket-dependencies directory))
           (kind (load-clojure-dependencies directory kind))
