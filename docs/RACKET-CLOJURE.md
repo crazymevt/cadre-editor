@@ -403,12 +403,22 @@ so they can be built in parallel (in separate sessions or branches).
     contracts (the docs' blue boxes, about 22,800 in 11 seconds). Each entry
     links to its full page.
   - **Clojure: Build Docs:** the arglists and docstrings of every public
-    var in the namespaces the connected Clojure has loaded.
+    var in Clojure's standard namespaces, from `clojure -M -e` run in a
+    scratch folder, so neither a project's code nor the REPL's tooling is in
+    them.
   - **Clojure: Build Docs with ClojureDocs Examples:** the same, plus
     ClojureDocs' examples, see-alsos and notes, from its public export
     (`clojuredocs-export.json`), downloaded by the user's machine. The
     export states no license, so it is never bundled; the docset credits
     ClojureDocs and its contributors.
+  - **Settings → Racket / Clojure → Documentation** shows when each was
+    built (and from which version) with Rebuild buttons.
+  - **A project's own docs** (the Project page's Build Docs, or Build
+    Project Docs) go to a separate docset, `project-NAME-HASH`: a Racket
+    package's provided names with their definitions' headers, contracts and
+    the comments above them, read by `docs.rkt project` without running the
+    code; a Clojure project's `src/` namespaces' docstrings, read through
+    its REPL. Look Up in Docs searches the project's docset first.
 - **Project page (2026-10-15):** the sidebar's ASDF Systems page became
   Project, which also shows the folder's Racket package (from `info.rkt`)
   and Clojure project (from `deps.edn`, `project.clj` or `bb.edn`, read by

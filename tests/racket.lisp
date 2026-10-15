@@ -280,3 +280,34 @@ nil if there is no Racket."
                (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))
       (uiop:delete-directory-tree dir :validate t)))
   (is equal '("pkg" "install" "--auto" "--skip-installed" "--batch" "a" "b") (c:racket-install-arguments '("a" "b"))))
+
+;;; A Racket package's own docset, read from its source
+
+(defmacro with-scratch-data-home ((dir) &body body)
+  "Run BODY with XDG_DATA_HOME (where docsets go) in DIR, a scratch folder."
+  `(let ((,dir (merge-pathnames (format nil "cadre-xdg-~d/" (random 1000000)) (uiop:temporary-directory)))
+         (old (uiop:getenv "XDG_DATA_HOME")))
+     (ensure-directories-exist ,dir)
+     (sb-posix:setenv "XDG_DATA_HOME" (namestring ,dir) 1)
+     (unwind-protect (progn ,@body)
+       (if old (sb-posix:setenv "XDG_DATA_HOME" old 1) (sb-posix:unsetenv "XDG_DATA_HOME"))
+       (uiop:delete-directory-tree ,dir :validate t :if-does-not-exist :ignore))))
+
+(define-test racket-project-docset :parent cadre-tests
+  (true (ppcre:scan "^project-greet-[0-9a-f]{6}$" (c:project-docset-id #p"/tmp/x/greet/")))
+  (false (equal (c:project-docset-id #p"/tmp/a/greet/") (c:project-docset-id #p"/tmp/b/greet/"))
+         "two projects of the same name get different ids")
+  (if (ignore-errors (uiop:run-program (list c:*racket-command* "--version") :output nil) t)
+      (with-scratch-data-home (xdg)
+        (let ((root (merge-pathnames "greet/" xdg)))
+          (ensure-directories-exist root)
+          (with-open-file (o (merge-pathnames "main.rkt" root) :direction :output)
+            (format o "#lang racket/base~%(require racket/contract)~%(provide hello (contract-out [area (-> real? real? real?)]))~%~%;; Greet someone.~%(define (hello [who \"World\"]) (format \"Hello, ~~a!\" who))~%(define (area w h) (* w h))~%(define secret 42)~%"))
+          (is eql 2 (c:build-racket-project-docset root :title "greet"))
+          (let* ((docset (docset:open-docset (merge-pathnames (format nil "docsets/~a/" (c:project-docset-id root)) xdg)))
+                 (hello (docset:docset-entry docset (docset:record-id (first (docset:find-records docset "hello"))))))
+            (is string= "greet" (docset:docset-title docset))
+            (true (search "Greet someone." (prin1-to-string hello)) "the comment above it is its description")
+            (true (search "(-> real? real? real?)" (prin1-to-string (docset:docset-entry docset (docset:record-id (first (docset:find-records docset "area")))))))
+            (false (docset:find-records docset "secret") "what isn't provided isn't documented"))))
+      (progn (require-language "Racket") (skip "Racket isn't installed" (true nil)))))

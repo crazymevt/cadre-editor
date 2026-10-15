@@ -3490,6 +3490,36 @@ and the number of items MODEL itself shows."
              (and (search "Hello, Pat!" text) (search "finished" (status-text)))
              (status-text)))))
 
+;; The package's own docs, apart from Racket's (in a data folder of the run's own).
+(then 300
+  (when *have-racket*
+    (sb-posix:setenv "XDG_DATA_HOME" (namestring (merge-pathnames "xdg-data/" *root*)) 1)
+    (gtk:widget-activate (find-button "Build Docs"))))
+
+(then-when ((or (not *have-racket*) (search "docs are ready" (status-text))) :timeout 60)
+  (when *have-racket*
+    (check "the package's Build Docs makes its own docset" (search "rkt-pkg docs are ready: 1 entr" (status-text)) (status-text))
+    (open-file-path (merge-pathnames "rkt-pkg/main.rkt" *root*))))
+
+(then 600
+  (when *have-racket*
+    (set-cursor 2 9)                    ; (define (h|i) 'hi)
+    (call-command 'cadre-ui::look-up-documentation)))
+
+(then-when ((or (not *have-racket*) (find-buffer "rkt-pkg: hi")) :timeout 20)
+  (when *have-racket*
+    (check "Look Up in Docs finds the project's own entry first" (find-buffer "rkt-pkg: hi"))
+    (call-command 'cadre-ui::settings)))
+
+(then 800
+  (when *have-racket*
+    (check "Settings has the Racket docs, with Rebuild"
+           (member "Racket docs" (label-texts cadre-ui::*settings-dialog*) :test #'equal)
+           (remove-if-not (lambda (l) (search "docs" l)) (label-texts cadre-ui::*settings-dialog*)))
+    (adw:dialog-close cadre-ui::*settings-dialog*)
+    (sb-posix:unsetenv "XDG_DATA_HOME")
+    (cadre-ui::reload-docsets)))
+
 (then 300
   (when *have-clojure*
     (write-root-file "clj-proj/deps.edn"

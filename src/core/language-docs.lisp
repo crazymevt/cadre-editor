@@ -7,10 +7,15 @@
 ;;;;   racket/   every documented export's signature and contracts (the
 ;;;;             docs' blue boxes), from the installed Racket, by
 ;;;;             vendor/cadre-racket/docs.rkt, with a link to its full page
-;;;;   clojure/  the arglists and docstrings of every public var of the
-;;;;             namespaces loaded in the connected Clojure; with ClojureDocs'
-;;;;             export, which the user downloads, its examples, see-alsos
-;;;;             and notes too
+;;;;   clojure/  the arglists and docstrings of every public var of Clojure's
+;;;;             standard namespaces, from a Clojure started for it with
+;;;;             nothing else on its classpath (not a project's REPL); with
+;;;;             ClojureDocs' export, which the user downloads, its examples,
+;;;;             see-alsos and notes too
+;;;;   project-NAME-…/  a project's own: a Clojure project's namespaces, read
+;;;;             through its REPL, or a Racket package's exports, read from
+;;;;             its source without running it
+;;;; Look Up in Docs searches the current project's docset first.
 
 (in-package #:cadre)
 
@@ -39,8 +44,9 @@
         ((string= kind "") (values :other "Binding"))
         (t (values :other (string-capitalize kind)))))
 
-(defun racket-docset-entry (name libraries kind lines url)
-  "A docset entry for a documented Racket export, from docs.rkt's line."
+(defun racket-docset-entry (name libraries kind lines url &optional description)
+  "A docset entry for a documented Racket export, from docs.rkt's line (a
+project's has a DESCRIPTION, from the comments above its definition)."
   (multiple-value-bind (kind kind-name) (racket-kind kind)
     (list :entry (format nil "~a~@[@~a~]" name (first libraries))
           :names (list name) :kind kind :kind-name kind-name :package (first libraries)
@@ -48,6 +54,8 @@
           :upstream url
           :sections (append
                      (and lines (list (list "Signature" (list :code-block "lisp" (format nil "~{~a~^~%~}" lines)))))
+                     (and (plusp (length description))
+                          (list (list "Description" (list :code-block nil description))))
                      (and libraries (list (list "Provided by" (list :p (format nil "~{~a~^, ~}" libraries)))))
                      (and url (list (list "Documentation"
                                           (list :p (list :link url "The full entry in the installed Racket documentation")))))))))
@@ -58,9 +66,10 @@
    (loop for line in (uiop:split-string output :separator '(#\Newline))
          for data = (and (plusp (length line)) (ignore-errors (read-sexp line)))
          when (and (consp data) (stringp (first data)))
-           collect (destructuring-bind (name libraries kind lines url) data
+           collect (destructuring-bind (name libraries kind lines url &optional description) data
                      (racket-docset-entry name (remove-if-not #'stringp libraries) (or kind "")
-                                          (remove-if-not #'stringp lines) (and (stringp url) url))))))
+                                          (remove-if-not #'stringp lines) (and (stringp url) url)
+                                          (and (stringp description) description))))))
 
 (defun racket-version-string ()
   (string-trim '(#\Newline #\Space)
@@ -173,16 +182,17 @@ CLOJUREDOCS (from clojuredocs-index) merged in when given."
   (let ((data (clojure-printed-sexp (clojure-read-string value))))
     (remove-if-not (lambda (v) (and (consp v) (stringp (first v)) (stringp (second v)))) data)))
 
-(defun write-clojure-docset (vars &key clojuredocs version (directory (language-docset-directory "clojure")))
+(defun write-clojure-docset (vars &key clojuredocs version (id "clojure") (title "Clojure") source
+                                          (directory (language-docset-directory id)))
   "Write the Clojure docset for VARS; CLOJUREDOCS is ClojureDocs' parsed export, or nil."
   (let ((entries (clojure-docset-entries vars (and clojuredocs (clojuredocs-index clojuredocs)))))
     (docset:write-docset directory
-                         (list :id "clojure" :title "Clojure"
+                         (list :id id :title title
                                :subtitle (if clojuredocs
                                              "Docstrings from the connected Clojure, with ClojureDocs' examples"
                                              "Docstrings from the connected Clojure")
                                :version (or version "") :packages (remove-duplicates (mapcar #'first vars) :test #'string=)
-                               :source "The namespaces loaded in the connected Clojure"
+                               :source (or source "Clojure's standard namespaces")
                                :attribution (if clojuredocs
                                                 "Docstrings from the Clojure libraries' authors. Examples, see-alsos and notes from ClojureDocs (clojuredocs.org), by its contributors, downloaded on this machine and not part of Cadre."
                                                 "Docstrings from the Clojure libraries' authors, read from the connected Clojure on this machine.")
@@ -199,10 +209,82 @@ CLOJUREDOCS (from clojuredocs-index) merged in when given."
   (parse-json (uiop:run-program (list "curl" "-fsSL" "--max-time" "120" *clojuredocs-export-url*)
                                 :output :string :error-output :string)))
 
-(defun request-clojure-docs-vars (connection &key on-ok on-abort)
-  "Ask CONNECTION's Clojure for its public vars (CLOJURE-DOCS-VARS' lists)."
-  (nrepl-eval-request connection *clojure-docs-code* :ns "user" :on-abort on-abort
+(defun clojure-language-vars ()
+  "Clojure's standard namespaces' public vars, from a Clojure started for it
+in a folder with no project (so nothing else is on its classpath), and its
+version."
+  (let* ((folder (uiop:ensure-directory-pathname (merge-pathnames (format nil "cadre-clojure-docs-~d/" (random 1000000))
+                                                                  (uiop:temporary-directory)))))
+    (ensure-directories-exist folder)
+    (unwind-protect
+         (flet ((run (code)
+                  (string-trim '(#\Newline #\Return #\Space)
+                               (uiop:run-program (list *clojure-command* "-M" "-e" code)
+                                                 :directory (uiop:native-namestring folder)
+                                                 :output :string :error-output :string))))
+           (values (clojure-docs-vars (run *clojure-docs-code*))
+                   (format nil "Clojure ~a" (run "(print (clojure-version))"))))
+      (uiop:delete-directory-tree folder :validate t :if-does-not-exist :ignore))))
+
+(defun build-clojure-docset (&key clojuredocs)
+  "Make the Clojure docset (with ClojureDocs' examples if CLOJUREDOCS), from
+Clojure's standard namespaces. Returns the number of entries."
+  (multiple-value-bind (vars version) (clojure-language-vars)
+    (when (null vars) (editor-error "Clojure listed no vars (is the Clojure CLI installed?)"))
+    (write-clojure-docset vars :version version :clojuredocs (and clojuredocs (download-clojuredocs)))))
+
+(defun request-clojure-docs-vars (connection &key (code *clojure-docs-code*) on-ok on-abort)
+  "Ask CONNECTION's Clojure for public vars (CLOJURE-DOCS-VARS' lists): with
+CODE such as CLOJURE-PROJECT-DOCS-CODE's, just those."
+  (nrepl-eval-request connection code :ns "user" :on-abort on-abort
                       :on-done (lambda (values error-output failed)
                                  (if (or failed (null values))
                                      (when on-abort (funcall on-abort (eval-error-reason error-output)))
                                      (when on-ok (funcall on-ok (clojure-docs-vars (car (last values)))))))))
+
+;;; A project's own docset
+
+(defun project-docset-id (root)
+  "The id of the docset of the project in ROOT: its folder's name, and a few
+digits from its path so two projects of the same name don't share one."
+  (let ((path (namestring (uiop:ensure-directory-pathname root))))
+    (format nil "project-~a-~(~6,'0x~)" (car (last (pathname-directory path))) (logand (sxhash path) #xffffff))))
+
+(defun build-racket-project-docset (root &key title)
+  "Make ROOT's Racket package's docset: what its modules provide, read from
+their source without running them. Returns the number of entries."
+  (let* ((files (mapcar #'uiop:native-namestring (racket-package-modules root)))
+         (output (uiop:run-program (list* *racket-command*
+                                          (uiop:native-namestring
+                                           (merge-pathnames "docs.rkt" (uiop:pathname-directory-pathname (racket-backend-file))))
+                                          "project" (uiop:native-namestring root) files)
+                                   :output :string :error-output :string))
+         (entries (racket-docset-entries output))
+         (id (project-docset-id root)))
+    (docset:write-docset (language-docset-directory id)
+                         (list :id id :title (or title (car (last (pathname-directory root))))
+                               :subtitle "A Racket package's exports, from its source"
+                               :packages '() :source (uiop:native-namestring root)
+                               :attribution "Made by Cadre from the package's source on this machine."
+                               :toc '())
+                         entries)
+    (length entries)))
+
+(defun clojure-project-docs-code (namespaces)
+  "Clojure that (re)loads NAMESPACES and lists their public vars as
+*CLOJURE-DOCS-CODE* does."
+  (format nil "(do (doseq [n '[~{~a~^ ~}]] (try (require n :reload) (catch Throwable _ nil)))
+  (binding [*print-length* nil *print-level* nil]
+    (pr-str (for [n '[~:*~{~a~^ ~}] :let [ns (find-ns n)] :when ns
+                  [sym v] (sort-by (comp str key) (ns-publics ns)) :let [m (meta v)]]
+              (list (str n) (str sym)
+                    (cond (:macro m) \"macro\" (fn? (try @v (catch Throwable _ nil))) \"function\" :else \"var\")
+                    (map str (:arglists m)) (or (:doc m) \"\"))))))"
+          namespaces))
+
+(defun write-clojure-project-docset (root vars &key title)
+  "Write ROOT's Clojure project's docset from VARS (its namespaces')."
+  (let ((id (project-docset-id root)))
+    (write-clojure-docset vars :id id :title (or title (car (last (pathname-directory root))))
+                               :source (uiop:native-namestring root)
+                               :directory (language-docset-directory id))))

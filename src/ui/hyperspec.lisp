@@ -318,7 +318,8 @@
   "\"HyperSpec: mapcar\" for Common Lisp and its libraries; \"Racket: first\"
 or \"Clojure: map\" for the docs Cadre builds for those."
   (format nil "~a: ~a"
-          (if (member (docset:docset-id docset) '("racket" "clojure") :test #'equal)
+          (if (or (member (docset:docset-id docset) '("racket" "clojure") :test #'equal)
+                  (uiop:string-prefix-p "project-" (docset:docset-id docset)))
               (docset:docset-title docset)
               "HyperSpec")
           (first (docset:entry-names entry))))

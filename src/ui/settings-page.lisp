@@ -182,6 +182,8 @@ take effect the next time they are used.")
                 (adw:preferences-group-add group row)))
             (adw:preferences-page-add page group)
             (when (string= category "Other") (adw:preferences-page-add page (make-files-group)))
+            (when (member category '("Racket" "Clojure") :test #'string=)
+              (adw:preferences-page-add page (docs-settings-group category)))
             (adw:preferences-dialog-add dialog page)))))
     dialog))
 

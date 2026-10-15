@@ -174,6 +174,10 @@ the process; nil if there is no Clojure CLI."
                                             :key #'docset:record-package :test #'equal)))
                           (true (search "lazy seq" (docset:record-summary record)) (docset:record-summary record))))
                    (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
+               ;; A project's docset: just its namespaces, reloaded.
+               (backend-value #'c:backend-eval conn "(ns probe.docs) (defn documented \"Does a thing.\" [x] x)" :package "user")
+               (let ((vars (backend-value #'c:request-clojure-docs-vars conn :code (c:clojure-project-docs-code '("probe.docs")))))
+                 (is equal '(("probe.docs" "documented" "function" ("[x]") "Does a thing.")) vars))
                ;; Input: the program asks for a line, and gets what is typed.
                (sb-thread:with-mutex (*events-lock*) (setf *events* '()))
                (let ((done (sb-thread:make-semaphore)) (value nil))

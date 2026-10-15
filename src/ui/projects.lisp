@@ -94,7 +94,8 @@
                    (lambda () (run-raco directory (list "pkg" "install" "--auto" "--batch" "--link"
                                                         (uiop:native-namestring directory))
                                         "raco pkg install")))
-      (flat-button "Build Docs" "Racket: Build Docs" (lambda () (call-command 'racket-build-docs)))))
+      (flat-button "Build Docs" "Make this package's own docs (Look Up in Docs searches them first)"
+                   (lambda () (call-command 'build-project-docs)))))
     (when all-deps (check-racket-dependencies directory all-deps deps-row install))
     (values (section-heading (format nil "RACKET PACKAGE~@[ · ~a~]~@[ ~a~]"
                                      (getf info :collection) (getf info :version)))
@@ -214,7 +215,8 @@
                          (button-bar
                           (flat-button "Run All Tests" "Load every namespace and run the project's tests; failures go to Problems"
                                        (lambda () (run-clojure-project-tests directory)))
-                          (flat-button "Build Docs" "Clojure: Build Docs" (lambda () (call-command 'clojure-build-docs)))))
+                          (flat-button "Build Docs" "Make this project's own docs (Look Up in Docs searches them first)"
+                                       (lambda () (call-command 'build-project-docs)))))
     (values (section-heading (format nil "CLOJURE PROJECT · ~a~@[ ~a~] · ~a"
                                      (getf project :name) (getf project :version)
                                      (ecase kind (:deps "deps.edn") (:lein "project.clj") (:babashka "bb.edn"))))

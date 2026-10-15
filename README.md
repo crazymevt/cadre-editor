@@ -286,11 +286,16 @@ Racket package or a Clojure project, the page shows that too:
 - **Racket** (`info.rkt`): the dependencies, with Install for any not yet
   installed (`raco pkg install`); the modules, each with Run and Test; and
   Test, Make, Install for This Machine (`raco pkg install --link`) and Build
-  Docs for the package.
+  Docs, which makes the package's own docs: what its modules provide, with
+  their definitions' headers and the comments above them, read from the
+  source without running it.
 - **Clojure** (`deps.edn`, `project.clj` or `bb.edn`): the REPL, with Jack
   In or Restart; the aliases (Leiningen's profiles) to start it with; the
   dependencies; the namespaces, each with Load and Test; Run All Tests; and
-  Build Docs.
+  Build Docs, which makes the project's own docs from its namespaces'
+  docstrings (through its REPL).
+- A project's docs are kept apart from the language's, and Look Up in Docs
+  searches them first.
 - Saving `info.rkt` or a Clojure project file says when there's something
   to install. **Load New Dependencies** adds a `deps.edn` project's new
   libraries to its running REPL without a restart (Clojure 1.12's
@@ -628,9 +633,10 @@ Lisp commands work on Clojure code, in the file's namespace:
   (failures in Problems), and the Inspector
 - clj-kondo's findings on save when it's installed, and indentation from the
   project's `.cljfmt.edn` and macros' `:style/indent`
-- Look Up in Docs (`C-c C-d h`) after Clojure: Build Docs, which makes docs
-  from the loaded namespaces' docstrings (and, if you choose, ClojureDocs'
-  examples, downloaded to your machine)
+- Look Up in Docs (`C-c C-d h`) after the Clojure docs are built (Settings →
+  Clojure → Documentation, or Clojure: Build Docs): Clojure's standard
+  namespaces' docstrings, from a Clojure started for it (not your project),
+  and, if you choose, ClojureDocs' examples, downloaded to your machine
 
 The status bar shows the Clojure connection while a Clojure tab is selected.
 This needs the Clojure CLI (or Leiningen, or Babashka). The first start
@@ -655,8 +661,10 @@ module and puts the REPL in it, as DrRacket's Run does. Then:
 - Rename Symbol for a binding and its uses in the file, and run-time errors
   with their stack on the Debugger page
 - Scribble files (`.scrbl`) with their @-expressions' text read as prose
-- Look Up in Docs (`C-c C-h`) after Racket: Build Docs, which makes docs of
-  every documented name's signature from your installed Racket
+- Look Up in Docs (`C-c C-h`) after the Racket docs are built (Settings →
+  Racket → Documentation, or Racket: Build Docs): every documented name's
+  signature from your installed Racket. Rebuild them after installing
+  packages.
 - a Racket package in New Project
 
 Programs reading their input get the lines typed in the language's REPL
