@@ -19,7 +19,7 @@
 
 ;;; Connections
 
-(defparameter *database-kinds* '((:sqlite . "SQLite") (:postgres . "PostgreSQL"))
+(defparameter *database-kinds* '((:sqlite . "SQLite") (:postgres . "PostgreSQL") (:mysql . "MySQL / MariaDB"))
   "The kinds of database Cadre can open, and their names.")
 
 (defstruct (db-connection (:conc-name db-connection-))
@@ -220,9 +220,28 @@ its rows can't be told apart (a view): then it can't be edited."))
 
 ;;; SQL text
 
+(defvar *identifier-quote* #\"
+  "The character around a quoted SQL name: \" (standard), or ` for MySQL (WITH-DB-QUOTING).")
+
 (defun quote-sql-identifier (name)
-  "NAME as a quoted SQL identifier: \"name\", with \" doubled."
-  (format nil "\"~a\"" (ppcre:regex-replace-all "\"" name "\"\"")))
+  "NAME as a quoted SQL identifier: \"name\", with \" doubled (or `name` for MySQL)."
+  (let ((q (string *identifier-quote*)))
+    (format nil "~a~a~a" q (ppcre:regex-replace-all (ppcre:quote-meta-chars q) name (concatenate 'string q q)) q)))
+
+(defvar *text-type* "TEXT" "The type CAST makes text with: TEXT, or CHAR for MySQL.")
+
+(defgeneric db-identifier-quote (db)
+  (:documentation "The character that quotes names in DB's SQL.")
+  (:method (db) (declare (ignore db)) #\"))
+
+(defgeneric db-text-type (db)
+  (:documentation "The type to CAST a value to for its text.")
+  (:method (db) (declare (ignore db)) "TEXT"))
+
+(defmacro with-db-quoting ((db) &body body)
+  "Run BODY making SQL as DB's dialect has it: its quoted names, its casts."
+  (let ((d (gensym)))
+    `(let* ((,d ,db) (*identifier-quote* (db-identifier-quote ,d)) (*text-type* (db-text-type ,d))) ,@body)))
 
 (defun key-column-sql (column)
   (if (eq column :rowid) "rowid" (quote-sql-identifier column)))
@@ -261,7 +280,7 @@ Nil for an empty filter."
         (:null (values (format nil "~a IS NULL" name) '()))
         (:not-null (values (format nil "~a IS NOT NULL" name) '()))
         ;; Any case, in any database (PostgreSQL's LIKE minds it, SQLite's doesn't).
-        (:like (values (format nil "LOWER(CAST(~a AS TEXT)) LIKE LOWER(?)" name) (list value)))
+        (:like (values (format nil "LOWER(CAST(~a AS ~a)) LIKE LOWER(?)" name *text-type*) (list value)))
         (t (values (format nil "~a ~a ?" name (string-downcase op)) (list value)))))))
 
 (defun where-sql (filters)
@@ -282,8 +301,8 @@ key), then every column, with FILTERS, sorted by column SORT (or else by the
 key, so rows keep their places: PostgreSQL's come in no order). Returns the
 SQL and its parameters."
   (multiple-value-bind (where params) (where-sql filters)
-    (values (format nil "SELECT ~{~a, ~}* FROM ~a~a~@[ ORDER BY ~a~]~@[ LIMIT ~d~]~@[ OFFSET ~d~]"
-                    (mapcar #'key-column-sql key) (quote-sql-identifier table) where
+    (values (format nil "SELECT ~{~a, ~}~a.* FROM ~a~a~@[ ORDER BY ~a~]~@[ LIMIT ~d~]~@[ OFFSET ~d~]"
+                    (mapcar #'key-column-sql key) (quote-sql-identifier table) (quote-sql-identifier table) where
                     (cond (sort (format nil "~a~:[~; DESC~]" (quote-sql-identifier sort) descending))
                           (key (format nil "~{~a~^, ~}" (mapcar #'key-column-sql key))))
                     limit (and offset (plusp offset) offset))

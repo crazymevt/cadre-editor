@@ -14,7 +14,7 @@ they still lack, in the order it's being built. Tick an item when it lands.
    `.sql` files and consoles; table and column names from the connection.
 4. [x] **API: an Auth tab**: Bearer, Basic and API key, writing the header
    with the secret in a `{{variable}}`.
-5. [ ] **Databases: MySQL / MariaDB.**
+5. [x] **Databases: MySQL / MariaDB.**
 6. [ ] **API: form and multipart bodies**, with file uploads (curl `-F`).
 7. [ ] **API: cookies**, a jar for each environment.
 8. [ ] **Databases: reopen table tabs and SQL consoles** with the session.
@@ -24,7 +24,8 @@ they still lack, in the order it's being built. Tick an item when it lands.
 
 ### Databases
 
-- [ ] PostgreSQL over SSL (cl+ssl), and schemas other than the current one.
+- [ ] SSL for PostgreSQL and MySQL (cl+ssl), and schemas other than the
+      current one.
 - [ ] Run a project `.sql` file from the Databases page.
 - [ ] Offer the project's `*.db` / `*.sqlite` files when adding a connection.
 - [ ] Export a whole table or query (not just the page) as CSV or JSON;

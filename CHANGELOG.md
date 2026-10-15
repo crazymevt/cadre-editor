@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Databases**: a page of database connections (SQLite and PostgreSQL), saved with
+- **Databases**: a page of database connections (SQLite, PostgreSQL, MySQL and MariaDB), saved with
   the project or for you alone. Tables open in tabs with a filter above each
   column, sorting and paging, and can be edited (changes are saved in one
   transaction); a SQL console runs statements into a Results page. SQL

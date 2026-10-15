@@ -4498,6 +4498,93 @@ INSERT INTO orders (item, qty) VALUES ('Apple', 3), ('banana', 12), ('Cherry', 7
     (uiop:run-program (list (concatenate 'string *pg-bin* "pg_ctl") "-D" (namestring *pg-data*) "-m" "fast" "stop")
                       :output nil :error-output nil :ignore-error-status t)))
 
+;;; MySQL / MariaDB on the Databases page, against a MariaDB server started
+;;; here (skipped where MariaDB isn't installed)
+(section "mysql" :needs ("databases"))
+(defvar *mdb-bin* (let ((d (probe-file "/opt/homebrew/opt/mariadb/bin/"))) (and d (namestring d))))
+(defvar *mdb-port* nil)
+(defvar *mdb-process* nil)
+
+(then 50
+  (when *mdb-bin*
+    (let* ((dir (uiop:ensure-directory-pathname (format nil "/tmp/cmdb-~d/" (random 1000000))))
+           (data (merge-pathnames "data/" dir))
+           (sock (namestring (merge-pathnames "s.sock" dir)))
+           (socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+      (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
+      (setf *mdb-port* (nth-value 1 (sb-bsd-sockets:socket-name socket)))
+      (sb-bsd-sockets:socket-close socket)
+      (ensure-directories-exist dir)
+      (uiop:run-program (list (concatenate 'string *mdb-bin* "mariadb-install-db") (format nil "--datadir=~a" (namestring data))
+                              "--auth-root-authentication-method=socket" "--skip-test-db")
+                        :output nil :error-output nil)
+      (setf *mdb-process* (uiop:launch-program (list (concatenate 'string *mdb-bin* "mariadbd") (format nil "--datadir=~a" (namestring data))
+                                                     (format nil "--port=~d" *mdb-port*) "--bind-address=127.0.0.1"
+                                                     (format nil "--socket=~a" sock) "--skip-name-resolve")
+                                               :output nil :error-output nil))
+      (let ((process *mdb-process*))
+        (push (lambda () (ignore-errors (uiop:terminate-process process))
+                (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))
+              sb-ext:*exit-hooks*))
+      (loop repeat 100 until (probe-file sock) do (sleep 0.1))
+      (uiop:run-program (list (concatenate 'string *mdb-bin* "mariadb") "-S" sock "-u" (uiop:getenv "USER") "-e"
+                              "CREATE USER 'cadre'@'%' IDENTIFIED BY 'secret'; GRANT ALL ON *.* TO 'cadre'@'%'; CREATE DATABASE shop;
+CREATE TABLE shop.items (id int AUTO_INCREMENT PRIMARY KEY, item varchar(20) NOT NULL, qty int, added date);
+INSERT INTO shop.items (item, qty, added) VALUES ('Apple', 3, '2026-01-02'), ('banana', 12, NULL), ('Cherry', 7, '2026-03-04');")
+                        :output nil :error-output nil)
+      (call-command 'db-add-connection))))
+
+(then 300
+  (when *mdb-bin*
+    (let ((dialog cadre-ui::*db-connection-dialog*))
+      (adw:combo-row-set-selected (getf dialog :kind) 2)
+      (check "MySQL / MariaDB takes its usual port" (string= "3306" (gtk:editable-get-text (getf dialog :port))))
+      (gtk:editable-set-text (getf dialog :name) "maria")
+      (gtk:editable-set-text (getf dialog :host) "127.0.0.1")
+      (gtk:editable-set-text (getf dialog :port) (princ-to-string *mdb-port*))
+      (gtk:editable-set-text (getf dialog :database) "shop")
+      (gtk:editable-set-text (getf dialog :user) "cadre")
+      (gtk:editable-set-text (getf dialog :password) "secret")
+      (gtk:widget-activate (getf dialog :test)))))
+
+(then-when ((or (null *mdb-bin*) (plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note))))) :timeout 10)
+  (when *mdb-bin*
+    (let ((dialog cadre-ui::*db-connection-dialog*))
+      (check "Test Connection reaches MariaDB" (search "MariaDB" (gtk:label-get-text (getf dialog :note)))
+             (gtk:label-get-text (getf dialog :note)))
+      (funcall (getf dialog :save-it)))))
+
+(then 300
+  (when *mdb-bin*
+    (cadre-ui::open-db-connection (db-connection-named "maria"))
+    (cadre-ui::open-db-table (db-connection-named "maria") "items")))
+
+(then 400
+  (when *mdb-bin*
+    (let ((page (db-page)))
+      (check "a MariaDB table opens in a tab, dates as text"
+             (and (= 3 (length (cadre-ui::dbt-rows page)))
+                  (string= "2026-01-02" (aref (first (cadre-ui::dbt-rows page)) 4)))
+             (cadre-ui::dbt-rows page))
+      (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 2 1) "AN")
+      (cadre-ui::filter-db-table page)
+      (check "a filter finds text in any case" (= 1 (cadre-ui::dbt-total page)) (cadre-ui::dbt-rows page))
+      (gtk:editable-set-text (gtk:grid-get-child-at (cadre-ui::dbt-grid page) 2 1) "")
+      (cadre-ui::filter-db-table page)
+      (cadre-ui::set-db-cell page 0 1 "Apple's")
+      (call-command 'save-buffer))))
+
+(then 400
+  (when *mdb-bin*
+    (let ((db (open-mysql :host "127.0.0.1" :port *mdb-port* :user "cadre" :password "secret" :database "shop")))
+      (check "editing a cell (with a quote in it) and saving writes it to the server"
+             (equalp '(#("Apple's")) (db-result-rows (db-run db "SELECT item FROM items WHERE id = 1")))
+             (db-result-rows (db-run db "SELECT item FROM items ORDER BY id")))
+      (db-close db))
+    (screenshot "mysql-01-table")
+    (cadre-ui::close-db-connection (db-connection-named "maria"))
+    (ignore-errors (uiop:terminate-process *mdb-process*))))
+
 (let* ((only (or (uiop:getenv "ONLY") ""))
        (sections (selected-sections only)))
   (when (uiop:getenv "SMOKE_LIST")

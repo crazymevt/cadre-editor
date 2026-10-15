@@ -199,7 +199,8 @@
    #:db-tables #:db-columns #:db-indexes #:db-foreign-keys #:db-create-statement #:db-row-key
    #:db-result #:make-db-result #:db-result-columns #:db-result-rows #:db-result-more
    #:db-result-changes #:db-result-milliseconds #:db-value-text #:db-result-csv
-   #:quote-sql-identifier #:parse-column-filter #:where-sql #:table-select-sql #:table-count-sql
+   #:quote-sql-identifier #:*identifier-quote* #:*text-type* #:db-text-type #:db-identifier-quote #:with-db-quoting #:open-mysql
+   #:parse-column-filter #:where-sql #:table-select-sql #:table-count-sql
    #:update-row-sql #:insert-row-sql #:delete-row-sql #:sql-statement-ranges #:sql-statement-at
    ;; API requests (.http files and curl)
    #:http-request #:make-http-request #:copy-http-request #:http-request-p #:http-request-name

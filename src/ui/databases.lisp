@@ -391,7 +391,17 @@
                                (editor-error (e) (say "~a" (editor-error-message e)))))))
       (gobject:connect name :changed (lambda (e) (declare (ignore e)) (update)))
       (dolist (row (list host database)) (gobject:connect row :changed (lambda (e) (declare (ignore e)) (update))))
-      (gobject:connect kind "notify::selected" (lambda (r p) (declare (ignore r p)) (update)))
+      (gobject:connect kind "notify::selected"
+                       (lambda (r p) (declare (ignore r p))
+                         ;; The kind's usual port and database, unless others were typed in.
+                         (let ((k (combo-choice kind *database-kinds*)))
+                           (when (member (text port) '("" "5432" "3306") :test #'string=)
+                             (gtk:editable-set-text port (case k (:mysql "3306") (t "5432"))))
+                           (when (and (eq k :mysql) (string= (text database) "postgres"))
+                             (gtk:editable-set-text database ""))
+                           (when (and (eq k :postgres) (string= (text database) ""))
+                             (gtk:editable-set-text database "postgres")))
+                         (update)))
       (gobject:connect name :entry-activated (lambda (e) (declare (ignore e))
                                                (when (gtk:widget-get-sensitive save) (save-it))))
       (gobject:connect save :clicked (lambda (b) (declare (ignore b)) (save-it)))
@@ -420,7 +430,7 @@
       (gtk:widget-grab-focus name))))
 
 (define-command db-add-connection ()
-  "Add a database connection (a SQLite file, or a PostgreSQL server) to the Databases page."
+  "Add a database connection (a SQLite file, a PostgreSQL, MySQL or MariaDB server) to the Databases page."
   (show-sidebar-page *window* "databases" :toggle nil)
   (db-connection-dialog))
 
@@ -552,8 +562,10 @@
 its offset. Refuses while there are unsaved changes."
   (when (dbt-changed-p page)
     (editor-error "Save or discard the changes first"))
-  (let ((db (dbt-database page))
-        (table (dbt-table page)))
+  (let* ((db (dbt-database page))
+         (table (dbt-table page))
+         (*identifier-quote* (db-identifier-quote db))
+         (*text-type* (db-text-type db)))
     (when (or schema (null (dbt-columns page)))
       (sb-thread:with-mutex ((db-lock db))
         (setf (dbt-kind page) (or (getf (find table (db-tables db) :key (lambda (x) (getf x :name)) :test #'string=) :kind)
@@ -821,6 +833,8 @@ CONTINUATION with t if they were written."
   (if (not (dbt-changed-p page))
       (progn (message "No changes to save") (funcall continuation t))
       (let* ((db (dbt-database page))
+             (*identifier-quote* (db-identifier-quote db))
+             (*text-type* (db-text-type db))
              (table (dbt-table page))
              (key (dbt-key page))
              (names (dbt-column-names page))

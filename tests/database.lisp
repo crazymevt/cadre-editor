@@ -20,9 +20,9 @@
   (multiple-value-bind (sql params)
       (c:table-select-sql "people" :key '(:rowid) :filters '(("name" . "=Ann")) :sort "age" :descending t
                                    :limit 100 :offset 200)
-    (is string= "SELECT rowid, * FROM \"people\" WHERE \"name\" = ? ORDER BY \"age\" DESC LIMIT 100 OFFSET 200" sql)
+    (is string= "SELECT rowid, \"people\".* FROM \"people\" WHERE \"name\" = ? ORDER BY \"age\" DESC LIMIT 100 OFFSET 200" sql)
     (is equal '("Ann") params))
-  (is string= "SELECT * FROM \"v\" LIMIT 10" (c:table-select-sql "v" :limit 10 :offset 0))
+  (is string= "SELECT \"v\".* FROM \"v\" LIMIT 10" (c:table-select-sql "v" :limit 10 :offset 0))
   (multiple-value-bind (sql params) (c:update-row-sql "t" '("a" "b") #(1 2) '(("x" . "new") ("y" . :null)))
     (is string= "UPDATE \"t\" SET \"x\" = ?, \"y\" = ? WHERE \"a\" = ? AND \"b\" = ?" sql)
     (is equal '("new" :null 1 2) params))

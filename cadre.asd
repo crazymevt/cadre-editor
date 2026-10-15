@@ -83,7 +83,7 @@
 
 (defsystem "cadre/core"
   :description "Cadre's editor model, with no GTK dependency: text, buffers, commands, keymaps, modes, hooks, options."
-  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "sb-md5" "cl-ppcre" "cffi" "cl-postgres" "docset")
+  :depends-on ("sb-bsd-sockets" "sb-posix" "sb-introspect" "sb-md5" "cl-ppcre" "cffi" "cl-postgres" "qmynd" "docset")
   :pathname "src/core/"
   :serial t
   :components ((:file "package")
@@ -147,7 +147,8 @@
                 :serial t
                 :components ((:file "database")
                              (:file "sqlite")
-                             (:file "postgres")))
+                             (:file "postgres")
+                             (:file "mysql")))
                (:file "http" :pathname "http/http")))
 
 (defsystem "cadre/tests"
@@ -170,5 +171,6 @@
                (:file "terminal")
                (:file "database")
                (:file "postgres")
+               (:file "mysql")
                (:file "http"))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))

@@ -849,11 +849,12 @@ New Project's **GTK application** kind starts a project ready for this:
 
 The Databases page (the cylinder in the activity bar) keeps your database
 connections: SQLite files, through the `libsqlite3` macOS and Linux already
-have, and PostgreSQL servers, through cl-postgres (nothing to install; no
-SSL yet).
+have; PostgreSQL servers, through cl-postgres; and MySQL and MariaDB
+servers, through qmynd. The server clients are written in Lisp, so there's
+nothing to install; they don't use SSL yet.
 
 - **+** adds a connection: a name, the database file (**Choose…** an existing
-  one or **New…** for an empty one) or, for PostgreSQL, the host, port,
+  one or **New…** for an empty one) or, for a server, the host, port,
   database, user and password, **Read-only**, and **Save with the
   project**. A password is never saved with the connection: it's kept in
   `~/.config/cadre/secrets/database-passwords.json`, which only you can read. A project's connections go in its `.cadre/databases.sexp`, with
