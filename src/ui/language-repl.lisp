@@ -1,25 +1,27 @@
-;;;; language-repl.lisp — the REPL tabs of Lisps other than Common Lisp
+;;;; language-repl.lisp — the REPLs of Lisps other than Common Lisp
 ;;;;
-;;;; Clojure (clojure.lisp) and Racket (racket.lisp) each have a REPL in a
-;;;; tab, made like the editor REPL: what is typed there goes to the
-;;;; language's connection through BACKEND-REPL-EVAL, and the connection's
-;;;; output, values and namespace changes come back as the events Swank
-;;;; sends, which HANDLE-LANGUAGE-EVENT shows.
+;;;; Clojure (clojure.lisp) and Racket (racket.lisp) each have a REPL, made
+;;;; like the editor REPL: what is typed there goes to the language's
+;;;; connection through BACKEND-REPL-EVAL, and the connection's output,
+;;;; values and namespace changes come back as the events Swank sends, which
+;;;; HANDLE-LANGUAGE-EVENT shows. It is on the panel's REPL page, which shows
+;;;; the REPL of the selected tab's language (repl.lisp's SHOW-REPL-LANGUAGE).
 
 (in-package #:cadre-ui)
 
 (defstruct (language-repl-spec (:conc-name lrs-))
-  mode buffer-name title prompt-format)
+  mode buffer-name title prompt-format restart-command)
 
 (defparameter *language-repl-specs* '()
   "Language → its REPL's spec: the REPL's major mode, its buffer's name, the
 language's title, and the prompt (a format control given the connection's
 prompt).")
 
-(defun define-language-repl (language &key mode buffer-name title prompt-format)
+(defun define-language-repl (language &key mode buffer-name title prompt-format restart-command)
   (setf *language-repl-specs*
         (cons (cons language (make-language-repl-spec :mode mode :buffer-name buffer-name :title title
-                                                      :prompt-format prompt-format))
+                                                      :prompt-format prompt-format
+                                                      :restart-command restart-command))
               (remove language *language-repl-specs* :key #'car))))
 
 (defun language-repl-spec (language)
@@ -63,11 +65,49 @@ prompt).")
                              (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
                              (repl-show-prompt)))))))
 
-(defun show-language-repl (language &key (focus t))
+(defun make-language-repl-widget (language)
+  "LANGUAGE's REPL for the REPL page (repl.lisp): its view, and buttons that
+interrupt, clear and restart it."
   (let* ((repl (language-repl language))
-         (view (show-buffer *window* (repl-buffer repl))))
+         (spec (language-repl-spec language))
+         (view (make-editor-view (repl-buffer repl) :gutter nil)))
+    (setf (repl-editor-view repl) view)
+    (setup-context-menu view)
     (gtk:text-view-set-wrap-mode (view-text-view view) :word-char)
-    (when focus
+    (flet ((button (icon tooltip action)
+             (let ((b (make-instance 'gtk:button :icon-name icon :tooltip-text tooltip :css-classes '("flat"))))
+               (gobject:connect b :clicked (lambda (b) (declare (ignore b))
+                                             (handler-case (funcall action)
+                                               (editor-error (e) (message "~a" (editor-error-message e))))))
+               b)))
+      (gtk:build
+        (gtk:box :orientation :vertical
+          (gtk:box :spacing 6 :margin-start 6 :margin-end 6 :margin-top 2 :margin-bottom 2
+            (button "media-playback-stop-symbolic" (format nil "Interrupt the ~a evaluation" (lrs-title spec))
+                    (lambda ()
+                      (let ((connection (language-connection language)))
+                        (if connection
+                            (progn (backend-interrupt connection) (message "Interrupted"))
+                            (message "~a isn't running" (lrs-title spec))))))
+            (button "edit-clear-all-symbolic" (format nil "Clear the ~a REPL" (lrs-title spec))
+                    (lambda () (let ((*repl* repl)) (clear-repl-output))))
+            (button "view-refresh-symbolic" (format nil "Restart ~a" (lrs-title spec))
+                    (lambda () (call-command (lrs-restart-command spec)))))
+          (view-widget view))))))
+
+(defun language-repl-views ()
+  "The views of the Racket and Clojure REPLs made for the REPL page."
+  (loop for buffer being the hash-values of *language-repl-buffers*
+        for repl = (buffer-local buffer :repl)
+        when (and repl (repl-editor-view repl)) collect (repl-editor-view repl)))
+
+(defun show-language-repl (language &key (focus t))
+  "Show LANGUAGE's REPL on the panel's REPL page; with FOCUS, put the cursor at its end."
+  (show-repl-language language)
+  (set-panel-visible *window* t)
+  (panel-show (window-panel *window*) "repl")
+  (let ((view (repl-editor-view (language-repl language))))
+    (when (and view focus)
       (gtk:text-buffer-place-cursor (view-gtk-buffer view) (gtk:text-buffer-get-end-iter (view-gtk-buffer view)))
       (focus-view view))
     view))

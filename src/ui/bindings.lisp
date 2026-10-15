@@ -580,13 +580,14 @@
     (:emacs (values *emacs-global-keymap* *emacs-editing-keymap*))))
 
 (defun focused-view (win)
-  "The view (a tab's, or the REPL's) whose text has the keyboard focus, or nil."
+  "The view (a tab's, or a REPL's on the REPL page) whose text has the
+keyboard focus, or nil."
   (let ((focus (gtk:root-get-focus (window-gtk-window win))))
     (and focus
          (or (loop for view being the hash-values of (window-views win)
                    when (eq focus (view-text-view view)) return view)
-             (let ((repl (repl-view)))
-               (and repl (eq focus (view-text-view repl)) repl))))))
+             (find focus (cons (repl-view) (language-repl-views))
+                   :key (lambda (view) (and view (view-text-view view))))))))
 
 (defun editor-focused-p (win)
   (and (focused-view win) t))

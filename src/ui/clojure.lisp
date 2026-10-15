@@ -5,7 +5,8 @@
 ;;;; the first one needs it: it connects to the project's running nREPL if
 ;;;; it has a .nrepl-port, or starts the project's REPL with nREPL and
 ;;;; cider-nrepl, as CIDER's jack-in does. The process's output goes to the
-;;;; Output page. The REPL is a tab, *clojure-repl* (language-repl.lisp).
+;;;; Output page. Its REPL is on the REPL page while a Clojure tab is
+;;;; selected (language-repl.lisp).
 
 (in-package #:cadre-ui)
 
@@ -26,7 +27,7 @@
 ;;; The REPL tab (language-repl.lisp)
 
 (define-language-repl :clojure :mode 'clojure-repl-mode :buffer-name "*clojure-repl*" :title "Clojure"
-                               :prompt-format "~a=> ")
+                               :prompt-format "~a=> " :restart-command 'clojure-restart)
 
 (defun clojure-repl () (language-repl :clojure))
 

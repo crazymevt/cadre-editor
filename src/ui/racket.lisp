@@ -6,7 +6,8 @@
 ;;;; file's package folder (the nearest with an info.rkt), and its output
 ;;;; goes to the Output page. Code from a file is evaluated in its module,
 ;;;; and Run File runs the module and puts the REPL in it, as DrRacket's Run
-;;;; does. The REPL is a tab, *racket-repl* (language-repl.lisp).
+;;;; does. Its REPL is on the REPL page while a Racket tab is selected
+;;;; (language-repl.lisp).
 ;;;;
 ;;;; Saving a Racket file checks it with check-syntax (when Racket is
 ;;;; running): its errors and unused requires go to the Problems page. raco
@@ -24,7 +25,7 @@
       (major-mode-keymap (find-major-mode 'repl-mode)))
 
 (define-language-repl :racket :mode 'racket-repl-mode :buffer-name "*racket-repl*" :title "Racket"
-                              :prompt-format "~a> ")
+                              :prompt-format "~a> " :restart-command 'racket-restart)
 
 (defvar *racket-process* nil "The Racket Cadre started (an inferior-lisp), or nil.")
 (defvar *racket-waiting* '() "Functions waiting for the Racket connection to be ready.")

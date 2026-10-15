@@ -50,8 +50,20 @@ editor REPL) bind it to that buffer's REPL.")
     (ensure-face-tag gtk-buffer "cadre-repl-result" :repl-result)
     (ensure-face-tag gtk-buffer "cadre-repl-note" :repl-note)))
 
+(defvar *repl-stack* nil
+  "The REPL page's stack: a child for each language's REPL, named by its
+dialect (\"common-lisp\", \"clojure\", \"racket\"); the page shows the
+selected tab's.")
+
 (defun make-repl-widget ()
-  "Create the REPL (once) and return the widget for the panel's REPL page."
+  "Create the REPL (once) and return the widget for the panel's REPL page:
+a stack, which starts with Common Lisp's REPL (language-repl.lisp adds the
+others)."
+  (setf *repl-stack* (make-instance 'gtk:stack :vhomogeneous nil :hhomogeneous nil))
+  (gtk:stack-add-named *repl-stack* (make-common-lisp-repl-widget) "common-lisp")
+  *repl-stack*)
+
+(defun make-common-lisp-repl-widget ()
   (let* ((buffer (make-buffer :name "*repl*" :text (make-gtk-text) :major-mode 'repl-mode))
          (view (make-editor-view buffer :gutter nil)))
     (setf *repl* (make-repl-for-buffer buffer :editor-view view))
@@ -323,16 +335,34 @@ past the newest brings back what was being typed before."
   (:modes repl-mode editor-repl-mode clojure-repl-mode racket-repl-mode)
   (with-buffer-repl () (repl-history-step 1)))
 
-(define-command clear-repl ()
-  "Clear the REPL's output."
-  (with-buffer-repl ()
-   (when *repl*
+(defun clear-repl-output ()
+  "Clear *REPL*'s output, keeping its prompt and what is typed."
+  (when *repl*
     (let ((gtk-buffer (repl-gtk-buffer)))
       (forget-presentations)
       (gtk:text-buffer-delete gtk-buffer (gtk:text-buffer-get-start-iter gtk-buffer)
-                              (mark-iter (repl-output-mark *repl*)))))))
+                              (mark-iter (repl-output-mark *repl*))))))
+
+(define-command clear-repl ()
+  "Clear the REPL's output."
+  (with-buffer-repl () (clear-repl-output)))
+
+(defun show-repl-language (language)
+  "Make the REPL page show LANGUAGE's REPL (making it the first time), titled
+\"REPL\" for Common Lisp and \"REPL · Clojure\" for the others."
+  (when (and *repl-stack* *window*)
+    (let ((name (string-downcase (symbol-name language))))
+      (unless (gtk:stack-get-child-by-name *repl-stack* name)
+        (gtk:stack-add-named *repl-stack* (make-language-repl-widget language) name))
+      (unless (equal name (gtk:stack-get-visible-child-name *repl-stack*))
+        (gtk:stack-set-visible-child-name *repl-stack* name)
+        (panel-set-title (window-panel *window*) "repl"
+                         (if (eq language :common-lisp)
+                             "REPL"
+                             (format nil "REPL · ~a" (dialect-title (find-dialect language)))))))))
 
 (defun show-repl-page (&key focus)
+  (show-repl-language :common-lisp)
   (set-panel-visible *window* t)
   (panel-show (window-panel *window*) "repl")
   (when (and focus (repl-view))
