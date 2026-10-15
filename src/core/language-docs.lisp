@@ -90,9 +90,14 @@ Returns the number of entries. Takes some seconds."
 ;;; Clojure
 
 (defparameter *clojure-docs-code*
-  "(binding [*print-length* nil *print-level* nil]
+  "(do
+    (doseq [n '[clojure.string clojure.set clojure.walk clojure.edn clojure.java.io clojure.pprint
+                clojure.test clojure.zip clojure.data clojure.repl clojure.math clojure.datafy]]
+      (try (require n) (catch Throwable _ nil)))
+    (binding [*print-length* nil *print-level* nil]
      (pr-str
-      (for [ns (sort-by str (all-ns))
+      (for [ns (sort-by str (remove #(re-find #\"^(cider|orchard|nrepl|mranderson|refactor-nrepl|clj-reload|compliment|haystack|logjam|puget|fipp|suitable|cljfmt)\\.\" (str (ns-name %)))
+                                    (all-ns)))
             [sym v] (sort-by (comp str key) (ns-publics ns))
             :let [m (meta v)]]
         (list (str (ns-name ns)) (str sym)
@@ -100,9 +105,10 @@ Returns the number of entries. Takes some seconds."
                     (fn? (try @v (catch Throwable _ nil))) \"function\"
                     :else \"var\")
               (map str (:arglists m))
-              (or (:doc m) \"\")))))"
-  "Clojure that lists every public var of the loaded namespaces as
-(namespace name kind (arglist …) docstring), printed.")
+              (or (:doc m) \"\"))))))"
+  "Clojure that loads Clojure's standard namespaces, then lists every public
+var of the loaded ones as (namespace name kind (arglist …) docstring),
+printed. The REPL's tooling (cider-nrepl, nREPL and the libraries they bring) is left out.")
 
 (defun clojure-kind (kind)
   (cond ((string= kind "macro") (values :macro "Macro"))
