@@ -105,6 +105,13 @@ test files, Makefile, README, .gitignore and license; then open it."
                                         (update))
                                       :error (lambda (e) (declare (ignore e)))))))
       (gobject:connect name :changed (lambda (e) (declare (ignore e)) (update)))
+      ;; Racket's tests are rackunit and Clojure's clojure.test: the choice of
+      ;; framework is Common Lisp's.
+      (gobject:connect kind "notify::selected"
+                       (lambda (row pspec)
+                         (declare (ignore pspec))
+                         (gtk:widget-set-visible
+                          tests (not (member (combo-choice row *project-kinds*) '(:racket-package :clojure-project))))))
       (gobject:connect name :entry-activated (lambda (e) (declare (ignore e))
                                                (when (gtk:widget-get-sensitive create) (create-it))))
       (gobject:connect create :clicked (lambda (b) (declare (ignore b)) (create-it)))

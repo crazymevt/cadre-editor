@@ -2532,6 +2532,11 @@ d" 0 0)
          (and (gtk:widget-get-sensitive (np :create))
               (search "new-projects/smoke-proj" (gtk:label-get-text (np :where))))
          (gtk:label-get-text (np :where)))
+  (adw:combo-row-set-selected (np :kind) (position :clojure-project cadre-ui::*project-kinds* :key #'car))
+  (let ((hidden (not (gtk:widget-get-visible (np :tests)))))
+    (adw:combo-row-set-selected (np :kind) 0)
+    (check "the test framework is offered only for Common Lisp projects"
+           (and hidden (gtk:widget-get-visible (np :tests)))))
   (screenshot "38-new-project")
   (gtk:widget-activate (np :create)))
 
