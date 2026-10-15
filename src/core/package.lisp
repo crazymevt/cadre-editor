@@ -21,6 +21,7 @@
    #:major-mode-name #:major-mode-title #:major-mode-keymap #:major-mode-extensions
    #:fundamental-mode #:lisp-mode #:racket-mode #:clojure-mode #:markdown-mode #:image-mode #:image-file-p #:sql-mode #:http-mode
    ;; buffers
+   #:project-file-key #:scratch-file-name
    #:buffer #:make-buffer #:kill-buffer #:buffer-list #:find-buffer #:find-file-buffer
    #:buffer-name #:buffer-file #:buffer-text #:buffer-major-mode #:buffer-local
    #:buffer-modified-p #:buffer-string #:buffer-length #:buffer-point

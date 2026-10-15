@@ -19,5 +19,5 @@ systems, running tests and refactoring. Tick an item when it lands.
    to its code.
 5. [ ] **Macroexpansion in place**, like Emacs's macrostep: expand a macro
    in the code, a step at a time, and fold it back.
-6. [ ] **Scratch buffer** for each project: a place for experiments that is
+6. [x] **Scratch buffer** for each project: a place for experiments that is
    kept, but isn't a file in the project.

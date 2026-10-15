@@ -190,6 +190,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
       (:section ("Run App" run-app) ("Stop App" stop-app))
       (:section ("Run GTK App" run-gtk-app) ("Stop GTK App" stop-gtk-app)))
      (:submenu "Lisp"
+      (:section ("Scratch Buffer" scratch))
       (:section ("Inspect…" inspect-value) ("Find References" find-references)
                 ("Macroexpand" expand-macro-once))
       (:section ("Search HyperSpec…" hyperspec-search))

@@ -43,6 +43,7 @@
                (:file "trace")
                (:file "stepper")
                (:file "profiler")
+               (:file "scratch")
                (:file "systems")
                (:file "review")
                (:file "file-watch")

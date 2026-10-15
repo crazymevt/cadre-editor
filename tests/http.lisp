@@ -98,7 +98,11 @@ line 2")
              (is equal '(("token" . "abc") ("who" . "me")) (c:http-environment-variables read "dev"))
              (is equal '(("who" . "me")) (c:http-environment-variables read nil))))
       (uiop:delete-directory-tree (uiop:pathname-directory-pathname file) :validate t :if-does-not-exist :ignore)))
-  (true (ppcre:scan "^myproj-[0-9a-f]{12}\\.json$" (c:http-secrets-file-name #p"/tmp/x/myproj/"))))
+  (true (ppcre:scan "^myproj-[0-9a-f]{12}\\.json$" (c:http-secrets-file-name #p"/tmp/x/myproj/")))
+  ;; The scratch buffer's file: the same key, a .lisp
+  (is string= (format nil "~a.lisp" (c:project-file-key #p"/tmp/x/myproj/")) (c:scratch-file-name #p"/tmp/x/myproj/"))
+  (false (string= (c:project-file-key #p"/tmp/x/myproj/") (c:project-file-key #p"/tmp/y/myproj/")))
+  (is string= "scratch.lisp" (c:scratch-file-name nil)))
 
 (define-test http-secrets :parent cadre-tests
   (let* ((request (c:make-http-request :url "https://x.test/a?api_key=K123&q=1"

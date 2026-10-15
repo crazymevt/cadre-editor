@@ -400,8 +400,10 @@ current buffer. Returns the new group."
 
 (defun buffer-needs-saving-p (buffer)
   "Whether closing BUFFER would lose work: it has unsaved changes, and is a
-file or an untitled buffer, not one of Cadre's own (*repl*, *Help*, …)."
+file or an untitled buffer, not one of Cadre's own (*repl*, *Help*, …) or
+the scratch buffer, which saves itself."
   (and (buffer-modified-p buffer)
+       (not (buffer-local buffer :scratch))
        (or (buffer-file buffer)
            (let ((name (buffer-name buffer)))
              (not (and (plusp (length name)) (char= (char name 0) #\*)))))))
@@ -433,6 +435,7 @@ CONTINUATION with t once they are saved or discarded, or nil if the user cancels
   "Handle the window's close button: ask about unsaved buffers. Returns t
 to stop GTK closing the window now."
   (save-session win)
+  (save-scratch-buffers)
   (let ((modified (remove-if-not #'buffer-needs-saving-p (buffer-list))))
     (cond ((null modified) nil)
           (t (ask-to-save win modified

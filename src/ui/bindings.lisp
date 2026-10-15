@@ -34,6 +34,7 @@
   "C-s" 'save-buffer
   "C-S-s" 'save-buffer-as
   "C-k s" 'save-all
+  "C-k S" 'scratch
   "C-w" 'close-tab
   "C-k S-RET" 'toggle-pin-tab
   "C-S-o" 'go-to-symbol
@@ -105,6 +106,7 @@
 
 ;;; Emacs
 (bind-keys *emacs-global-keymap*
+  "C-x M-s" 'scratch
   "C-x C-f" 'open-file
   "C-x d" 'open-folder
   "C-x C-s" 'save-buffer

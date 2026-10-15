@@ -263,6 +263,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Show the Trace page | `Ctrl+K Shift+T` | `C-c T` |
 | Profile the form (or a call of the definition) | `Ctrl+K P` | `C-c M-p` |
 | Show the Profiler page | `Ctrl+K Shift+P` | `C-c P` |
+| Open the project's scratch buffer | `Ctrl+K Shift+S` | `C-x M-s` |
 | Step through the form (or a call of the definition) | `F11` | `C-c M-s` |
 | Compile the form with full debug information | `Ctrl+K D` | `C-c M-c` |
 | While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
@@ -298,6 +299,12 @@ itself) and **total** (anywhere on the stack); choose one to see what called
 it and what it called, and Go to Definition to open its source. **Flame
 Graph** draws the stacks from the top down, each call as wide as the samples
 it was in: click a box to zoom into it, and one above to zoom back out.
+
+**Scratch Buffer** (`Ctrl+K Shift+S`, `C-x M-s` in the Emacs keys, or the
+Lisp menu) opens `*scratch*`, a Lisp buffer
+for trying things out. Each project has its own, kept between sessions but
+outside the project's folder (in `~/.config/cadre/scratch/`), so it never shows
+up in Git. It saves itself as you type and never asks to be saved.
 
 **Stepping:** Step Through Form (`F11`) evaluates the form at the cursor, or
 the selection, under `cl:step`. On a definition it first compiles it for

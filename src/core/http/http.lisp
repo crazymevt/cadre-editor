@@ -318,10 +318,7 @@ environment's own (each an alist)."
 
 (defun http-secrets-file-name (project)
   "The name of PROJECT's secrets file: the folder's name and a hash of its path."
-  (let* ((path (uiop:native-namestring (uiop:ensure-directory-pathname project)))
-         (name (car (last (pathname-directory (uiop:ensure-directory-pathname project))))))
-    (format nil "~a-~(~{~2,'0x~}~).json" (or name "project")
-            (coerce (subseq (sb-md5:md5sum-string path :external-format :utf-8) 0 6) 'list))))
+  (format nil "~a.json" (project-file-key project)))
 
 ;;; Authentication, as headers
 

@@ -4099,6 +4099,46 @@ and the number of items MODEL itself shows."
 (then 200
   (check "Clear forgets the samples" (equal "Nothing profiled" (gtk:label-get-text (cadre-ui::pp-title (profiler))))))
 
+;;; The scratch buffer
+(section "scratch")
+(defun scratch-buffer () (find-if #'cadre-ui::scratch-buffer-p (buffer-list)))
+
+(then 100
+  (call-command 'cadre-ui::scratch))
+
+(then-when ((scratch-buffer))
+  (let* ((buffer (scratch-buffer))
+         (file (buffer-file buffer)))
+    (check "Scratch Buffer opens *scratch*" (equal "*scratch*" (buffer-name buffer)) (buffer-name buffer))
+    (check "in Lisp mode" (eq 'lisp-mode (buffer-major-mode buffer)))
+    (check "kept in the config directory, not the project"
+           (and (search "cadre/scratch/" (namestring file)) (not (uiop:subpathp file *root*))) file)
+    (check "named after the project" (search (cadre::project-file-key (cadre-ui::window-project *window*)) (namestring file)) file)
+    (check "starting with a note" (search ";;;; Scratch for" (buffer-string buffer)))
+    (let ((gtk-buffer (buffer-text buffer)))
+      (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) "(+ 1 2)" -1))
+    (check "it never asks to be saved" (not (cadre-ui::buffer-needs-saving-p buffer)))))
+
+(then-when ((not (buffer-modified-p (scratch-buffer))) :timeout 5)
+  (check "it saves itself after a change"
+         (search "(+ 1 2)" (uiop:read-file-string (buffer-file (scratch-buffer)))))
+  (cadre-ui::show-buffer *window* (scratch-buffer))
+  (let ((gtk-buffer (buffer-text (scratch-buffer))))
+    (gtk:text-buffer-insert gtk-buffer (gtk:text-buffer-get-end-iter gtk-buffer) " ; more" -1))
+  (call-command 'cadre-ui::close-tab))
+
+(then-when ((null (scratch-buffer)))
+  (check "closing it right after a change still saves it"
+         (search "; more" (uiop:read-file-string (cadre-ui::scratch-file (cadre-ui::window-project *window*)))))
+  (check "Ctrl+K Shift+S and C-x M-s open it"
+         (and (eq 'cadre-ui::scratch (keymap-lookup cadre-ui::*standard-global-keymap* (parse-keys "C-k S")))
+              (eq 'cadre-ui::scratch (keymap-lookup cadre-ui::*emacs-global-keymap* (parse-keys "C-x M-s")))))
+  (call-command 'cadre-ui::scratch))
+
+(then-when ((scratch-buffer))
+  (check "and it opens again as it was" (search "(+ 1 2) ; more" (buffer-string (scratch-buffer)))
+         (buffer-string (scratch-buffer))))
+
 ;;; The Terminal page (VTE)
 (section "terminal")
 

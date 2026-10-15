@@ -106,3 +106,17 @@ name, made unique; MAJOR-MODE defaults to the mode for FILE."
 
 (defun (setf buffer-modified-p) (value buffer)
   (setf (text-modified-p (buffer-text buffer)) value))
+
+;;; Files Cadre keeps for a project outside it (secrets, the scratch buffer)
+
+(defun project-file-key (project)
+  "A name for PROJECT's own files kept elsewhere: the folder's name and a
+hash of its path, so two folders of the same name don't share them."
+  (let* ((path (uiop:native-namestring (uiop:ensure-directory-pathname project)))
+         (name (car (last (pathname-directory (uiop:ensure-directory-pathname project))))))
+    (format nil "~a-~(~{~2,'0x~}~)" (or name "project")
+            (coerce (subseq (sb-md5:md5sum-string path :external-format :utf-8) 0 6) 'list))))
+
+(defun scratch-file-name (project)
+  "The name of PROJECT's scratch file (nil: the one for no project)."
+  (format nil "~a.lisp" (if project (project-file-key project) "scratch")))
