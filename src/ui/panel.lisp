@@ -26,7 +26,9 @@ narrow panel (the vertical layout) has room for the others.")
          (output-view (make-instance 'gtk:text-view :editable nil :monospace t
                                                     :cursor-visible nil :wrap-mode :word-char
                                                     :left-margin 8 :top-margin 4))
-         (stack (make-instance 'gtk:stack :vexpand t :hexpand t))
+         ;; Not homogeneous: the panel is as narrow as the page it shows
+         ;; allows, not as its widest page (the Profiler) does.
+         (stack (make-instance 'gtk:stack :vexpand t :hexpand t :hhomogeneous nil :vhomogeneous nil))
          (switcher (make-instance 'gtk:stack-switcher :stack stack :halign :start
                                                       :css-classes '("cadre-panel-switcher")))
          ;; In a scroller, so a narrow panel scrolls its tabs instead of
@@ -65,8 +67,8 @@ narrow panel (the vertical layout) has room for the others.")
               stack)))
     panel))
 
-(defun setup-tab-scrolling (scroller switcher stack)
-  "Let the mouse wheel scroll the tabs sideways, and keep the selected tab in view."
+(defun scroll-sideways-with-wheel (scroller)
+  "Let the mouse wheel scroll SCROLLER, a gtk:scrolled-window, sideways."
   (let ((adjustment (gtk:scrolled-window-get-hadjustment scroller))
         (wheel (gtk:event-controller-scroll-new '(:vertical :horizontal))))
     (gobject:connect wheel :scroll
@@ -75,7 +77,20 @@ narrow panel (the vertical layout) has room for the others.")
                        (gtk:adjustment-set-value adjustment (+ (gtk:adjustment-get-value adjustment)
                                                                (* 30 (+ dx dy))))
                        t))
-    (gtk:widget-add-controller scroller wheel)
+    (gtk:widget-add-controller scroller wheel)))
+
+(defun sideways-scroller (child)
+  "CHILD, a row of controls, in a scroller, so a narrow panel scrolls the
+row instead of being made wider (as the tabs do, see MAKE-PANEL)."
+  (let ((scroller (make-instance 'gtk:scrolled-window :hscrollbar-policy :external :vscrollbar-policy :never
+                                                      :propagate-natural-width t :hexpand t :child child)))
+    (scroll-sideways-with-wheel scroller)
+    scroller))
+
+(defun setup-tab-scrolling (scroller switcher stack)
+  "Let the mouse wheel scroll the tabs sideways, and keep the selected tab in view."
+  (let ((adjustment (gtk:scrolled-window-get-hadjustment scroller)))
+    (scroll-sideways-with-wheel scroller)
     (gobject:connect stack "notify::visible-child"
                      (lambda (s pspec)
                        (declare (ignore s pspec))

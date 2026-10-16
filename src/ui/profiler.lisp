@@ -69,15 +69,17 @@
     (gtk:stack-add-named stack (make-instance 'gtk:scrolled-window :child flame :vexpand t) "flame")
     (let ((widget (gtk:build
                     (gtk:box :orientation :vertical
-                      (gtk:box :spacing 4 :margin-start 10 :margin-end 6 :margin-top 4 :margin-bottom 4
-                        title
-                        (gtk:box :css-classes '("linked") table-button flame-button)
-                        filter
-                        modes
-                        run
-                        (gtk:button :icon-name "edit-clear-all-symbolic" :css-classes '("flat")
-                                    :tooltip-text "Forget the samples"
-                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'clear-profile))))
+                      (sideways-scroller
+                       (gtk:build
+                         (gtk:box :spacing 4 :margin-start 10 :margin-end 6 :margin-top 4 :margin-bottom 4
+                           title
+                           (gtk:box :css-classes '("linked") table-button flame-button)
+                           filter
+                           modes
+                           run
+                           (gtk:button :icon-name "edit-clear-all-symbolic" :css-classes '("flat")
+                                       :tooltip-text "Forget the samples"
+                                       :on-clicked (lambda (b) (declare (ignore b)) (call-command 'clear-profile))))))
                       (gtk:separator)
                       stack))))
       (setf *profiler-page* (make-profiler-page :widget widget :title title :list list :details details
