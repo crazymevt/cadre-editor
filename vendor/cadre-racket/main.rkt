@@ -252,10 +252,20 @@
 
 ;;; Identifiers, documentation and definitions
 
+;;; Requests run on threads of their own, and the xref and blueboxes aren't
+;;; safe to share: a lookup made while another is loading the index fails.
+;;; So one lookup at a time, and the index starts loading at startup (on a
+;;; slow machine it takes a while).
+(define docs-lock (make-semaphore 1))
+(define (with-docs thunk) (call-with-semaphore docs-lock thunk))
+
 (define the-xref #f)
 (define (xref)
   (unless the-xref (set! the-xref (load-collections-xref)))
   the-xref)
+
+(define (warm-docs!)
+  (void (thread (λ () (with-handlers ([(λ (e) #t) void]) (with-docs xref))))))
 
 (define (identifier-in ns name)
   (parameterize ([current-namespace ns])
@@ -267,17 +277,18 @@
 
 (define (doc-tag ns name)
   (with-handlers ([exn:fail? (λ (e) #f)])
-    (xref-binding->definition-tag (xref) (identifier-in ns name) 0)))
+    (define id (identifier-in ns name))
+    (with-docs (λ () (xref-binding->definition-tag (xref) id 0)))))
 
 (define (tag-url tag)
   (with-handlers ([exn:fail? (λ (e) #f)])
-    (define-values (path anchor) (xref-tag->path+anchor (xref) tag))
+    (define-values (path anchor) (with-docs (λ () (xref-tag->path+anchor (xref) tag))))
     (and path (format "file://~a~a" (path->string path) (if anchor (format "#~a" anchor) "")))))
 
 (define (doc-signature-lines tag)
   (with-handlers ([exn:fail? (λ (e) #f)])
     ;; The docs space signatures with non-breaking spaces.
-    (let ([lines (fetch-blueboxes-strs tag)])
+    (let ([lines (with-docs (λ () (fetch-blueboxes-strs tag)))])
       (and lines (map (λ (l) (string-replace l "\u00A0" " ")) lines)))))
 
 (define (binding-source ns name)
@@ -691,5 +702,6 @@
   (define-values (in out) (tcp-accept listener))
   (tcp-close listener)
   (set-connection-out! out)
+  (warm-docs!)
   (serve in)
   (exit 0))
