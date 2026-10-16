@@ -80,10 +80,7 @@ you started yourself.
 In the debugger, digits choose a restart, `a` aborts and `c` continues. Open a
 frame to see its locals (click one to inspect it) and to evaluate in the frame.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/debugger.png">
-  <img alt="The Debugger page with the condition, restarts and backtrace" src="../gallery/light/debugger.png">
-</picture>
+<img alt="The Debugger page with the condition, restarts and backtrace" src="../gallery/dark/debugger.png">
 
 ## Tracing
 
@@ -110,10 +107,7 @@ it and what it called, and Go to Definition to open its source. **Flame
 Graph** draws the stacks from the top down, each call as wide as the samples
 it was in: click a box to zoom into it, and one above to zoom back out.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/profiler.png">
-  <img alt="The Profiler page drawing a flame graph" src="../gallery/light/profiler.png">
-</picture>
+<img alt="The Profiler page drawing a flame graph" src="../gallery/dark/profiler.png">
 
 ## Stepping
 
@@ -140,10 +134,7 @@ or Undo folds the last expansion back, and Collapse All all of them. The file
 is read-only while anything is expanded, the undo history from before stays,
 and saving collapses everything first, so an expansion never reaches the file.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/expand-in-place.png">
-  <img alt="A macro expanded in place in the source, shaded" src="../gallery/light/expand-in-place.png">
-</picture>
+<img alt="A macro expanded in place in the source, shaded" src="../gallery/dark/expand-in-place.png">
 
 ## Threads
 
@@ -201,7 +192,4 @@ symbol is written with (`bt:make-thread`):
   update` regenerates the docsets whose libraries changed (`make outdated`
   lists them).
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/hyperspec.png">
-  <img alt="The HyperSpec entry for with-output-to-string beside the code" src="../gallery/light/hyperspec.png">
-</picture>
+<img alt="The HyperSpec entry for with-output-to-string beside the code" src="../gallery/dark/hyperspec.png">

@@ -18,6 +18,13 @@ Write your own with `define-theme` in `~/.config/cadre/themes/*.lisp`:
   (:string :foreground "#ce9178"))     ; faces left out come from Cadre Dark
 ```
 
+<table>
+  <tr>
+    <td width="50%"><img alt="Cadre Dark" src="../gallery/dark/editing.png"><br>Cadre Dark</td>
+    <td width="50%"><img alt="Cadre Light" src="../gallery/light/editing.png"><br>Cadre Light</td>
+  </tr>
+</table>
+
 Open files that change on disk reload by themselves when they have no
 unsaved changes; otherwise a bar offers *Reload*, *Keep Mine* or *Compare*
 (an inline diff of the version on disk).

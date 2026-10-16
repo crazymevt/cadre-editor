@@ -1,9 +1,6 @@
 # Editing
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/editing.png">
-  <img alt="Cadre editing Lisp, with the REPL below and argument hints in the status bar" src="../gallery/light/editing.png">
-</picture>
+<img alt="Cadre editing Lisp, with the REPL below and argument hints in the status bar" src="../gallery/dark/editing.png">
 
 ## Keys
 
@@ -145,10 +142,7 @@ name in all of them. It's read again when shown and after you save.
 in the order the files have them (Markdown headings keep their order).
 `Ctrl+T` (`M-g I`) picks a definition from the whole project by name.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/outline.png">
-  <img alt="The Outline page listing the project's definitions by package" src="../gallery/light/outline.png">
-</picture>
+<img alt="The Outline page listing the project's definitions by package" src="../gallery/dark/outline.png">
 
 ## Tabs
 
@@ -180,10 +174,7 @@ strikethrough and link are in the right-click menu's Format submenu (Emacs:
 `C-c C-s b/i/c/s`, `C-c C-l`), and `Ctrl+Shift+O` (`M-g i`) goes to a
 heading.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/markdown.png">
-  <img alt="A Markdown file beside its live preview" src="../gallery/light/markdown.png">
-</picture>
+<img alt="A Markdown file beside its live preview" src="../gallery/dark/markdown.png">
 
 ## Pictures
 

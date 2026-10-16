@@ -1,9 +1,6 @@
 # API requests
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/api.png">
-  <img alt="An API request from a .http file, with its JSON response" src="../gallery/light/api.png">
-</picture>
+<img alt="An API request from a .http file, with its JSON response" src="../gallery/dark/api.png">
 
 The API page (⇄ in the activity bar) is a front end to `curl` for trying
 out HTTP APIs. Requests are kept in `.http` files in the project, the format

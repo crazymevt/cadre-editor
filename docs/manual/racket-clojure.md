@@ -1,9 +1,6 @@
 # Racket and Clojure
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/racket-clojure.png">
-  <img alt="Clojure and Racket files side by side" src="../gallery/light/racket-clojure.png">
-</picture>
+<img alt="Clojure and Racket files side by side" src="../gallery/dark/racket-clojure.png">
 
 Racket files (`.rkt` `.rktl` `.rktd` `.scrbl`) and Clojure files (`.clj`
 `.cljc` `.cljs` `.cljd` `.edn` `.bb`) are read by the same lexer as Common

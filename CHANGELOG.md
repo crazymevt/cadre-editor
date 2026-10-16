@@ -4,8 +4,7 @@
 
 - **A manual and a gallery.** The README's long feature list is now a manual
   in `docs/manual/`, a page for each part of Cadre, and `docs/gallery/`
-  shows each one in light and dark, taken from a real window by
-  `make gallery`.
+  shows each one, taken from a real window by `make gallery`.
 - The MCP server Claude Code talks to checks its token before reading a
   request's body, refuses bodies over 16 MB or with a bad length, closes
   connections that stall for 30 seconds, and serves at most 32 at once.

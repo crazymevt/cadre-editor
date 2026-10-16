@@ -5,7 +5,7 @@ make test     # headless tests of the editor model (src/core)
 make smoke    # drive a real window through every feature; screenshots in build/smoke/
 make smoke ONLY=run-app   # one section, and the ones it needs (several: ONLY="git folding")
 make smoke-list           # the sections, and what each needs
-make gallery  # the screenshots in docs/gallery/, light and dark (one: make gallery ONLY=profiler)
+make gallery  # the screenshots in docs/gallery/ (one scene: make gallery ONLY=profiler)
 make perf     # measure against the performance budgets (and JavaScript, with its grammar); report in build/perf/latest.txt
 ```
 
@@ -17,8 +17,8 @@ something, and the whole test when the work is done.
 
 `make gallery` stages the same kind of window on a small demo project
 (`scripts/gallery.lisp`, sharing the smoke test's driving code in
-`scripts/drive.lisp`) and saves each scene at twice its size, once with
-Cadre's light theme and once with its dark one. Run it after a change to
+`scripts/drive.lisp`) and saves each scene at twice its size, in Cadre's dark theme, and the
+editing scene in the light one too, for the Themes pictures. Run it after a change to
 how Cadre looks, and commit the pictures with the change.
 
 `make perf` opens a window on generated files and times what you'd feel:

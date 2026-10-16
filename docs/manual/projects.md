@@ -93,10 +93,7 @@ systems, or the Clojure files), so it tests the code as it is now. A failed test
 test to go to it. In a test file, Debug › Run This Test (right-click) runs the
 test the cursor is in.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/tests.png">
-  <img alt="The Tests page with a project's Parachute tests, one failed" src="../gallery/light/tests.png">
-</picture>
+<img alt="The Tests page with a project's Parachute tests, one failed" src="../gallery/dark/tests.png">
 
 ## Running the project's program
 

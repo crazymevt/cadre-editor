@@ -54,6 +54,20 @@ The [manual](docs/manual/README.md) covers each of these, and the
   </tr>
 </table>
 
+## Themes
+
+Cadre comes with a dark theme and a light one, and follows your system's
+choice between them, or keeps to one. Solarized Dark and Light and High
+Contrast Dark are there too, and you can write your own.
+[Settings and themes](docs/manual/settings.md)
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Cadre Dark" src="docs/gallery/dark/editing.png"><br>Cadre Dark</td>
+    <td width="50%"><img alt="Cadre Light" src="docs/gallery/light/editing.png"><br>Cadre Light</td>
+  </tr>
+</table>
+
 ## Installing a release
 
 The [Releases](https://github.com/crazymevt/cadre-editor/releases) page has

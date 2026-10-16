@@ -1,9 +1,6 @@
 # Git
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/git.png">
-  <img alt="The Source Control page and the gutter marking changed lines" src="../gallery/light/git.png">
-</picture>
+<img alt="The Source Control page and the gutter marking changed lines" src="../gallery/dark/git.png">
 
 In a Git repository:
 

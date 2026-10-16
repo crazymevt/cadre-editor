@@ -21,11 +21,12 @@ smoke:
 smoke-list:
 	@SMOKE_LIST=1 $(SBCL) --noinform --non-interactive --load scripts/smoke.lisp 2>/dev/null | grep -v '^;' | grep -v '^$$'
 
-# The screenshots in docs/gallery/, in light and dark: a demo project
-# staged scene by scene. One scene: make gallery ONLY=profiler
+# The screenshots in docs/gallery/: a demo project staged scene by scene,
+# in the dark theme, and the editing scene in the light one too (for
+# Themes). One scene: make gallery ONLY=profiler
 gallery:
-	GALLERY_SCHEME=light ONLY="$(ONLY)" $(LISP) --load scripts/gallery.lisp
 	GALLERY_SCHEME=dark ONLY="$(ONLY)" $(LISP) --load scripts/gallery.lisp
+	case " $(ONLY) " in "  "|*" editing "*) GALLERY_SCHEME=light ONLY=editing $(LISP) --load scripts/gallery.lisp;; esac
 
 # Measure against the performance budgets (docs/DESIGN.md, section 11)
 perf:

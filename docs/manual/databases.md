@@ -1,9 +1,6 @@
 # Databases
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../gallery/dark/databases.png">
-  <img alt="A SQLite table open in a tab, with a filter above each column" src="../gallery/light/databases.png">
-</picture>
+<img alt="A SQLite table open in a tab, with a filter above each column" src="../gallery/dark/databases.png">
 
 The Databases page (the cylinder in the activity bar) keeps your database
 connections: SQLite files, through the `libsqlite3` macOS and Linux already

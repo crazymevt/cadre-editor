@@ -1,5 +1,5 @@
 ;;;; gallery.lisp — the screenshots in docs/gallery/, taken from a real window:
-;;;;   make gallery                       (both color schemes)
+;;;;   make gallery                       (dark; and editing in light, for Themes)
 ;;;;   make gallery ONLY=profiler         (one scene, and what it needs)
 ;;;; Opens a small demo project, stages each scene (a Lisp running, files
 ;;;; open, a page showing) and saves the window at twice its size to
