@@ -374,20 +374,7 @@ it when the project has an :entry-point)."
                                                   (cons "git" (id :git-button))
                                                   (cons "systems" (id :systems-button))
                                                   (cons "databases" (id :databases-button))
-                                                  (cons "api" (id :api-button))))
-        ;; gtk:build adds a paned's children as GtkBuilder does, which resets
-        ;; their flags as gtk_paned_pack1 and pack2 would (both may shrink),
-        ;; so set them again: then the dividers stop at each side's minimum
-        ;; size instead of pushing the panel off the window.
-        (let ((side (id :side-paned)) (main (id :main-paned)))
-          (gtk:paned-set-resize-start-child side nil)
-          (gtk:paned-set-shrink-start-child side nil)
-          (gtk:paned-set-resize-end-child side t)
-          (gtk:paned-set-shrink-end-child side nil)
-          (gtk:paned-set-resize-start-child main t)
-          (gtk:paned-set-shrink-start-child main nil)
-          (gtk:paned-set-resize-end-child main nil)
-          (gtk:paned-set-shrink-end-child main nil)))
+                                                  (cons "api" (id :api-button)))))
       (let ((stack (window-sidebar-stack win)))
         (gtk:stack-add-named stack (gtk:build
                                      (gtk:box :orientation :vertical
