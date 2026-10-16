@@ -2,7 +2,7 @@ SBCL ?= sbcl
 LISP = $(SBCL) --dynamic-space-size 4096 --non-interactive
 DIR ?= .
 
-.PHONY: run test smoke smoke-list perf core app install-app release-macos release-linux
+.PHONY: run test smoke smoke-list gallery perf core app install-app release-macos release-linux
 
 # Start Cadre on a folder: make run DIR=~/projects/foo
 run:
@@ -20,6 +20,12 @@ smoke:
 
 smoke-list:
 	@SMOKE_LIST=1 $(SBCL) --noinform --non-interactive --load scripts/smoke.lisp 2>/dev/null | grep -v '^;' | grep -v '^$$'
+
+# The screenshots in docs/gallery/, in light and dark: a demo project
+# staged scene by scene. One scene: make gallery ONLY=profiler
+gallery:
+	GALLERY_SCHEME=light ONLY="$(ONLY)" $(LISP) --load scripts/gallery.lisp
+	GALLERY_SCHEME=dark ONLY="$(ONLY)" $(LISP) --load scripts/gallery.lisp
 
 # Measure against the performance budgets (docs/DESIGN.md, section 11)
 perf:
