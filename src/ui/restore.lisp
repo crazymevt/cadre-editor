@@ -209,6 +209,7 @@ for the HyperSpec tab, or nil if it has no file."
             (when (and panel-page (not (member panel-page *panel-pages-shown-when-used* :test #'equal)))
               (gtk:stack-set-visible-child-name (panel-stack (window-panel win)) panel-page))
             (set-panel-visible win panel-visible)
+            (when panel-visible (restore-panel-size win))
             (when sidebar-width (gtk:paned-set-position (window-side-paned win) sidebar-width))
             (when sidebar-page (gtk:stack-set-visible-child-name (window-sidebar-stack win) sidebar-page))
             (set-sidebar-visible win sidebar-visible)

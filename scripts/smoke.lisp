@@ -477,8 +477,13 @@
          (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
   (call-command 'inspector-back))
 
+(defvar *dragged-divider* nil)
+
 (then-when ((search "CONS" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))))
   (check "Back returns to the previous object" t)
+  ;; As if the user dragged the divider: the debugger must leave it there.
+  (setf *dragged-divider* (- (gtk:paned-get-position (cadre-ui::window-main-paned *window*)) 37))
+  (gtk:paned-set-position (cadre-ui::window-main-paned *window*) *dragged-divider*)
   (cadre-ui::repl-eval "(deep 3)"))
 
 (defun deep-frame ()
@@ -486,6 +491,9 @@
            (cadre-ui::dl-frames (first cadre-ui::*debug-levels*))))
 
 (then-when (cadre-ui::*debug-levels*)
+  (check "opening the debugger keeps the dragged panel size"
+         (= *dragged-divider* (gtk:paned-get-position (cadre-ui::window-main-paned *window*)))
+         (gtk:paned-get-position (cadre-ui::window-main-paned *window*)))
   (check "the debugger lists frames" (deep-frame)
          (mapcar #'frame-description (subseq (cadre-ui::dl-frames (first cadre-ui::*debug-levels*)) 0 3)))
   (let* ((n (and (deep-frame) (frame-number (deep-frame))))

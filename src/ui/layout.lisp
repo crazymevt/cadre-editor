@@ -67,9 +67,11 @@ has a size, try again shortly."
   (apply-layout win))
 
 (defun set-panel-visible (win visible)
-  (unless visible (remember-panel-size win))
-  (gtk:widget-set-visible (panel-widget (window-panel win)) visible)
-  (when visible (restore-panel-size win)))
+  ;; Showing a panel that already shows keeps the divider where the user put it.
+  (unless (eq visible (panel-visible-p win))
+    (unless visible (remember-panel-size win))
+    (gtk:widget-set-visible (panel-widget (window-panel win)) visible)
+    (when visible (restore-panel-size win))))
 
 (defun sync-toggle (toggle active)
   (unless (eq (gtk:toggle-button-get-active toggle) active)
