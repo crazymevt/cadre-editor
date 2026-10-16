@@ -2,15 +2,19 @@ SBCL ?= sbcl
 LISP = $(SBCL) --dynamic-space-size 4096 --non-interactive
 DIR ?= .
 
-.PHONY: run test smoke smoke-list gallery perf core app install-app release-macos release-linux
+.PHONY: run test test-ui smoke smoke-list gallery perf core app install-app release-macos release-linux
 
 # Start Cadre on a folder: make run DIR=~/projects/foo
 run:
 	$(SBCL) --dynamic-space-size 4096 --load scripts/run.lisp --end-toplevel-options $(DIR)
 
-# Headless tests of the editor model
+# Headless tests of the editor model (no GTK dependency)
 test:
 	$(LISP) --load scripts/test.lisp
+
+# Save and close regression tests (loads GTK bindings without opening a window)
+test-ui:
+	$(LISP) --load scripts/test-ui.lisp
 
 # Open a window, drive it through every feature, and quit. While fixing
 # something, run one section and what it needs: make smoke ONLY=run-app

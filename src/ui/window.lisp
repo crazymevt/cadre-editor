@@ -11,6 +11,8 @@
 
 (defclass cadre-window ()
   ((window :reader window-gtk-window)
+   (close-pending :initform nil :accessor window-close-pending-p
+                  :documentation "A window close is waiting for writes or a save decision.")
    (project :initform nil :accessor window-project
             :documentation "The open folder, a directory pathname, or nil.")
    (title :reader window-title)

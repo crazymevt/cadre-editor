@@ -115,14 +115,20 @@ file outside the open folder doesn't count: the folder opened wins."
   (or (current-project-root) (editor-error "Open a project first")))
 
 (defun save-project-then (root continuation)
-  "Save the changed files under ROOT, then call CONTINUATION."
-  (let ((modified (remove-if-not (lambda (b)
-                                   (and (buffer-needs-saving-p b) (buffer-file b)
-                                        (uiop:subpathp (real-path (buffer-file b)) (real-path root))))
-                                 (buffer-list))))
-    (if modified
-        (save-buffers *window* modified (lambda (ok) (if ok (funcall continuation) (message "A file couldn't be saved"))))
-        (funcall continuation))))
+  "Wait for pending writes and save the changed files under ROOT, then continue."
+  (let ((buffers (remove-if-not (lambda (b)
+                                  (and (buffer-file b)
+                                       (uiop:subpathp (real-path (buffer-file b)) (real-path root))))
+                                (buffer-list))))
+    (wait-for-buffer-writes
+     buffers
+     (lambda ()
+       (let ((modified (remove-if-not #'buffer-needs-saving-p buffers)))
+         (if modified
+             (save-buffers *window* modified
+                           (lambda (ok)
+                             (if ok (funcall continuation) (message "A file couldn't be saved"))))
+             (funcall continuation)))))))
 
 ;;; Building
 

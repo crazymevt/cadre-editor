@@ -55,36 +55,115 @@ picture opens to be looked at (image-view.lisp)."
                               (message "Could not open ~a: ~a" (uiop:native-namestring pathname)
                                        (glib:glib-error-message e))))))))
 
+(defstruct buffer-write pathname text continuations finished-p)
+
+(defun write-buffer-contents (pathname text success failure)
+  "Write TEXT asynchronously; call SUCCESS with no arguments or FAILURE with an error."
+  (let ((octets (sb-ext:string-to-octets text :external-format :utf-8))
+        (file (gio:file-new-for-path (uiop:native-namestring pathname))))
+    (gio:async (gio:file-replace-contents-async file octets nil nil '(:none))
+               (lambda (ok etag) (declare (ignore ok etag)) (funcall success))
+               :error failure)))
+
+(defun wait-for-buffer-writes (buffers continuation)
+  "Call CONTINUATION once BUFFERS have no writes in progress."
+  (let ((active (find-if (lambda (b) (buffer-local b :write-in-flight)) buffers)))
+    (if active
+        (setf (buffer-local active :write-waiters)
+              (cons (lambda () (wait-for-buffer-writes buffers continuation))
+                    (buffer-local active :write-waiters)))
+        (funcall continuation))))
+
+(defun start-buffer-write (buffer write)
+  "Write one snapshot of BUFFER, notify its callers, then advance the queue."
+  (let ((pathname (buffer-write-pathname write))
+        (text (buffer-write-text write)))
+    (setf (buffer-local buffer :write-in-flight) write)
+    (labels ((finish (written &optional error)
+               (unless (buffer-write-finished-p write)
+                 (setf (buffer-write-finished-p write) t)
+                 ;; Reserve the queue until every current caller has been notified.
+                 ;; Reentrant saves append to it and cannot overtake these callbacks.
+                 (unwind-protect
+                      (let ((current-p nil))
+                        (when written
+                          (handler-case
+                              (let ((renamed (not (equal (buffer-file buffer) pathname))))
+                                (setf (buffer-file buffer) pathname
+                                      (buffer-local buffer :disk-text) text)
+                                ;; Copy the live text once. Hooks that edit it afterward
+                                ;; set the modified flag again.
+                                (setf current-p (string= text (buffer-string buffer))
+                                      (buffer-modified-p buffer) (not current-p))
+                                (when renamed
+                                  (setf (buffer-name buffer) (cadre::unique-buffer-name
+                                                             (file-namestring pathname))
+                                        (buffer-major-mode buffer) (major-mode-for-file pathname))
+                                  (attach-syntax buffer)
+                                  (update-tab-titles *window* buffer)
+                                  (update-status *window*)))
+                            ;; Rename UI failures must not skip save hooks or the watch.
+                            (error (e) (message "Could not update the saved file's view: ~a" e)))
+                          (dolist (hook (reverse *after-save-hook*))
+                            (handler-case (funcall hook buffer)
+                              (error (e) (message "After-save hook failed: ~a" e)))))
+                        (let* ((pending (buffer-local buffer :pending-writes))
+                               (replacement (and written
+                                                 (find pathname pending :from-end t
+                                                       :key #'buffer-write-pathname :test #'equal)))
+                               (ok (and written current-p (not (buffer-modified-p buffer)))))
+                          (if written
+                              (message (if ok "Saved ~a" "Wrote ~a; newer edits remain unsaved")
+                                       (uiop:native-namestring pathname))
+                              (message "Could not save ~a: ~a" (uiop:native-namestring pathname)
+                                       (if (typep error 'glib:glib-error)
+                                           (glib:glib-error-message error) error)))
+                          ;; Wait for a newer requested save before reporting success
+                          ;; to callers building, running or closing this file.
+                          (if replacement
+                              (setf (buffer-write-continuations replacement)
+                                    (append (buffer-write-continuations replacement)
+                                            (buffer-write-continuations write)))
+                              (dolist (continuation (reverse (buffer-write-continuations write)))
+                                (handler-case (funcall continuation ok)
+                                  (error (e) (message "Save continuation failed: ~a" e)))))))
+                   ;; Hooks and caller errors cannot strand queued writes.
+                   (let ((pending (buffer-local buffer :pending-writes)))
+                     (setf (buffer-local buffer :pending-writes) (rest pending)
+                           (buffer-local buffer :write-in-flight) nil)
+                     (when pending (start-buffer-write buffer (first pending))))
+                   (unless (buffer-local buffer :write-in-flight)
+                     (let ((waiters (buffer-local buffer :write-waiters)))
+                       (setf (buffer-local buffer :write-waiters) nil)
+                       (dolist (waiter (reverse waiters))
+                         (handler-case (funcall waiter)
+                           (error (e) (message "Waiting for saves failed: ~a" e))))))))))
+      (handler-case
+          (write-buffer-contents pathname text (lambda () (finish t))
+                                 (lambda (e) (finish nil e)))
+        (error (e) (finish nil e))))))
+
 (defun write-buffer (buffer pathname continuation)
-  "Write BUFFER to PATHNAME, then call CONTINUATION with t, or nil on failure."
+  "Save BUFFER's current text to PATHNAME. Call CONTINUATION with t only
+if the write succeeded and that text is still current when it completes.
+A newer queued save to the same file defers the callback to that save."
   (run-hook '*before-save-hook* buffer)
   (let* ((text (buffer-string buffer))
-         (octets (sb-ext:string-to-octets text :external-format :utf-8))
-         (file (gio:file-new-for-path (uiop:native-namestring pathname))))
-    (gio:async (gio:file-replace-contents-async file octets nil nil '(:none))
-               (lambda (ok etag)
-                 (declare (ignore ok etag))
-                 (let ((renamed (not (equal (buffer-file buffer) pathname))))
-                   (setf (buffer-file buffer) pathname)
-                   ;; Edits made while it was writing aren't in the file.
-                   (when (string= text (buffer-string buffer))
-                     (setf (buffer-modified-p buffer) nil))
-                   (when renamed
-                     (setf (buffer-name buffer) (cadre::unique-buffer-name
-                                                 (file-namestring pathname))
-                           (buffer-major-mode buffer) (major-mode-for-file pathname))
-                     (attach-syntax buffer)
-                     (update-tab-titles *window* buffer)
-                     (update-status *window*)))
-                 (run-hook '*after-save-hook* buffer)
-                 (message "Saved ~a" (uiop:native-namestring pathname))
-                 (funcall continuation t))
-               :error (lambda (e)
-                        (message "Could not save ~a: ~a" (uiop:native-namestring pathname)
-                                 (glib:glib-error-message e))
-                        (funcall continuation nil)))))
+         (active (buffer-local buffer :write-in-flight))
+         (pending (buffer-local buffer :pending-writes))
+         (last (or (car (last pending)) active)))
+    (if (and last (not (buffer-write-finished-p last))
+             (equal pathname (buffer-write-pathname last))
+             (string= text (buffer-write-text last)))
+        ;; Repeated saves of the same snapshot share a write and its outcome.
+        (push continuation (buffer-write-continuations last))
+        (let ((write (make-buffer-write :pathname pathname :text text
+                                        :continuations (list continuation))))
+          (if active
+              (setf (buffer-local buffer :pending-writes) (append pending (list write)))
+              (start-buffer-write buffer write))))))
 
-(defun save-buffer-to-chosen-file (win buffer continuation)
+(defun save-buffer-to-chosen-file (win buffer continuation &key on-cancel on-error)
   (let ((dialog (gtk:file-dialog-new)))
     (gtk:file-dialog-set-initial-name dialog (if (buffer-file buffer)
                                                  (file-namestring (buffer-file buffer))
@@ -94,12 +173,16 @@ picture opens to be looked at (image-view.lisp)."
        dialog (gio:file-new-for-path (uiop:native-namestring (window-project win)))))
     (gio:async (gtk:file-dialog-save dialog (window-gtk-window win))
                (lambda (file)
-                 (write-buffer buffer (pathname (gio:file-get-path file)) continuation))
+                 (handler-case
+                     (write-buffer buffer (pathname (gio:file-get-path file)) continuation)
+                   (error (e)
+                     (when on-error (funcall on-error))
+                     (error e))))
                :error (lambda (e)
                         (declare (ignore e))
-                        (funcall continuation nil)))))
+                        (if on-cancel (funcall on-cancel) (funcall continuation nil))))))
 
-(defun save-one (win buffer continuation)
+(defun save-one (win buffer continuation &key on-cancel on-error)
   (cond
     ;; A buffer that saves itself somewhere else (a database table's edits).
     ((buffer-local buffer :save-function)
@@ -107,17 +190,24 @@ picture opens to be looked at (image-view.lisp)."
     ((buffer-file buffer)
      (write-buffer buffer (buffer-file buffer) continuation))
     (t (show-buffer win buffer)
-       (save-buffer-to-chosen-file win buffer continuation))))
+       (save-buffer-to-chosen-file win buffer continuation :on-cancel on-cancel :on-error on-error))))
 
-(defun save-buffers (win buffers continuation)
-  "Save BUFFERS one after another; call CONTINUATION with t if all were saved."
-  (if (null buffers)
-      (funcall continuation t)
-      (save-one win (first buffers)
-                (lambda (ok)
-                  (if ok
-                      (save-buffers win (rest buffers) continuation)
-                      (funcall continuation nil))))))
+(defun save-buffers (win buffers continuation &key on-cancel on-error)
+  "Save BUFFERS in order; call CONTINUATION with t if all were saved.
+ON-ERROR, if supplied, is called before an unhandled save error propagates."
+  (handler-case
+      (if (null buffers)
+          (funcall continuation t)
+          (save-one win (first buffers)
+                    (lambda (ok)
+                      (if ok
+                          (save-buffers win (rest buffers) continuation
+                                        :on-cancel on-cancel :on-error on-error)
+                          (funcall continuation nil)))
+                    :on-cancel on-cancel :on-error on-error))
+    (error (e)
+      (when on-error (funcall on-error))
+      (error e))))
 
 (defun open-project (directory)
   "Show DIRECTORY in the explorer and remember it for next time."

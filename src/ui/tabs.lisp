@@ -226,8 +226,8 @@ forget a closed page's view and remove the group if it is now empty."
   (let* ((view (page-view win page))
          (tabs (group-tab-view (view-group view)))
          (buffer (and view (view-buffer view))))
-    (if (and buffer (buffer-needs-saving-p buffer) (= 1 (length (buffer-views win buffer))))
-        (ask-to-save win (list buffer)
+    (if (and buffer (= 1 (length (buffer-views win buffer))))
+        (confirm-close-buffers win (list buffer)
                      (lambda (proceed) (adw:tab-view-close-page-finish tabs page proceed)))
         (adw:tab-view-close-page-finish tabs page t))))
 
@@ -408,15 +408,65 @@ the scratch buffer, which saves itself."
            (let ((name (buffer-name buffer)))
              (not (and (plusp (length name)) (char= (char name 0) #\*)))))))
 
-(defun ask-to-save (win buffers continuation)
-  "Ask whether to save BUFFERS, which have unsaved changes. Calls
-CONTINUATION with t once they are saved or discarded, or nil if the user cancels."
+(defun confirm-close-buffers (win buffers continuation)
+  "Wait, offer save/discard/cancel, and deliver one final decision for a close."
+  (let ((completed nil))
+    (labels ((finish (proceed)
+               ;; Mark completion before calling GTK: an error in the caller must
+               ;; never cause a second close-page-finish or window destruction.
+               (unless completed
+                 (setf completed t)
+                 (funcall continuation proceed)))
+             (guard (function)
+               ;; Only callbacks entering from an async operation need a handler.
+               (lambda (&rest arguments)
+                 (unless completed
+                   (handler-case (apply function arguments)
+                     (error (e)
+                       (finish nil)
+                       (error e))))))
+             (prompt (&optional retry-p)
+               (let ((remaining (remove-if-not #'buffer-needs-saving-p buffers)))
+                 (if remaining
+                     (let ((responded nil))
+                       (choose-save-response
+                        win remaining retry-p
+                        (guard (lambda (response)
+                                 (unless responded
+                                   (setf responded t)
+                                   (cond ((string= response "save")
+                                          (save-buffers win remaining (guard #'saved)
+                                                        :on-cancel (lambda () (finish nil))
+                                                        :on-error (lambda () (finish nil))))
+                                         ((string= response "discard") (finish t))
+                                         (t (finish nil))))))
+                        (lambda (e)
+                          (declare (ignore e))
+                          (unless responded
+                            (setf responded t)
+                            (finish nil)))))
+                     (finish t))))
+             (saved (ok)
+               (if (some #'buffer-needs-saving-p buffers)
+                   (prompt t)
+                   (finish ok))))
+      ;; Idle buffers can proceed synchronously; otherwise the waiter owns the
+      ;; callback until the current writes finish.
+      (funcall (guard (lambda ()
+                        (if (some (lambda (b) (buffer-local b :write-in-flight)) buffers)
+                            (wait-for-buffer-writes buffers (guard #'prompt))
+                            (prompt))))))))
+
+(defun choose-save-response (win buffers retry-p success failure)
+  "Present the save dialog and deliver either a response or a dialog error."
   (let ((dialog (adw:alert-dialog-new
                  (if (rest buffers)
                      (format nil "Save changes to ~d files?" (length buffers))
                      (format nil "Save changes to ~a?" (buffer-name (first buffers))))
-                 (format nil "~:[It has~;They have~] unsaved changes, which will be lost if you don't save."
-                         (rest buffers)))))
+                 (if retry-p
+                     "Changes remain unsaved because a save did not finish or the file changed while saving. Save again, discard the changes, or cancel closing."
+                     (format nil "~:[It has~;They have~] unsaved changes, which will be lost if you don't save."
+                             (rest buffers))))))
     (adw:alert-dialog-add-response dialog "cancel" "_Cancel")
     (adw:alert-dialog-add-response dialog "discard" "_Don't Save")
     (adw:alert-dialog-add-response dialog "save" "_Save")
@@ -424,31 +474,30 @@ CONTINUATION with t once they are saved or discarded, or nil if the user cancels
     (adw:alert-dialog-set-response-appearance dialog "save" :suggested)
     (adw:alert-dialog-set-default-response dialog "save")
     (adw:alert-dialog-set-close-response dialog "cancel")
-    (gio:async (adw:alert-dialog-choose dialog (window-gtk-window win))
-               (lambda (response)
-                 (cond ((string= response "save")
-                        (save-buffers win buffers
-                                      (lambda (ok)
-                                        ;; A file typed into while it was writing: not all saved.
-                                        (let ((changed (find-if (lambda (b) (and (buffer-modified-p b)
-                                                                                 (not (buffer-local b :save-function))))
-                                                                buffers)))
-                                          (when (and ok changed)
-                                            (message "~a changed while it was saving" (buffer-name changed)))
-                                          (funcall continuation (and ok (not changed)))))))
-                       ((string= response "discard") (funcall continuation t))
-                       (t (funcall continuation nil)))))))
+    (gio:async (adw:alert-dialog-choose dialog (window-gtk-window win)) success :error failure)))
 
 (defun request-close (win)
-  "Handle the window's close button: ask about unsaved buffers. Returns t
-to stop GTK closing the window now."
-  (save-session win)
-  (save-scratch-buffers)
-  (let ((modified (remove-if-not #'buffer-needs-saving-p (buffer-list))))
-    (cond ((null modified) nil)
-          (t (ask-to-save win modified
-                          (lambda (proceed)
-                            (when proceed
-                              (dolist (b modified) (setf (buffer-modified-p b) nil))
-                              (gtk:window-destroy (window-gtk-window win)))))
-             t))))
+  "Handle the window's close button. Returns t to stop GTK closing now;
+repeated requests share the pending decision."
+  (when (window-close-pending-p win)
+    (return-from request-close t))
+  (setf (window-close-pending-p win) t)
+  (let ((waiting nil))
+    (unwind-protect
+         (progn
+           (save-session win)
+           (save-scratch-buffers)
+           (let* ((buffers (buffer-list))
+                  (modified (remove-if-not #'buffer-needs-saving-p buffers)))
+             (when (or modified
+                       (some (lambda (b) (buffer-local b :write-in-flight)) buffers))
+               (confirm-close-buffers
+                win buffers
+                (lambda (proceed)
+                  (unwind-protect
+                       (when proceed
+                         (dolist (b modified) (setf (buffer-modified-p b) nil))
+                         (gtk:window-destroy (window-gtk-window win)))
+                    (setf (window-close-pending-p win) nil))))
+               (setf waiting t))))
+      (unless waiting (setf (window-close-pending-p win) nil)))))

@@ -1,4 +1,4 @@
-# Runs the headless unit tests (make test: cadre/core, no GTK) on each push
+# Runs core tests (make test) and save/close tests (make test-ui) on each push
 # and pull request, with Racket and the Clojure CLI installed so the tests
 # against a live Racket back end and nREPL run (CADRE_REQUIRE_LANGUAGES
 # makes them fail rather than skip if either is missing). The smoke and
@@ -55,3 +55,15 @@ jobs:
         env:
           CADRE_REQUIRE_LANGUAGES: "1"
         run: make test
+
+      - name: Install GTK libraries for save/close tests
+        run: brew install gtk4 libadwaita gobject-introspection
+
+      - name: Check out the pinned GTK bindings for save/close tests
+        run: |
+          . packaging/versions.env
+          git clone "$GTK4_REPO" ../gtk4
+          git -C ../gtk4 checkout --detach "$GTK4_REF"
+
+      - name: Save and close regression tests (no window)
+        run: make test-ui

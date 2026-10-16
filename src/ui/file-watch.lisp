@@ -127,7 +127,7 @@
 
 (add-hook '*buffer-created-hook* (lambda (buffer) (remember-disk-text buffer) (watch-buffer-file buffer)))
 (add-hook '*after-save-hook* (lambda (buffer)
-                               (remember-disk-text buffer)
+                               ;; The writer recorded the exact snapshot on disk.
                                ;; Saving as another file watches that one.
                                (watch-buffer-file buffer)))
 (add-hook '*buffer-killed-hook* (lambda (buffer)

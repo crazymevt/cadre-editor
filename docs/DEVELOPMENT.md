@@ -1,13 +1,17 @@
 # Developing Cadre
 
 ```sh
-make test     # headless tests of the editor model (src/core)
+make test     # headless tests of the editor model (no GTK dependency)
+make test-ui  # separate save/close regressions (requires GTK libraries)
 make smoke    # drive a real window through every feature; screenshots in build/smoke/
 make smoke ONLY=run-app   # one section, and the ones it needs (several: ONLY="git folding")
 make smoke-list           # the sections, and what each needs
 make gallery  # the screenshots in docs/gallery/ (one scene: make gallery ONLY=profiler)
 make perf     # measure against the performance budgets (and JavaScript, with its grammar); report in build/perf/latest.txt
 ```
+
+`make test` runs only the core suite. It does not run the save/close
+regressions; run `make test-ui` for those. CI runs both targets separately.
 
 The smoke test is a chain of sections (`(section "name" :needs (...))` in
 `scripts/smoke.lisp`). Each one passes run alone: it opens the files it
@@ -44,7 +48,7 @@ SBCL's statistical profile.
 | `src/core/swank/` | The Swank client: safe s-expression reader/writer, connection, starting a Lisp, request helpers, inspector/xref/debugger replies, classifying symbols in the image |
 | `vendor/slime/` | The bundled Swank (see its `CADRE-NOTES.md` for what is included and the licenses) |
 | `src/ui/` | The GTK interface: window, explorer, tabs, editor view, panel, layouts, commands, keybindings, REPL, debugger, inspector, references, systems |
-| `tests/` | Parachute tests for `src/core/` |
+| `tests/` | Parachute tests for `src/core/` and save/close flows, without a window |
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `gallery.lisp` (with `drive.lisp`, which both use), `perf.lisp`; the app: `build-app.lisp`, `make-app.sh`, the `cadre` launcher |
 | `packaging/` | The app icon (`Cadre.svg`), the macOS launcher, entitlements and disk image, the Linux package, notices, pinned versions (see [docs/RELEASING.md](RELEASING.md)) |
 | `icons/` | Cadre's own symbolic icons |
