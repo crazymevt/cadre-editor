@@ -3025,7 +3025,10 @@ and the number of items MODEL itself shows."
                      (format nil "(ns demo.core)~%~%(defn area [w h]~%  (* w h))~%(area 3 4)~%"))
     (open-file-path (merge-pathnames "clj-demo/src/demo/core.clj" *root*))))
 
-(then-when ((or (not *have-clojure*) (and (find-buffer "core.clj") (eq (current-buffer) (find-buffer "core.clj")))))
+;; By its file: the outline section's pkg/core.clj is open too, by the same name.
+(then-when ((or (not *have-clojure*)
+                (let ((buffer (find-file-buffer (merge-pathnames "clj-demo/src/demo/core.clj" *root*))))
+                  (and buffer (eq (current-buffer) buffer)))))
   (when *have-clojure*
     (check "a .clj file in a deps.edn project opens in Clojure mode" (eq 'clojure-mode (buffer-major-mode (current-buffer))))
     (set-cursor 2 1)
