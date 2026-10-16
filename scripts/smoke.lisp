@@ -1185,7 +1185,14 @@ d" 0 0)
     ;; Short enough to fit above or below a click on a laptop's screen: a
     ;; menu macOS has to move takes its clicks where it was meant to be.
     (let ((height (nth-value 1 (gtk:widget-measure popover :vertical -1))))
-      (check "and it is short enough to fit on the screen" (< height 420) height))
+      (check "and it is short enough to fit on the screen" (< height 420) height)
+      ;; A submenu must not shrink it: macOS would leave it drawn where it
+      ;; was while GTK takes its clicks where it moved to.
+      (let ((stack (cadre-ui::find-descendant popover (lambda (w) (typep w 'gtk:stack)))))
+        (gtk:stack-set-visible-child stack (gtk:widget-get-last-child stack))
+        (check "a submenu keeps the menu's height"
+               (= height (nth-value 1 (gtk:widget-measure popover :vertical -1)))
+               (list height (nth-value 1 (gtk:widget-measure popover :vertical -1))))))
     (gtk:popover-popdown popover))
   ;; Find in the project
   (show-buffer-named "m1.lisp")

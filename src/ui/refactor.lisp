@@ -224,6 +224,13 @@ right-click menu it came from, else the selected tab's."
            *context-menu-view*)
       (current-view)))
 
+(defun find-descendant (widget test)
+  "The first widget under WIDGET, depth first, that passes TEST."
+  (loop for child = (gtk:widget-get-first-child widget) then (gtk:widget-get-next-sibling child)
+        while child
+        do (let ((found (if (funcall test child) child (find-descendant child test))))
+             (when found (return found)))))
+
 (defun show-context-menu (view x y)
   "Pop up VIEW's right-click menu at (X, Y) in its text view."
   (let* ((text-view (view-text-view view))
@@ -232,6 +239,12 @@ right-click menu it came from, else the selected tab's."
     (gtk:popover-set-pointing-to popover (gdk:make-rectangle :x (round x) :y (round y) :width 1 :height 1))
     (gtk:popover-set-has-arrow popover nil)
     (gtk:widget-add-css-class popover "cadre-context-menu")
+    ;; Every page the height of the tallest. A menu that opened above the
+    ;; pointer and then shrank for a submenu is moved by GTK to keep its
+    ;; bottom there, but macOS leaves it drawn where it was, so clicks (on
+    ;; the Back arrow, say) land beside what they were aimed at.
+    (let ((stack (find-descendant popover (lambda (w) (typep w 'gtk:stack)))))
+      (when stack (gtk:stack-set-vhomogeneous stack t)))
     (gobject:connect popover :closed (lambda (p)
                                        (glib:idle-add glib:+priority-default-idle+
                                                       (lambda () (gtk:widget-unparent p) nil))))
@@ -260,6 +273,11 @@ selection), so the commands act on what was clicked."
                                (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
                                  (unless (and has (gtk:text-iter-in-range iter start end))
                                    (gtk:text-buffer-place-cursor gtk-buffer iter)))))))
-                       (focus-view view)
+                       (focus-view view)))
+    ;; Up on the release, not the press: a menu opened above the pointer
+    ;; has its last item (Code) under it, and the release would choose it.
+    (gobject:connect click :released
+                     (lambda (gesture n x y)
+                       (declare (ignore gesture n))
                        (show-context-menu view x y)))
     (gtk:widget-add-controller text-view click)))
