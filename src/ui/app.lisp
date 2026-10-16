@@ -57,6 +57,7 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "threads" (make-threads-widget))
       (panel-set-page-child panel "tests" (make-tests-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
+      (panel-set-title panel "claude" "Assistant")
       (panel-set-page-child panel "terminal" (make-terminal-widget))
       ;; However the Claude tab is opened (its tab, a key, the menu), find out
       ;; whether Claude Code is ready.
@@ -85,6 +86,7 @@ command. Menus and buttons use it."
       (ask-keybinding-profile win))
     ;; In the background, so the Claude tab is ready when opened.
     (check-claude-status)
+    (check-codex-status)
     (message "Welcome to Cadre")))
 
 (defun main (&key project files quit-after (init-file t))

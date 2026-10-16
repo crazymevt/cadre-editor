@@ -65,11 +65,13 @@ of proposing every change for review. Open files reload when they change on disk
 
 (defstruct (chat (:conc-name chat-))
   process session-id (started nil) (busy nil) (cost 0)
+  (provider :claude)
   (mode :chat)                          ; :chat or :agent
   (process-mode nil)                    ; the mode the running process was started in
   mode-dropdown
+  provider-dropdown
   (plan-box nil)                        ; the checklist of Claude's current plan (TodoWrite)
-  messages scroller input send-button status model-dropdown stack composer
+  messages message-boxes scroller input send-button status model-dropdown stack composer
   context-file context-problems context-debugger
   (stream-box nil)                      ; the box of the reply being streamed
   (stream-label nil)
@@ -77,7 +79,8 @@ of proposing every change for review. Open files reload when they change on disk
   (tools (make-hash-table :test 'equal)) ; tool call id → (expander . result label)
   (pending-approvals '())               ; functions that deny the waiting approvals
   (directory nil)                       ; the folder the conversation runs in (Claude Code keeps it there)
-  (pending-directory nil))              ; a folder opened while Claude was replying, to move to after
+  (pending-directory nil)               ; a folder opened while Claude was replying, to move to after
+  codex-process codex-thread-id codex-directory)
 
 (defvar *chat* nil)
 
@@ -89,8 +92,9 @@ of proposing every change for review. Open files reload when they change on disk
                                                           (cadre::cache-directory))))))
 
 (defun stop-claude-session ()
-  "Stop Claude's process and the MCP server (when quitting)."
+  "Stop assistant processes and the MCP server (when quitting)."
   (when *chat* (stop-claude (chat-process *chat*)))
+  (when *chat* (stop-codex-app-server (chat-codex-process *chat*)))
   (stop-mcp-server *mcp-server*)
   (setf *mcp-server* nil))
 
@@ -106,20 +110,26 @@ of proposing every change for review. Open files reload when they change on disk
                                               :left-margin 8 :right-margin 8 :accepts-tab nil))
          (send (make-instance 'gtk:button :label "Send" :valign :end :css-classes '("suggested-action")))
          (status (make-instance 'gtk:label :xalign 0.0 :hexpand t :ellipsize :end :css-classes '("dim-label")))
+         (provider (gtk:drop-down-new-from-strings '("Claude" "Codex")))
          (models (gtk:drop-down-new-from-strings (coerce *claude-models* 'list)))
          (modes (gtk:drop-down-new-from-strings '("Chat" "Agent")))
          (file (make-instance 'gtk:toggle-button :label "File" :active t :css-classes '("flat")
-                                                 :tooltip-text "Tell Claude which file you are in, where the cursor is, and the selection"))
+                                                 :tooltip-text "Tell the assistant which file you are in, where the cursor is, and the selection"))
          (problems (make-instance 'gtk:toggle-button :label "Problems" :css-classes '("flat")
                                                      :tooltip-text "Attach the compiler's notes"))
          (debugger (make-instance 'gtk:toggle-button :label "Debugger" :css-classes '("flat")
                                                      :tooltip-text "Attach the debugger's condition and backtrace"))
          (stack (make-instance 'gtk:stack :vexpand t))
          (chat (make-chat :messages messages :scroller scroller :input input :send-button send :status status
-                          :model-dropdown models :mode-dropdown modes
+                          :provider-dropdown provider :model-dropdown models :mode-dropdown modes
                           :stack stack :context-file file :context-problems problems
                           :context-debugger debugger :session-id (make-uuid))))
-    (setf *chat* chat)
+    (setf *chat* chat
+          (chat-message-boxes chat) (make-hash-table :test 'eq)
+          (gethash :claude (chat-message-boxes chat)) messages)
+    (gobject:connect provider "notify::selected"
+                     (lambda (d pspec) (declare (ignore pspec))
+                       (assistant-provider-selected (if (= 1 (gtk:drop-down-get-selected d)) :codex :claude))))
     ;; The replies are selectable labels, so they can take the focus; the
     ;; viewport would then scroll to the one focused, often the first.
     (let ((viewport (gtk:scrolled-window-get-child scroller)))
@@ -145,7 +155,7 @@ of proposing every change for review. Open files reload when they change on disk
     (gtk:stack-add-named stack (claude-status-page) "status")
     (gtk:stack-add-named stack scroller "chat")
     (show-claude-intro)
-    ;; The context chips and the message box; hidden while Claude isn't
+    ;; The context chips and the message box; hidden while the selected provider isn't
     ;; ready, so the sign-in page has the room.
     (setf (chat-composer chat)
           (gtk:build
@@ -163,6 +173,7 @@ of proposing every change for review. Open files reload when they change on disk
       (gtk:box :orientation :vertical
         (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-top 2 :margin-bottom 2
           status
+          provider
           modes
           models
           (gtk:button :icon-name "cadre-document-new-symbolic" :tooltip-text "New conversation"
@@ -175,6 +186,7 @@ of proposing every change for review. Open files reload when they change on disk
 (defvar *claude-status-label* nil)
 (defvar *claude-status-detail* nil)
 (defvar *claude-status-buttons* nil)
+(defvar *assistant-sign-in-button* nil)
 (defvar *sign-in-box* nil)
 (defvar *sign-in-link* nil)
 (defvar *sign-in-code* nil)
@@ -191,13 +203,19 @@ of proposing every change for review. Open files reload when they change on disk
                                                  :hexpand t)
         *sign-in-progress* (make-instance 'gtk:label :wrap t :xalign 0.0 :selectable t :css-classes '("dim-label")))
   (gobject:connect *sign-in-code* :activate (lambda (e) (declare (ignore e)) (submit-sign-in-code)))
+  (setf *assistant-sign-in-button*
+        (make-instance 'gtk:button :label "Sign In…" :tooltip-text "Sign in to Claude Code (claude auth login)"))
+  (gobject:connect *assistant-sign-in-button* :clicked
+                   (lambda (b) (declare (ignore b))
+                     (if (and *chat* (eq (chat-provider *chat*) :codex))
+                         (call-command 'codex-sign-in)
+                         (call-command 'claude-sign-in))))
   (setf *claude-status-buttons*
         (gtk:build
           (gtk:box :spacing 8 :halign :center :visible nil
-            (gtk:button :label "Sign In…" :tooltip-text "Sign in to Claude Code (claude auth login)"
-                        :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-sign-in)))
+            *assistant-sign-in-button*
             (gtk:button :label "Check Again" :css-classes '("suggested-action")
-                        :on-clicked (lambda (b) (declare (ignore b)) (check-claude-status :force t))))))
+                        :on-clicked (lambda (b) (declare (ignore b)) (check-selected-assistant-status :force t))))))
   (setf *sign-in-box*
         (gtk:build
           (gtk:box :orientation :vertical :spacing 6 :visible nil :css-classes '("cadre-chat-approval")
@@ -318,7 +336,14 @@ chat or what is missing. THEN is called if Claude is ready."
   (and *claude-status* (claude-status-program *claude-status*) (claude-status-logged-in *claude-status*)))
 
 (defun show-claude-status ()
+  (when (and *chat* (eq (chat-provider *chat*) :codex))
+    (return-from show-claude-status (show-codex-status)))
   (when *chat*
+    (when *assistant-sign-in-button*
+      (gtk:button-set-label *assistant-sign-in-button* "Sign In…")
+      (gtk:widget-set-tooltip-text *assistant-sign-in-button* "Sign in to Claude Code (claude auth login)"))
+    (when *sign-in-link* (gtk:widget-set-visible *sign-in-link* t))
+    (when *sign-in-box* (gtk:widget-set-visible *sign-in-box* nil))
     (let ((s *claude-status*))
       (gtk:widget-set-visible *claude-status-buttons* (and s (not *claude-checking*) t))
       (cond ((or (null s) *claude-checking*)
@@ -350,7 +375,11 @@ chat or what is missing. THEN is called if Claude is ready."
 (defun chat-update-status ()
   (when *chat*
     (chat-set-status
-     (cond ((chat-busy *chat*) "Claude is working…")
+     (cond ((chat-busy *chat*) (if (eq (chat-provider *chat*) :codex) "Codex is working…" "Claude is working…"))
+           ((eq (chat-provider *chat*) :codex)
+            (if (codex-ready-p) (format nil "~:[~;Agent · ~]Codex ~a" (eq (chat-mode *chat*) :agent)
+                                         (codex-status-version *codex-status*))
+                (if *codex-status* "Codex is not ready" "")))
            ((not (claude-ready-p)) (if *claude-status* "Claude Code is not ready" ""))
            (t (format nil "~:[~;Agent · ~]~a~@[ · $~,4f this conversation~]" (eq (chat-mode *chat*) :agent)
                       (claude-status-version *claude-status*)
@@ -696,6 +725,8 @@ started in the other mode is replaced, resuming the same conversation."
 
 (defun send-to-claude (text &key shown)
   "Send TEXT to Claude, with the editor context; the chat shows SHOWN (default TEXT)."
+  (when (eq (chat-provider *chat*) :codex)
+    (return-from send-to-claude (send-to-codex text :shown shown)))
   (let ((context (message-context)))
     (chat-append (gtk:build
                    (gtk:box :halign :end :css-classes '("cadre-chat-user")
@@ -753,31 +784,35 @@ started in the other mode is replaced, resuming the same conversation."
 (defun show-claude-page (&key focus)
   (set-panel-visible *window* t)
   (panel-show (window-panel *window*) "claude")
-  (check-claude-status)
+  (check-selected-assistant-status)
   (when focus (gtk:widget-grab-focus (chat-input *chat*))))
 
 (define-command claude ()
   "Show the Claude panel, to chat with Claude about your code."
+  (gtk:drop-down-set-selected (chat-provider-dropdown *chat*) 0)
   (show-claude-page :focus t))
 
 (define-command claude-agent ()
   "Show the Claude panel in agent mode, for a larger task."
+  (gtk:drop-down-set-selected (chat-provider-dropdown *chat*) 0)
   (show-claude-page :focus t)
   (set-chat-mode :agent))
 
 (define-command chat-send ()
-  "Send what is typed in the Claude panel."
+  "Send what is typed in the assistant panel."
   (let* ((input (gtk:text-view-get-buffer (chat-input *chat*)))
          (text (string-trim '(#\Space #\Newline #\Tab) (text-string input))))
-    (cond ((string= text "") (message "Type a message for Claude first"))
-          ((chat-busy *chat*) (message "Claude is still working"))
-          (t (check-claude-status
+    (cond ((string= text "") (message "Type a message first"))
+          ((chat-busy *chat*) (message "The assistant is still working"))
+          (t (check-selected-assistant-status
               :then (lambda ()
                       (text-replace-contents input "")
                       (send-to-claude text)))))))
 
 (define-command claude-stop ()
-  "Stop what Claude is doing."
+  "Stop the active assistant turn."
+  (when (eq (chat-provider *chat*) :codex)
+    (return-from claude-stop (codex-chat-stop)))
   (let ((process (chat-process *chat*)))
     (when process
       (deny-pending-approvals)
@@ -794,20 +829,20 @@ started in the other mode is replaced, resuming the same conversation."
                                   nil)))))
 
 (defun claude-follow-folder (directory)
-  "The open folder became DIRECTORY: Claude works there from now on. A
-conversation in another folder ends (Claude Code keeps it in that folder's
-history) and a new one starts here, as a note in the chat says; while
-Claude is replying, that waits until it finishes."
-  (when (and *chat* (chat-started *chat*) (chat-directory *chat*)
+  "Move the active assistant conversation to DIRECTORY when its turn ends."
+  (let* ((codex (and *chat* (eq (chat-provider *chat*) :codex)))
+         (started (and *chat* (if codex (chat-codex-thread-id *chat*) (chat-started *chat*))))
+         (current (and *chat* (if codex (chat-codex-directory *chat*) (chat-directory *chat*)))))
+   (when (and *chat* started current
              (not (equal (namestring (uiop:ensure-directory-pathname directory))
-                         (namestring (uiop:ensure-directory-pathname (chat-directory *chat*))))))
+                         (namestring (uiop:ensure-directory-pathname current)))))
     (if (chat-busy *chat*)
         (setf (chat-pending-directory *chat*) directory)
-        (let ((old (chat-directory *chat*)))
+        (let ((old current))
           (claude-new-chat)
-          (setf (chat-directory *chat*) nil)
-          (chat-note (format nil "Claude now works in ~a, the folder you opened: this is a new conversation there. The one in ~a is in Claude Code's history for that folder."
-                             (uiop:native-namestring directory) (uiop:native-namestring old)))))))
+          (chat-note (format nil "~a now works in ~a, the folder you opened: this is a new conversation there. The one in ~a remains in its CLI history for that folder."
+                             (if codex "Codex" "Claude")
+                             (uiop:native-namestring directory) (uiop:native-namestring old))))))))
 
 (defun claude-reply-ended ()
   "Move to a folder opened while Claude was replying."
@@ -817,16 +852,22 @@ Claude is replying, that waits until it finishes."
       (claude-follow-folder directory))))
 
 (define-command claude-new-chat ()
-  "Start a new conversation with Claude."
-  (when (chat-process *chat*) (stop-claude (chat-process *chat*)))
+  "Start a new conversation with the selected assistant."
+  (if (eq (chat-provider *chat*) :codex)
+      (progn
+        (when (chat-codex-process *chat*) (stop-codex-app-server (chat-codex-process *chat*)))
+        (setf (chat-codex-process *chat*) nil (chat-codex-thread-id *chat*) nil (chat-codex-directory *chat*) nil))
+      (progn
+        (when (chat-process *chat*) (stop-claude (chat-process *chat*)))
+        (setf (chat-process *chat*) nil (chat-started *chat*) nil
+              (chat-session-id *chat*) (make-uuid) (chat-directory *chat*) nil)))
   (deny-pending-approvals)
   (clrhash *session-allowed*)
   (clrhash (chat-tools *chat*))
-  (setf (chat-process *chat*) nil (chat-busy *chat*) nil (chat-started *chat*) nil
-        (chat-session-id *chat*) (make-uuid) (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
-        (chat-plan-box *chat*) nil (chat-directory *chat*) nil (chat-pending-directory *chat*) nil)
+  (setf (chat-busy *chat*) nil (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
+        (chat-plan-box *chat*) nil (chat-pending-directory *chat*) nil)
   (clear-box (chat-messages *chat*))
-  (show-claude-intro)
+  (if (eq (chat-provider *chat*) :codex) (show-codex-intro) (show-claude-intro))
   (chat-update-status))
 
 (define-command claude-sign-in ()

@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Pages: the REPL, the Terminal, Problems (compiler notes), the Debugger, the Inspector,
 ;;;; References (cross-references), History (commits), Trace (traced calls),
-;;;; Profiler (where the time went), Threads, Tests (the project's), Results (a SQL query's), Claude (a chat)
+;;;; Profiler (where the time went), Threads, Tests (the project's), Results (a SQL query's), Assistant (a chat)
 ;;;; and Output (a log of messages).
 
 (in-package #:cadre-ui)
@@ -37,7 +37,7 @@ narrow panel (the vertical layout) has room for the others.")
          ;; wheel and the selected tab scroll them (SETUP-TAB-SCROLLING).
          (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :external :vscrollbar-policy :never
                                                    :propagate-natural-width t :hexpand t :child switcher)))
-    (dolist (page '(("claude" "Claude") ("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
+    (dolist (page '(("claude" "Assistant") ("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
                     ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("tests" "Tests") ("results" "Results")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))

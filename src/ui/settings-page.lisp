@@ -36,10 +36,10 @@ take effect the next time they are used.")
 (defparameter *category-icons*
   '(("Appearance" . "cadre-appearance-symbolic") ("Editing" . "cadre-edit-symbolic")
     ("Keyboard" . "cadre-keyboard-symbolic") ("Lisp" . "cadre-system-symbolic")
-    ("Claude" . "cadre-claude-symbolic") ("Explorer" . "folder-symbolic")
+    ("Claude" . "cadre-claude-symbolic") ("Codex" . "cadre-claude-symbolic") ("Explorer" . "folder-symbolic")
     ("Session" . "cadre-session-symbolic") ("Terminal" . "utilities-terminal-symbolic") ("Other" . "cadre-other-symbolic")))
 
-(defparameter *category-order* '("Appearance" "Editing" "Keyboard" "Lisp" "Claude" "Explorer" "Session" "Other"))
+(defparameter *category-order* '("Appearance" "Editing" "Keyboard" "Lisp" "Claude" "Codex" "Explorer" "Session" "Other"))
 
 (defun option-changed (option)
   "OPTION was set from the page: save it and put it into effect."

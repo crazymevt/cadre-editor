@@ -53,6 +53,7 @@
                (:file "file-watch")
                (:file "claude-tools")
                (:file "claude")
+               (:file "codex")
                (:file "editor-repl")
                (:file "language-repl")
                (:file "clojure")
@@ -150,6 +151,9 @@
                              (:file "cli")
                              (:file "mcp")
                              (:file "diff")))
+               (:module "codex"
+                :serial t
+                :components ((:file "app-server")))
                (:file "language-docs")
                (:file "edn")
                (:file "language-projects")

@@ -196,6 +196,15 @@
    #:define-mcp-tool #:register-mcp-tool #:*mcp-tools* #:mcp-tool-name #:tool-error #:tool-argument
    #:mcp-tool-error #:mcp-handle #:call-mcp-tool #:start-mcp-server #:stop-mcp-server
    #:mcp-server-url #:mcp-server-port #:mcp-server-token #:write-mcp-config #:http-post-json
+   ;; Codex CLI app-server
+   #:*codex-program* #:find-codex-program #:codex-status #:codex-status-program #:codex-status-version
+   #:codex-status-logged-in #:codex-status-error #:check-codex #:codex-dynamic-tools
+   #:codex-event #:codex-event-kind #:codex-event-text #:codex-event-name #:codex-event-id
+   #:codex-event-input #:codex-event-error #:codex-event-thread-id #:codex-event-turn-id
+   #:codex-event-data #:codex-app-server #:codex-thread-id #:codex-turn-id
+   #:codex-stopped
+   #:start-codex-app-server #:codex-start-thread #:codex-resume-thread #:codex-start-turn #:codex-interrupt
+   #:codex-alive-p #:stop-codex-app-server
    ;; Cadre's own files, and an app's environment
    #:*resource-directory* #:resource-pathname #:parse-environment-block #:login-shell-environment
    #:adopt-login-shell-environment

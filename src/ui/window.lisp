@@ -206,8 +206,9 @@ for a submenu, and (:section entry…) for a group set off by separators."
                 ("Stop Profiling" stop-profiling) ("Show Profiler" show-profiler))
       (:section ("Threads" show-threads))
       (:section ("Restart Lisp" restart-lisp)))
-     (:submenu "Claude"
-      (:section ("Chat with Claude" claude) ("Claude Code in a Terminal" claude-code-in-terminal))))
+     (:submenu "Assistant"
+      (:section ("Chat with Claude" claude) ("Chat with Codex" codex)
+                ("Claude Code in a Terminal" claude-code-in-terminal))))
    '(:section
      ("Settings…" settings)
      ("Color Theme…" choose-theme)

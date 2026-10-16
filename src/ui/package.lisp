@@ -43,6 +43,7 @@
            #:who-macroexpands #:who-specializes #:list-callers #:list-callees
            #:expand-macro-once #:expand-macro-all #:expand-compiler-macro
            #:claude #:chat-send #:claude-stop #:claude-new-chat #:claude-sign-in
+           #:codex #:codex-sign-in
            #:ask-claude-about-problems #:ask-claude-about-error #:accept-edit #:reject-edit))
 
 (defpackage #:cadre-user
