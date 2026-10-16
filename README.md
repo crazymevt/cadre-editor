@@ -5,10 +5,7 @@
 A Common Lisp editor, written in Common Lisp: Emacs's depth for Lisp, with an
 interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4) bindings and libadwaita.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/editing.png">
-  <img alt="Cadre editing Lisp, with the REPL below and argument hints in the status bar" src="docs/gallery/light/editing.png">
-</picture>
+<img alt="Cadre editing Lisp, with the REPL below and argument hints in the status bar" src="docs/gallery/dark/editing.png">
 
 **Status:** version 1.1.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
 editing Common Lisp, Racket and Clojure. [docs/DESIGN.md](docs/DESIGN.md) has
@@ -44,15 +41,15 @@ The [manual](docs/manual/README.md) covers each of these, and the
 
 <table>
   <tr>
-    <td width="50%"><a href="docs/gallery/README.md#the-debugger"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/debugger.png"><img alt="The debugger" src="docs/gallery/light/debugger.png"></picture></a><br>The debugger</td>
-    <td width="50%"><a href="docs/gallery/README.md#the-profiler"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/profiler.png"><img alt="The profiler's flame graph" src="docs/gallery/light/profiler.png"></picture></a><br>The profiler</td>
+    <td width="50%"><a href="docs/gallery/README.md#the-debugger"><img alt="The debugger" src="docs/gallery/dark/debugger.png"></a><br>The debugger</td>
+    <td width="50%"><a href="docs/gallery/README.md#the-profiler"><img alt="The profiler's flame graph" src="docs/gallery/dark/profiler.png"></a><br>The profiler</td>
   </tr>
   <tr>
-    <td><a href="docs/gallery/README.md#racket-and-clojure"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/racket-clojure.png"><img alt="Racket and Clojure side by side" src="docs/gallery/light/racket-clojure.png"></picture></a><br>Racket and Clojure</td>
-    <td><a href="docs/gallery/README.md#git"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/git.png"><img alt="Source Control and the gutter" src="docs/gallery/light/git.png"></picture></a><br>Git</td>
+    <td><a href="docs/gallery/README.md#racket-and-clojure"><img alt="Racket and Clojure side by side" src="docs/gallery/dark/racket-clojure.png"></a><br>Racket and Clojure</td>
+    <td><a href="docs/gallery/README.md#git"><img alt="Source Control and the gutter" src="docs/gallery/dark/git.png"></a><br>Git</td>
   </tr>
   <tr>
-    <td><a href="docs/gallery/README.md#databases"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/gallery/dark/databases.png"><img alt="A database table in a tab" src="docs/gallery/light/databases.png"></picture></a><br>Databases</td>
+    <td><a href="docs/gallery/README.md#databases"><img alt="A database table in a tab" src="docs/gallery/dark/databases.png"></a><br>Databases</td>
     <td><a href="docs/gallery/README.md#claude"><img alt="Claude explaining code in the side panel" src="docs/screenshot.png"></a><br>Claude</td>
   </tr>
 </table>
