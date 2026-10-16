@@ -115,7 +115,7 @@ numeric, read as text instead of cl-postgres's Lisp values.")
 and a prepared statement holds one), PARAMS going to the last. The last
 statement's result, or the last one with rows."
   (unless (db-open-p db) (editor-error "The database is closed"))
-  (let ((ranges (sql-statement-ranges sql)))
+  (let ((ranges (sql-statement-ranges sql :kind :postgres)))
     (if (<= (length ranges) 1)
         (pg-execute-one db sql params limit)
         (let ((result nil) (changes 0) (milliseconds 0))
@@ -169,14 +169,18 @@ WHERE i.indrelid = (quote_ident(current_schema()) || '.' || quote_ident(?))::reg
 ORDER BY c.relname" table)))
 
 (defmethod db-foreign-keys ((db postgres-database) table)
+  "From pg_constraint, whose conkey and confkey pair a composite key's
+columns in order (information_schema has no such pairing for the columns
+referred to)."
   (mapcar (lambda (row) (list :column (aref row 0) :table (aref row 1) :to (aref row 2)))
-          (pg-rows db "SELECT kcu.column_name, ccu.table_name, ccu.column_name
-FROM information_schema.table_constraints tc
-JOIN information_schema.key_column_usage kcu
-  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-JOIN information_schema.constraint_column_usage ccu
-  ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() AND tc.table_name = ?" table)))
+          (pg-rows db "SELECT a.attname, r.relname, ra.attname
+FROM pg_constraint c
+CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS k(col, ref, n)
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.col
+JOIN pg_attribute ra ON ra.attrelid = c.confrelid AND ra.attnum = k.ref
+JOIN pg_class r ON r.oid = c.confrelid
+WHERE c.contype = 'f' AND c.conrelid = (quote_ident(current_schema()) || '.' || quote_ident(?))::regclass
+ORDER BY c.conname, k.n" table)))
 
 (defmethod db-create-statement ((db postgres-database) name)
   "A view's definition; for a table, a CREATE TABLE made from its columns

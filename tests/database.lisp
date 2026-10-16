@@ -44,7 +44,15 @@ select 'a;b' from \"x;y\"" (c:sql-statement-at text 20))
   ;; After the last semicolon: the statement before it.
   (is string= "select 1" (c:sql-statement-at "select 1;  " 11))
   (is equal nil (c:sql-statement-at "  -- nothing" 3))
-  (is string= "select 'it''s'" (c:sql-statement-at "select 'it''s'; select 2" 2)))
+  (is string= "select 'it''s'" (c:sql-statement-at "select 'it''s'; select 2" 2))
+  ;; Each database's own strings and comments.
+  (is = 1 (length (c:sql-statement-ranges "SELECT 'it\\'s; one' # a; comment" :kind :mysql)))
+  (is = 2 (length (c:sql-statement-ranges "SELECT 'C:\\'; SELECT 2" :kind :postgres)))
+  (is = 2 (length (c:sql-statement-ranges "SELECT 'C:\\'; SELECT 2")))
+  (is = 1 (length (c:sql-statement-ranges "DO $$ BEGIN PERFORM 1; END $$; -- done" :kind :postgres)))
+  (is = 1 (length (c:sql-statement-ranges "SELECT E'a\\';b', $fn$ ; $fn$" :kind :postgres)))
+  (is = 1 (length (c:sql-statement-ranges "SELECT [a;b] FROM t")))
+  (is equal nil (c:sql-statement-ranges "# only a comment; here" :kind :mysql)))
 
 (define-test db-connections-file :parent cadre-tests
   (let* ((dir (uiop:ensure-directory-pathname

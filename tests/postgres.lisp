@@ -71,6 +71,17 @@ CREATE INDEX people_age ON people (age);")
               (is equal nil (c:db-row-key db "tags"))
               (is equal nil (c:db-row-key db "adults"))
               (true (find "people_age" (c:db-indexes db "people") :key (lambda (i) (getf i :name)) :test #'string=))
+              ;; A composite key pairs its columns in order; a constraint
+              ;; of the same name on another table stays out.
+              (c:db-run db "CREATE TABLE pairs (a integer, b integer, PRIMARY KEY (a, b));
+CREATE TABLE refs (x integer, y integer, CONSTRAINT fk FOREIGN KEY (x, y) REFERENCES pairs (a, b));
+CREATE TABLE others (p integer REFERENCES people (id), CONSTRAINT fk FOREIGN KEY (p) REFERENCES people (id));")
+              (is equal '((:column "x" :table "pairs" :to "a") (:column "y" :table "pairs" :to "b"))
+                  (c:db-foreign-keys db "refs"))
+              ;; A function's body in $$ keeps its semicolons.
+              (c:db-run db "CREATE FUNCTION two() RETURNS integer AS $$ BEGIN RETURN 2; END; $$ LANGUAGE plpgsql;
+SELECT 1")
+              (is equalp '(#(2)) (c:db-result-rows (c:db-run db "SELECT two()")))
               (true (search "CREATE VIEW" (c:db-create-statement db "adults")))
               (true (search "PRIMARY KEY (\"id\")" (c:db-create-statement db "people")))
               ;; The table browser's SQL works here too.

@@ -148,7 +148,7 @@ clears its other capabilities.)"
   "Run SQL, one statement at a time (the server takes one a query), PARAMS
 going to the last. The last statement's result, or the last one with rows."
   (unless (db-open-p db) (editor-error "The database is closed"))
-  (let ((ranges (sql-statement-ranges sql)))
+  (let ((ranges (sql-statement-ranges sql :kind :mysql)))
     (if (<= (length ranges) 1)
         (my-execute-one db sql params limit)
         (let ((result nil) (changes 0) (milliseconds 0))

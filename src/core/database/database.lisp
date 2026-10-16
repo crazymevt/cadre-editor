@@ -337,86 +337,95 @@ CHANGES, (column . value) each. Returns the SQL and its parameters."
   (multiple-value-bind (where params) (key-where-sql key key-values)
     (values (format nil "DELETE FROM ~a WHERE ~a" (quote-sql-identifier table) where) params)))
 
-(defun sql-statement-ranges (text)
-  "Where the statements in TEXT are, as (start . end) each, split at
-semicolons outside strings, quoted names and comments. A range leaves out its
-semicolon; ranges of only whitespace and comments are dropped."
-  (let ((ranges '()) (start 0) (i 0) (n (length text)) (code nil))
-    (flet ((finish (end)
-             (when code (push (cons start end) ranges))
-             (setf code nil)))
-      (loop while (< i n)
-            do (let ((c (char text i)))
-                 (cond ((and (char= c #\-) (< (1+ i) n) (char= (char text (1+ i)) #\-))
-                        (setf i (or (position #\Newline text :start i) n)))
-                       ((and (char= c #\/) (< (1+ i) n) (char= (char text (1+ i)) #\*))
-                        (setf i (let ((e (search "*/" text :start2 (+ i 2)))) (if e (+ e 2) n))))
-                       ((member c '(#\' #\" #\` #\[))
-                        (setf code t)
-                        (let ((close (if (char= c #\[) #\] c)))
-                          (setf i (1+ i))
-                          (loop while (< i n)
-                                do (if (char= (char text i) close)
-                                       (if (and (< (1+ i) n) (char= (char text (1+ i)) close) (char/= c #\[))
-                                           (incf i 2)
-                                           (return))
-                                       (incf i)))
-                          (setf i (min n (1+ i)))))
-                       ((char= c #\;) (finish i) (setf i (1+ i) start i))
-                       (t (unless (member c '(#\Space #\Tab #\Newline #\Return)) (setf code t))
-                          (incf i)))))
-      (finish n))
-    (nreverse ranges)))
+(defun sql-dialect (kind)
+  "How the SQL of a KIND of database (a connection's kind) is read, as
+keyword arguments for sql-skip."
+  (case kind
+    (:mysql '(:backslash-escapes t :hash-comments t))
+    (:postgres '(:dollar-quotes t))
+    (t '(:brackets t))))
 
-(defun replace-sql-placeholders (sql function &key backslash-escapes hash-comments dollar-quotes)
-  "SQL with each ? outside strings, quoted names and comments replaced by
-what FUNCTION returns for it. The dialect's rules: BACKSLASH-ESCAPES, a
-backslash escapes the next character in '…' and \"…\" (MySQL); HASH-COMMENTS,
-# starts a comment (MySQL); DOLLAR-QUOTES, $tag$…$tag$ is a string, and so
-is E'…' with backslash escapes in it (PostgreSQL)."
-  (let ((i 0) (n (length sql)))
+(defun sql-skip (sql i &key backslash-escapes hash-comments dollar-quotes brackets)
+  "If a string, quoted name or comment starts at I in SQL, the index after it,
+and t as a second value when it is a comment; nil if none does. The
+dialect's rules: BACKSLASH-ESCAPES, a backslash escapes the next character in
+'…' and \"…\" (MySQL); HASH-COMMENTS, # starts a comment (MySQL);
+DOLLAR-QUOTES, $tag$…$tag$ is a string, and so is E'…' with backslash escapes
+in it (PostgreSQL); BRACKETS, […] is a quoted name (SQLite)."
+  (let ((n (length sql))
+        (c (char sql i)))
     (labels ((at (j string) (and (<= (+ j (length string)) n) (string= string sql :start2 j :end2 (+ j (length string)))))
              (word-char-p (j) (and (>= j 0) (or (alphanumericp (char sql j)) (member (char sql j) '(#\_ #\$)))))
-             (quoted-end (start close escapes)
+             (line-end () (or (position #\Newline sql :start i) n))
+             (quoted-end (start close escapes doubling)
                ;; The index after the quote closing the one at START.
                (let ((j (1+ start)))
                  (loop while (< j n)
                        do (let ((c (char sql j)))
                             (cond ((and escapes (char= c #\\)) (incf j 2))
                                   ((char= c close)
-                                   (if (and (< (1+ j) n) (char= (char sql (1+ j)) close))
+                                   (if (and doubling (< (1+ j) n) (char= (char sql (1+ j)) close))
                                        (incf j 2)
                                        (return-from quoted-end (1+ j))))
                                   (t (incf j)))))
                  n))
-             (dollar-tag (j)
-               ;; The $tag$ starting at J, if one does.
-               (when (and (char= (char sql j) #\$) (not (word-char-p (1- j))))
-                 (let ((end (position-if-not (lambda (c) (or (alphanumericp c) (char= c #\_))) sql :start (1+ j))))
+             (dollar-tag ()
+               ;; The $tag$ starting at I, if one does ($1 is a parameter).
+               (when (and (char= c #\$) (not (word-char-p (1- i))))
+                 (let ((end (position-if-not (lambda (c) (or (alphanumericp c) (char= c #\_))) sql :start (1+ i))))
                    (when (and end (char= (char sql end) #\$)
-                              (or (= end (1+ j)) (not (digit-char-p (char sql (1+ j))))))
-                     (subseq sql j (1+ end)))))))
-      (with-output-to-string (out)
-        (loop while (< i n)
-              do (let* ((c (char sql i))
-                        (tag (and dollar-quotes (dollar-tag i)))
-                        (end (cond (tag (let ((close (search tag sql :start2 (+ i (length tag)))))
-                                          (if close (+ close (length tag)) n)))
-                                   ((at i "--") (or (position #\Newline sql :start i) n))
-                                   ((and hash-comments (char= c #\#)) (or (position #\Newline sql :start i) n))
-                                   ((at i "/*") (let ((e (search "*/" sql :start2 (+ i 2)))) (if e (+ e 2) n)))
-                                   ((and dollar-quotes (char-equal c #\E) (at (1+ i) "'") (not (word-char-p (1- i))))
-                                    (quoted-end (1+ i) #\' t))
-                                   ((member c '(#\' #\" #\`))
-                                    (quoted-end i c (and backslash-escapes (char/= c #\`)))))))
-                   (cond (end (write-string sql out :start i :end end) (setf i end))
-                         ((char= c #\?) (write-string (funcall function) out) (incf i))
-                         (t (write-char c out) (incf i)))))))))
+                              (or (= end (1+ i)) (not (digit-char-p (char sql (1+ i))))))
+                     (subseq sql i (1+ end)))))))
+      (let ((tag (and dollar-quotes (dollar-tag))))
+        (cond (tag (let ((close (search tag sql :start2 (+ i (length tag)))))
+                     (if close (+ close (length tag)) n)))
+              ((at i "--") (values (line-end) t))
+              ((and hash-comments (char= c #\#)) (values (line-end) t))
+              ((at i "/*") (values (let ((e (search "*/" sql :start2 (+ i 2)))) (if e (+ e 2) n)) t))
+              ((and dollar-quotes (char-equal c #\E) (at (1+ i) "'") (not (word-char-p (1- i))))
+               (quoted-end (1+ i) #\' t t))
+              ((member c '(#\' #\" #\`))
+               (quoted-end i c (and backslash-escapes (char/= c #\`)) t))
+              ((and brackets (char= c #\[)) (quoted-end i #\] nil nil)))))))
 
-(defun sql-statement-at (text position)
+(defun sql-statement-ranges (text &key kind)
+  "Where the statements in TEXT are, as (start . end) each, split at
+semicolons outside strings, quoted names and comments, as a KIND of database
+reads them (sql-dialect). A range leaves out its semicolon; ranges of only
+whitespace and comments are dropped."
+  (let ((ranges '()) (start 0) (i 0) (n (length text)) (code nil)
+        (dialect (sql-dialect kind)))
+    (flet ((finish (end)
+             (when code (push (cons start end) ranges))
+             (setf code nil)))
+      (loop while (< i n)
+            do (multiple-value-bind (end comment) (apply #'sql-skip text i dialect)
+                 (let ((c (char text i)))
+                   (cond (end (unless comment (setf code t))
+                              (setf i end))
+                         ((char= c #\;) (finish i) (setf i (1+ i) start i))
+                         (t (unless (member c '(#\Space #\Tab #\Newline #\Return)) (setf code t))
+                            (incf i))))))
+      (finish n))
+    (nreverse ranges)))
+
+(defun replace-sql-placeholders (sql function &rest dialect &key backslash-escapes hash-comments dollar-quotes)
+  "SQL with each ? outside strings, quoted names and comments replaced by
+what FUNCTION returns for it. DIALECT is the rules sql-skip takes."
+  (declare (ignore backslash-escapes hash-comments dollar-quotes))
+  (let ((i 0) (n (length sql)))
+    (with-output-to-string (out)
+      (loop while (< i n)
+            do (let ((c (char sql i))
+                     (end (apply #'sql-skip sql i dialect)))
+                 (cond (end (write-string sql out :start i :end end) (setf i end))
+                       ((char= c #\?) (write-string (funcall function) out) (incf i))
+                       (t (write-char c out) (incf i))))))))
+
+(defun sql-statement-at (text position &key kind)
   "The statement in TEXT around POSITION (or, after the last semicolon, the
 one before it), trimmed, with its start and end; nil if there is none."
-  (let* ((ranges (sql-statement-ranges text))
+  (let* ((ranges (sql-statement-ranges text :kind kind))
          (range (or (find-if (lambda (r) (<= (car r) position (cdr r))) ranges)
                     (find-if (lambda (r) (<= (cdr r) position)) ranges :from-end t)
                     (first ranges))))

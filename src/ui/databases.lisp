@@ -1120,19 +1120,27 @@ only one, or one chosen from a list (which it keeps)."
          (gtk-buffer (view-gtk-buffer view))
          (text (buffer-string (view-buffer view))))
     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
-      (let ((sql (if has
-                     (subseq text (gtk:text-iter-get-offset start) (gtk:text-iter-get-offset end))
-                     (sql-statement-at text (gtk:text-iter-get-offset (cursor-iter gtk-buffer))))))
-        (unless (and sql (sql-statement-ranges sql)) (editor-error "No SQL statement here"))
-        (with-sql-connection (view-buffer view) (lambda (connection) (run-sql connection sql)))))))
+      (let ((selection (and has (subseq text (gtk:text-iter-get-offset start) (gtk:text-iter-get-offset end))))
+            (cursor (gtk:text-iter-get-offset (cursor-iter gtk-buffer))))
+        ;; Where a statement ends depends on the database's SQL, so it's
+        ;; found once the connection is known.
+        (with-sql-connection (view-buffer view)
+          (lambda (connection)
+            (let* ((kind (db-connection-kind connection))
+                   (sql (or selection (sql-statement-at text cursor :kind kind))))
+              (unless (and sql (sql-statement-ranges sql :kind kind)) (editor-error "No SQL statement here"))
+              (run-sql connection sql))))))))
 
 (define-command db-run-all-sql ()
   "Run all the SQL in the file against its database; the last statement's rows go to the Results page."
   (:modes sql-mode)
   (let* ((buffer (view-buffer (current-view)))
          (sql (buffer-string buffer)))
-    (unless (sql-statement-ranges sql) (editor-error "There's no SQL to run"))
-    (with-sql-connection buffer (lambda (connection) (run-sql connection sql)))))
+    (with-sql-connection buffer
+      (lambda (connection)
+        (unless (sql-statement-ranges sql :kind (db-connection-kind connection))
+          (editor-error "There's no SQL to run"))
+        (run-sql connection sql)))))
 
 (defstruct (results-page (:conc-name rp-)) widget label stop copy scroller columns rows running)
 
