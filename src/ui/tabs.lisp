@@ -427,7 +427,15 @@ CONTINUATION with t once they are saved or discarded, or nil if the user cancels
     (gio:async (adw:alert-dialog-choose dialog (window-gtk-window win))
                (lambda (response)
                  (cond ((string= response "save")
-                        (save-buffers win buffers (lambda (ok) (funcall continuation ok))))
+                        (save-buffers win buffers
+                                      (lambda (ok)
+                                        ;; A file typed into while it was writing: not all saved.
+                                        (let ((changed (find-if (lambda (b) (and (buffer-modified-p b)
+                                                                                 (not (buffer-local b :save-function))))
+                                                                buffers)))
+                                          (when (and ok changed)
+                                            (message "~a changed while it was saving" (buffer-name changed)))
+                                          (funcall continuation (and ok (not changed)))))))
                        ((string= response "discard") (funcall continuation t))
                        (t (funcall continuation nil)))))))
 

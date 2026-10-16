@@ -58,14 +58,17 @@ picture opens to be looked at (image-view.lisp)."
 (defun write-buffer (buffer pathname continuation)
   "Write BUFFER to PATHNAME, then call CONTINUATION with t, or nil on failure."
   (run-hook '*before-save-hook* buffer)
-  (let ((octets (sb-ext:string-to-octets (buffer-string buffer) :external-format :utf-8))
-        (file (gio:file-new-for-path (uiop:native-namestring pathname))))
+  (let* ((text (buffer-string buffer))
+         (octets (sb-ext:string-to-octets text :external-format :utf-8))
+         (file (gio:file-new-for-path (uiop:native-namestring pathname))))
     (gio:async (gio:file-replace-contents-async file octets nil nil '(:none))
                (lambda (ok etag)
                  (declare (ignore ok etag))
                  (let ((renamed (not (equal (buffer-file buffer) pathname))))
-                   (setf (buffer-file buffer) pathname
-                         (buffer-modified-p buffer) nil)
+                   (setf (buffer-file buffer) pathname)
+                   ;; Edits made while it was writing aren't in the file.
+                   (when (string= text (buffer-string buffer))
+                     (setf (buffer-modified-p buffer) nil))
                    (when renamed
                      (setf (buffer-name buffer) (cadre::unique-buffer-name
                                                  (file-namestring pathname))
