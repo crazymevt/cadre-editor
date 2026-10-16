@@ -37,9 +37,9 @@ narrow panel (the vertical layout) has room for the others.")
          ;; wheel and the selected tab scroll them (SETUP-TAB-SCROLLING).
          (tabs (make-instance 'gtk:scrolled-window :hscrollbar-policy :external :vscrollbar-policy :never
                                                    :propagate-natural-width t :hexpand t :child switcher)))
-    (dolist (page '(("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
+    (dolist (page '(("claude" "Claude") ("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
-                    ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("tests" "Tests") ("results" "Results") ("claude" "Claude")))
+                    ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("tests" "Tests") ("results" "Results")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))
