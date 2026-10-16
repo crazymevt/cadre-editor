@@ -118,6 +118,15 @@ types (dates), so parameters go in the text, escaped."
 (defun my-column-names (columns)
   (map 'list (lambda (c) (qmynd-impl::column-definition-v41-packet-name c)) columns))
 
+(defun my-rows-matched (ok)
+  "The rows statement result OK touched. An UPDATE's affected rows leave out those already holding the
+new value, which saving a table would take for a row gone away, so it's the \"Rows matched\" of its
+info text, as the other databases count. (qmynd's :client-found-rows, which asks the server for that,
+clears its other capabilities.)"
+  (let ((matched (nth-value 1 (ppcre:scan-to-strings "Rows matched: (\\d+)" ; after qmynd's stray length byte
+                                                     (or (qmynd-impl::response-ok-packet-info ok) "")))))
+    (if matched (parse-integer (aref matched 0)) (qmynd:response-ok-packet-affected-rows ok))))
+
 (defun my-execute-one (db sql params limit)
   (let ((start (get-internal-real-time)))
     (multiple-value-bind (result columns)
@@ -125,7 +134,7 @@ types (dates), so parameters go in the text, escaped."
           (qmynd:mysql-query (my-connection db) (if params (my-inline-params sql params) sql) :as-text t))
       (let ((milliseconds (round (* 1000 (- (get-internal-real-time) start)) internal-time-units-per-second)))
         (if (typep result 'qmynd:response-ok-packet)
-            (make-db-result :changes (qmynd:response-ok-packet-affected-rows result) :milliseconds milliseconds)
+            (make-db-result :changes (my-rows-matched result) :milliseconds milliseconds)
             (let* ((types (map 'list (lambda (c) (qmynd-impl::column-definition-v41-packet-type c)) columns))
                    (rows (map 'list (lambda (row)
                                       (map 'vector (lambda (v type) (my-typed-value (my-value v) type)) row types))
