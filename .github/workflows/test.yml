@@ -2,11 +2,13 @@
 # and pull request, with Racket and the Clojure CLI installed so the tests
 # against a live Racket back end and nREPL run (CADRE_REQUIRE_LANGUAGES
 # makes them fail rather than skip if either is missing). The smoke and
-# performance tests need a display, so they run locally.
+# performance tests need a display, so they run locally. Not on tags: a
+# release tag's commit was tested when it was pushed to main.
 name: Tests
 
 on:
   push:
+    branches: ['**']
   pull_request:
 
 jobs:
