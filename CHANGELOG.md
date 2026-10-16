@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.1.1
 
+Fixes, and a manual. The packages are named as in 1.1.0, with 1.1.1 for
+the version.
+
+- The panel stays inside the window. Dragging its divider, or a narrow
+  window, no longer pushes the panel's content off the edge: the dividers
+  stop at each side's minimum size again, the panel is only as wide as the
+  page it shows needs (not as its widest page), and the Profiler's toolbar
+  scrolls sideways in a narrow panel, as the tabs do.
+- Racket: documentation lookups made while the docs index was loading
+  gave a short arglist (`(first x)`) and no documentation link. Lookups
+  now take turns, and the index starts loading when the REPL starts.
 - **A manual and a gallery.** The README's long feature list is now a manual
   in `docs/manual/`, a page for each part of Cadre, and `docs/gallery/`
   shows each one, taken from a real window by `make gallery`.
