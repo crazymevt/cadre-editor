@@ -85,7 +85,9 @@ change cannot be undone, the cursor moves to the start, and TEXT is marked unmod
   ((chars :initform (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)
           :reader string-text-chars)
    (point :initform 0)
-   (modified :initform nil)))
+   (modified :initform nil)
+   ;; Where each line starts, made when asked for and dropped on a change.
+   (line-starts :initform nil)))
 
 (defun make-string-text (&optional (initial-contents ""))
   (let ((text (make-instance 'string-text)))
@@ -117,7 +119,7 @@ change cannot be undone, the cursor moves to the start, and TEXT is marked unmod
       (replace chars chars :start1 (+ position n) :start2 position :end2 old-length)
       (replace chars string :start1 position)
       (when (>= point position) (incf point n))
-      (setf modified t))))
+      (setf modified t (slot-value text 'line-starts) nil))))
 
 (defmethod text-delete ((text string-text) start end)
   (check-range text start end)
@@ -127,7 +129,7 @@ change cannot be undone, the cursor moves to the start, and TEXT is marked unmod
       (decf (fill-pointer chars) n)
       (cond ((>= point end) (decf point n))
             ((> point start) (setf point start)))
-      (setf modified t))))
+      (setf modified t (slot-value text 'line-starts) nil))))
 
 (defmethod text-point ((text string-text))
   (slot-value text 'point))
@@ -146,4 +148,40 @@ change cannot be undone, the cursor moves to the start, and TEXT is marked unmod
   (with-slots (chars point modified) text
     (setf (fill-pointer chars) 0)
     (loop for c across string do (vector-push-extend c chars))
-    (setf point 0 modified nil)))
+    (setf point 0 modified nil (slot-value text 'line-starts) nil)))
+
+;;; Its lines, from a vector of where they start, so reading a text line by
+;;; line takes time in proportion to its length.
+
+(defun string-text-line-starts (text)
+  (or (slot-value text 'line-starts)
+      (setf (slot-value text 'line-starts)
+            (coerce (line-starts (string-text-chars text)) 'simple-vector))))
+
+(defun string-text-line-start (text line)
+  (let ((starts (string-text-line-starts text)))
+    (unless (< -1 line (length starts)) (error "Line ~d is past the end of the text." line))
+    (svref starts line)))
+
+(defmethod text-line-count ((text string-text))
+  (length (string-text-line-starts text)))
+
+(defmethod text-line-string ((text string-text) line)
+  (let* ((chars (string-text-chars text))
+         (start (string-text-line-start text line)))
+    (subseq chars start (or (position #\Newline chars :start start) (length chars)))))
+
+(defmethod text-line-position ((text string-text) line &optional (column 0))
+  (+ (string-text-line-start text line) column))
+
+(defmethod text-position-line ((text string-text) position)
+  (let ((starts (string-text-line-starts text))
+        (low 0))
+    ;; The last line starting at or before POSITION.
+    (let ((high (1- (length starts))))
+      (loop while (< low high)
+            do (let ((middle (ceiling (+ low high) 2)))
+                 (if (<= (svref starts middle) position)
+                     (setf low middle)
+                     (setf high (1- middle))))))
+    (values low (- position (svref starts low)))))

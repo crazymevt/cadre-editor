@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **A manual and a gallery.** The README's long feature list is now a manual
+  in `docs/manual/`, a page for each part of Cadre, and `docs/gallery/`
+  shows each one in light and dark, taken from a real window by
+  `make gallery`.
+- The MCP server Claude Code talks to checks its token before reading a
+  request's body, refuses bodies over 16 MB or with a bad length, closes
+  connections that stall for 30 seconds, and serves at most 32 at once.
+- Table edits on PostgreSQL and MySQL: a `?` inside a `/* */` comment, a
+  MySQL `#` comment, a PostgreSQL `$$` string or an `E'…'` string is no
+  longer taken for a parameter.
+- A multi-line message (a condition's report) no longer makes the status
+  bar taller; it shows on one line, in full in its tooltip.
+- The project-wide Outline reads large files faster (a file's lines are
+  found once, not again for each line).
+- Malformed JSON numbers and negative bencode lengths are reported as JSON
+  and bencode errors.
+
 ## 1.1.0
 
 New tools for Lisp work, databases and HTTP APIs. The packages are named as

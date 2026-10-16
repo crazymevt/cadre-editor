@@ -15,7 +15,9 @@
     (is string= "é" (c:jget round "x" 0 "y")))
   (fail (c:parse-json "{\"a\": }") 'c:json-error)
   (fail (c:parse-json "[1, 2") 'c:json-error)
-  (fail (c:parse-json "1 2") 'c:json-error))
+  (fail (c:parse-json "1 2") 'c:json-error)
+  (fail (c:parse-json "[-]") 'c:json-error)
+  (fail (c:parse-json "1-2") 'c:json-error))
 
 (define-test claude-events :parent cadre-tests
   (let ((e (first (c:parse-claude-event "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"claude-sonnet\",\"mcp_servers\":[{\"name\":\"cadre\",\"status\":\"connected\"}]}"))))
@@ -86,6 +88,24 @@
              (is eq t (c:jget reply "result" "isError"))
              (true (search "Missing argument" (c:jget reply "result" "content" 0 "text"))))
            (is = 401 (c:http-post-json url "wrong" (c:jobj "jsonrpc" "2.0" "id" 5 "method" "ping")))
+           ;; A huge Content-Length isn't read: without the token it's never
+           ;; looked at, and with it the request is refused.
+           (flet ((raw-status (authorization length)
+                    (let ((socket (make-instance 'sb-bsd-sockets:inet-socket :type :stream :protocol :tcp)))
+                      (sb-bsd-sockets:socket-connect socket #(127 0 0 1) (c:mcp-server-port server))
+                      (let ((stream (sb-bsd-sockets:socket-make-stream socket :input t :output t :timeout 10
+                                                                              :external-format :latin-1)))
+                        (unwind-protect
+                             (progn
+                               (format stream "POST /mcp HTTP/1.1~c~cAuthorization: Bearer ~a~c~cContent-Length: ~a~c~c~c~c"
+                                       #\Return #\Newline authorization #\Return #\Newline length
+                                       #\Return #\Newline #\Return #\Newline)
+                               (finish-output stream)
+                               (parse-integer (second (uiop:split-string (read-line stream) :separator " "))))
+                          (close stream))))))
+             (is = 401 (raw-status "wrong" 4000000000))
+             (is = 400 (raw-status token 4000000000))
+             (is = 400 (raw-status token -5)))
            (let* ((dir (merge-pathnames (format nil "cadre-mcp-test-~d/" (random 100000)) (uiop:temporary-directory)))
                   (path (c:write-mcp-config server dir)))
              (unwind-protect

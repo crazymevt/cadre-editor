@@ -16,7 +16,8 @@
       "a round trip, keys sorted")
   (is string= "eval" (c:dict-get (c:bdecode (sb-ext:string-to-octets "d2:op4:evale")) "op"))
   (fail (c:bdecode (sb-ext:string-to-octets "d2:op")) 'end-of-file)
-  (fail (c:bdecode (sb-ext:string-to-octets "ixe")) 'c:bencode-error))
+  (fail (c:bdecode (sb-ext:string-to-octets "ixe")) 'c:bencode-error)
+  (fail (c:bdecode (sb-ext:string-to-octets "-5:hello")) 'c:bencode-error))
 
 (define-test clojure-helpers :parent cadre-tests
   (is eql 54321 (c:nrepl-port-in "nREPL server started on port 54321 on host 127.0.0.1 - nrepl://127.0.0.1:54321"))

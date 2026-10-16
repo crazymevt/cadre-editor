@@ -55,7 +55,10 @@
     (and view (view-buffer view))))
 
 (defmethod frontend-message ((window cadre-window) string)
-  (gtk:label-set-text (window-status-message window) string)
+  ;; One line in the status bar (a condition's report can run to several);
+  ;; the tooltip and the Output page keep it as it was.
+  (gtk:label-set-text (window-status-message window)
+                      (string-trim " " (ppcre:regex-replace-all "\\s+" string " ")))
   (gtk:widget-set-tooltip-text (window-status-message window) string)
   (panel-log (window-panel window) string)
   (when (window-message-timer window)

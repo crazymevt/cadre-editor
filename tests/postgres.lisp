@@ -44,6 +44,8 @@ password secret, database postgres); nil if PostgreSQL isn't installed."
 
 (define-test postgres :parent cadre-tests
   (is string= "SELECT $1, '?', \"a?\" FROM t WHERE x = $2 -- ?" (cadre::pg-placeholders "SELECT ?, '?', \"a?\" FROM t WHERE x = ? -- ?"))
+  (is string= "SELECT 'a''?''b', /* ? */ $1, $$ ? $$, $fn$ ? $fn$, E'c\\'?', $2"
+      (cadre::pg-placeholders "SELECT 'a''?''b', /* ? */ ?, $$ ? $$, $fn$ ? $fn$, E'c\\'?', ?"))
   (call-with-postgres
    (lambda (port)
      (fail (c:open-postgres :host "127.0.0.1" :port port :user "cadre" :password "wrong") c:editor-error)

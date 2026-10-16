@@ -368,6 +368,51 @@ semicolon; ranges of only whitespace and comments are dropped."
       (finish n))
     (nreverse ranges)))
 
+(defun replace-sql-placeholders (sql function &key backslash-escapes hash-comments dollar-quotes)
+  "SQL with each ? outside strings, quoted names and comments replaced by
+what FUNCTION returns for it. The dialect's rules: BACKSLASH-ESCAPES, a
+backslash escapes the next character in '…' and \"…\" (MySQL); HASH-COMMENTS,
+# starts a comment (MySQL); DOLLAR-QUOTES, $tag$…$tag$ is a string, and so
+is E'…' with backslash escapes in it (PostgreSQL)."
+  (let ((i 0) (n (length sql)))
+    (labels ((at (j string) (and (<= (+ j (length string)) n) (string= string sql :start2 j :end2 (+ j (length string)))))
+             (word-char-p (j) (and (>= j 0) (or (alphanumericp (char sql j)) (member (char sql j) '(#\_ #\$)))))
+             (quoted-end (start close escapes)
+               ;; The index after the quote closing the one at START.
+               (let ((j (1+ start)))
+                 (loop while (< j n)
+                       do (let ((c (char sql j)))
+                            (cond ((and escapes (char= c #\\)) (incf j 2))
+                                  ((char= c close)
+                                   (if (and (< (1+ j) n) (char= (char sql (1+ j)) close))
+                                       (incf j 2)
+                                       (return-from quoted-end (1+ j))))
+                                  (t (incf j)))))
+                 n))
+             (dollar-tag (j)
+               ;; The $tag$ starting at J, if one does.
+               (when (and (char= (char sql j) #\$) (not (word-char-p (1- j))))
+                 (let ((end (position-if-not (lambda (c) (or (alphanumericp c) (char= c #\_))) sql :start (1+ j))))
+                   (when (and end (char= (char sql end) #\$)
+                              (or (= end (1+ j)) (not (digit-char-p (char sql (1+ j))))))
+                     (subseq sql j (1+ end)))))))
+      (with-output-to-string (out)
+        (loop while (< i n)
+              do (let* ((c (char sql i))
+                        (tag (and dollar-quotes (dollar-tag i)))
+                        (end (cond (tag (let ((close (search tag sql :start2 (+ i (length tag)))))
+                                          (if close (+ close (length tag)) n)))
+                                   ((at i "--") (or (position #\Newline sql :start i) n))
+                                   ((and hash-comments (char= c #\#)) (or (position #\Newline sql :start i) n))
+                                   ((at i "/*") (let ((e (search "*/" sql :start2 (+ i 2)))) (if e (+ e 2) n)))
+                                   ((and dollar-quotes (char-equal c #\E) (at (1+ i) "'") (not (word-char-p (1- i))))
+                                    (quoted-end (1+ i) #\' t))
+                                   ((member c '(#\' #\" #\`))
+                                    (quoted-end i c (and backslash-escapes (char/= c #\`)))))))
+                   (cond (end (write-string sql out :start i :end end) (setf i end))
+                         ((char= c #\?) (write-string (funcall function) out) (incf i))
+                         (t (write-char c out) (incf i)))))))))
+
 (defun sql-statement-at (text position)
   "The statement in TEXT around POSITION (or, after the last semicolon, the
 one before it), trimmed, with its start and end; nil if there is none."

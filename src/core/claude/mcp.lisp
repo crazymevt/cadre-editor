@@ -97,7 +97,15 @@ a list of (name type description &key required enum)."
 ;;; HTTP
 
 (defstruct (mcp-server (:conc-name mcp-server-))
-  socket port token thread (running t))
+  socket port token thread (running t) (connections 0) (lock (sb-thread:make-mutex :name "mcp connections")))
+
+(defparameter *mcp-max-line* 8192 "The longest request or header line the MCP server reads.")
+(defparameter *mcp-max-headers* 64)
+(defparameter *mcp-max-body* (* 16 1024 1024) "The largest request body, in octets.")
+(defparameter *mcp-timeout* 30 "Seconds a connection may wait for the client before it's closed.")
+(defparameter *mcp-max-connections* 32 "Connections served at once; more are closed at once.")
+
+(define-condition bad-http-request (error) ())
 
 (defun read-crlf-line (stream)
   "A line from STREAM (octets, as Latin-1), without the CRLF; nil at end."
@@ -105,46 +113,59 @@ a list of (name type description &key required enum)."
     (loop for byte = (read-byte stream nil)
           do (cond ((null byte) (return (and (plusp (length line)) (coerce line 'string))))
                    ((= byte 10) (return (string-right-trim '(#\Return) (coerce line 'string))))
+                   ((>= (length line) *mcp-max-line*) (error 'bad-http-request))
                    (t (vector-push-extend (code-char byte) line))))))
 
-(defun read-http-request (stream)
-  "(values method path headers body) for the request on STREAM, or nil."
+(defun read-http-head (stream)
+  "(values method path headers) of the request on STREAM, or nil at its end."
   (let ((request-line (read-crlf-line stream)))
     (when request-line
       (let ((parts (uiop:split-string request-line :separator " "))
             (headers '()))
         (loop for line = (read-crlf-line stream)
+              for count from 0
               while (and line (plusp (length line)))
-              do (let ((colon (position #\: line)))
+              do (when (>= count *mcp-max-headers*) (error 'bad-http-request))
+                 (let ((colon (position #\: line)))
                    (when colon
                      (push (cons (string-downcase (subseq line 0 colon))
                                  (string-trim " " (subseq line (1+ colon))))
                            headers))))
-        (let* ((length (parse-integer (or (cdr (assoc "content-length" headers :test #'string=)) "0")
-                                      :junk-allowed t))
-               (octets (make-array (or length 0) :element-type '(unsigned-byte 8))))
-          (read-sequence octets stream)
-          (values (first parts) (second parts) headers
-                  (sb-ext:octets-to-string octets :external-format :utf-8)))))))
+        (values (first parts) (second parts) headers)))))
+
+(defun read-http-body (stream headers)
+  "The request's body, as Content-Length in HEADERS says, decoded from UTF-8."
+  (let* ((field (cdr (assoc "content-length" headers :test #'string=)))
+         (length (if field (ignore-errors (parse-integer field)) 0)))
+    (unless (and (integerp length) (<= 0 length *mcp-max-body*))
+      (error 'bad-http-request))
+    (let ((octets (make-array length :element-type '(unsigned-byte 8))))
+      (unless (= length (read-sequence octets stream))
+        (error 'bad-http-request))
+      (sb-ext:octets-to-string octets :external-format :utf-8))))
 
 (defun write-http-response (stream status reason &optional body (content-type "application/json"))
   (let ((octets (and body (sb-ext:string-to-octets body :external-format :utf-8))))
-    (write-sequence (sb-ext:string-to-octets
-                     (format nil "HTTP/1.1 ~d ~a~c~cContent-Length: ~d~c~c~@[Content-Type: ~a~c~c~]Connection: close~c~c~c~c"
-                             status reason #\Return #\Newline (length octets) #\Return #\Newline
-                             (and body content-type) #\Return #\Newline
-                             #\Return #\Newline #\Return #\Newline)
-                     :external-format :latin-1)
-                    stream)
+    (flet ((line (control &rest arguments)
+             (write-sequence (sb-ext:string-to-octets (format nil "~?~c~c" control arguments #\Return #\Newline)
+                                                      :external-format :latin-1)
+                             stream)))
+      (line "HTTP/1.1 ~d ~a" status reason)
+      (line "Content-Length: ~d" (length octets))
+      (when body (line "Content-Type: ~a" content-type))
+      (line "Connection: close")
+      (line ""))
     (when octets (write-sequence octets stream))
     (force-output stream)))
 
 (defun serve-mcp-connection (server socket)
-  (let ((stream (sb-bsd-sockets:socket-make-stream socket :input t :output t
+  (let ((stream (sb-bsd-sockets:socket-make-stream socket :input t :output t :timeout *mcp-timeout*
                                                           :element-type '(unsigned-byte 8) :buffering :full)))
     (unwind-protect
          (handler-case
-             (multiple-value-bind (method path headers body) (read-http-request stream)
+             ;; The token is checked before the body is read, so only the
+             ;; Claude CLI can make the server take in a body at all.
+             (multiple-value-bind (method path headers) (read-http-head stream)
                (declare (ignore path))
                (cond ((null method))
                      ((not (equal (cdr (assoc "authorization" headers :test #'string=))
@@ -152,7 +173,11 @@ a list of (name type description &key required enum)."
                       (write-http-response stream 401 "Unauthorized"))
                      ((not (string= method "POST"))
                       (write-http-response stream 405 "Method Not Allowed"))
-                     (t (let* ((request (ignore-errors (parse-json body)))
+                     (t (let* ((body (handler-case (read-http-body stream headers)
+                                       (bad-http-request ()
+                                         (write-http-response stream 400 "Bad Request")
+                                         (return-from serve-mcp-connection))))
+                               (request (ignore-errors (parse-json body)))
                                (response (cond ((jobject-p request) (mcp-handle request))
                                                ((vectorp request)
                                                 (remove nil (map 'vector #'mcp-handle request)))
@@ -179,8 +204,16 @@ a list of (name type description &key required enum)."
                (loop while (mcp-server-running server)
                      do (let ((client (ignore-errors (sb-bsd-sockets:socket-accept socket))))
                           (when client
-                            (sb-thread:make-thread (lambda () (serve-mcp-connection server client))
-                                                   :name "mcp request")))))
+                            (if (sb-thread:with-mutex ((mcp-server-lock server))
+                                  (when (< (mcp-server-connections server) *mcp-max-connections*)
+                                    (incf (mcp-server-connections server))))
+                                (sb-thread:make-thread
+                                 (lambda ()
+                                   (unwind-protect (serve-mcp-connection server client)
+                                     (sb-thread:with-mutex ((mcp-server-lock server))
+                                       (decf (mcp-server-connections server)))))
+                                 :name "mcp request")
+                                (ignore-errors (sb-bsd-sockets:socket-close client)))))))
              :name "mcp server"))
       server)))
 

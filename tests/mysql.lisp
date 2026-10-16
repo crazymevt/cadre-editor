@@ -47,6 +47,9 @@ password secret, database shop); nil if MariaDB isn't installed."
   (is string= "SELECT 'it\\'s', NULL, 3, X'0102' FROM t WHERE a = '?' AND b = 'x\\\\y'"
       (cadre::my-inline-params "SELECT ?, ?, ?, ? FROM t WHERE a = '?' AND b = ?"
                                (list "it's" :null 3 (make-array 2 :element-type '(unsigned-byte 8) :initial-contents '(1 2)) "x\\y")))
+  (is string= "SELECT 'a''?''b', /* ? */ 1 # ?
+, 'c\\'?', 2" (cadre::my-inline-params "SELECT 'a''?''b', /* ? */ ? # ?
+, 'c\\'?', ?" (list 1 2)))
   (call-with-mariadb
    (lambda (port)
      (fail (c:open-mysql :host "127.0.0.1" :port port :user "cadre" :password "wrong" :database "shop") c:editor-error)

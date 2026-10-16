@@ -17,6 +17,30 @@
     (false (c:text-modified-p text))
     (is = 0 (c:text-point text))))
 
+(define-test string-text-lines :parent cadre-tests
+  ;; Its lines come from a cache of where they start: check them against a
+  ;; fresh scan after each kind of change.
+  (let ((text (c:make-string-text (format nil "ab~%~%cde~%"))))
+    (flet ((same-lines ()
+             (let* ((string (c:text-string text))
+                    (lines (uiop:split-string string :separator '(#\Newline))))
+               (is = (length lines) (c:text-line-count text))
+               (loop for line in lines
+                     for i from 0
+                     do (is string= line (c:text-line-string text i)))
+               (loop for position from 0 to (length string)
+                     do (let ((line (count #\Newline string :end position)))
+                          (is equal (list line (- position (c:text-line-position text line)))
+                              (multiple-value-list (c:text-position-line text position))))))))
+      (same-lines)
+      (c:text-insert text 1 (format nil "x~%y"))
+      (same-lines)
+      (c:text-delete text 0 4)
+      (same-lines)
+      (c:text-replace-contents text "one line")
+      (same-lines)
+      (fail (c:text-line-string text 1)))))
+
 (define-test string-text-point :parent cadre-tests
   (let ((text (c:make-string-text "abcdef")))
     (setf (c:text-point text) 3)

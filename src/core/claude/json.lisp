@@ -131,7 +131,7 @@ value is :omit are left out."
                  (when (= s i) (fail))
                  (let ((text (subseq string s i)))
                    (if (every (lambda (c) (or (digit-char-p c) (char= c #\-))) text)
-                       (parse-integer text)
+                       (or (ignore-errors (parse-integer text)) (fail))
                        (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
                          (let ((v (ignore-errors (read-from-string text))))
                            (if (realp v) v (fail)))))))))

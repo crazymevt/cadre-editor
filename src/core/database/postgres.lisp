@@ -73,20 +73,8 @@ numeric, read as text instead of cl-postgres's Lisp values.")
 
 (defun pg-placeholders (sql)
   "SQL with each ? (outside strings, quoted names and comments) made $1, $2, …"
-  (with-output-to-string (out)
-    (let ((i 0) (n (length sql)) (count 0))
-      (loop while (< i n)
-            do (let ((c (char sql i)))
-                 (cond ((member c '(#\' #\"))
-                        (let ((close (or (position c sql :start (1+ i)) (1- n))))
-                          (write-string sql out :start i :end (1+ close))
-                          (setf i (1+ close))))
-                       ((and (char= c #\-) (< (1+ i) n) (char= (char sql (1+ i)) #\-))
-                        (let ((end (or (position #\Newline sql :start i) n)))
-                          (write-string sql out :start i :end end)
-                          (setf i end)))
-                       ((char= c #\?) (format out "$~d" (incf count)) (incf i))
-                       (t (write-char c out) (incf i))))))))
+  (let ((count 0))
+    (replace-sql-placeholders sql (lambda () (format nil "$~d" (incf count))) :dollar-quotes t)))
 
 (defun pg-value (value)
   (case value
