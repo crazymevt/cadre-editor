@@ -181,7 +181,8 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
 ;;; Parens get their own soft colors, by depth: none may be close to a token
 ;;; color, or a ) next to a string or keyword looks like part of it.
 
-(define-theme cadre-light (:title "Cadre Light")
+(define-theme cadre-light (:title "Cadre Light"
+                           :css ".cadre-panel { background-color: #f3f4f6; border: 1px solid #d5d7db; } .cadre-panel-switcher button:checked { background-color: #ffffff; box-shadow: inset 0 -2px @accent_color; }")
   (:comment :foreground "#7c828c" :style :italic)
   (:string :foreground "#2a7a2f")
   (:number :foreground "#b35c00")
