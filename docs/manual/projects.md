@@ -150,7 +150,13 @@ menu) handles this:
   running.
 - **Changing it:** handlers connected by symbol pick up redefinitions at once.
 - **Stopping:** when the last window closes, Cadre notices, and Run GTK App
-  starts it again. **Stop GTK App** (■, `Ctrl+Shift+F5`, `C-x p k`) quits it.
+  starts it again. **Stop GTK App** (■, `Ctrl+Shift+F5`, `C-x p k`) quits the
+  GTK application. The SBCL process Cadre started stays connected as the
+  project's REPL, so you can run the app again without losing that session.
+  On macOS its Dock icon stays while the process is alive, even when the GTK
+  window is closed. **Disconnect Lisp** (`M-x disconnect`) ends that process
+  and its REPL session; starting or running the project again starts a fresh
+  Lisp.
 
 It needs a Lisp that Cadre started (`M-x lisp`), not one it connected to.
 New Project's **GTK application** kind starts a project ready for this:
