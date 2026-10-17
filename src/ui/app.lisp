@@ -2,6 +2,10 @@
 
 (in-package #:cadre-ui)
 
+;; Run after macrostep's save hook so any temporary expansions have been
+;; collapsed before trailing whitespace is removed from the saved buffer.
+(add-hook '*before-save-hook* #'trim-trailing-whitespace-before-save)
+
 (defparameter *application-id* "io.github.crazymevt.Cadre")
 
 (defun install-command-action (app)

@@ -202,6 +202,7 @@
   :depends-on ("cadre" "parachute")
   :pathname "tests/"
   :components ((:file "ui-saves")
+               (:file "ui-editing" :depends-on ("ui-saves"))
                (:file "ui-assistant" :depends-on ("ui-saves"))
-               (:file "ui-clos" :depends-on ("ui-assistant")))
+               (:file "ui-clos" :depends-on ("ui-assistant" "ui-editing")))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-ui-tests)))

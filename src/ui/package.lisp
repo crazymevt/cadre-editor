@@ -6,6 +6,7 @@
            ;; options
            #:*keybinding-profile* #:*layout* #:*auto-vertical-min-width*
            #:*editor-font* #:*explorer-hidden-names* #:*explorer-hidden-types* #:*assistant-provider*
+           #:*trim-trailing-whitespace-on-save*
            ;; keymaps
            #:*standard-global-keymap* #:*standard-editing-keymap*
            #:*emacs-global-keymap* #:*emacs-editing-keymap*
@@ -25,6 +26,7 @@
            #:forward-word #:backward-word #:beginning-of-line #:beginning-of-code-or-line #:select-to-beginning-of-code-or-line #:end-of-line
            #:scroll-down-page #:scroll-up-page #:beginning-of-buffer #:end-of-buffer
            #:set-mark #:delete-char #:kill-line #:cut #:copy #:paste #:undo #:redo
+           #:trim-trailing-whitespace
            #:forward-sexp #:backward-sexp #:backward-up-list #:down-list
            #:beginning-of-defun #:end-of-defun #:mark-sexp
            #:indent-line #:newline-and-indent #:indent-region #:indent-defun

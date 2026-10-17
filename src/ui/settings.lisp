@@ -40,6 +40,10 @@ beside it, and :auto chooses by window width (see *auto-vertical-min-width*)."
 constants, and calls to functions that are not defined."
   :category "Lisp")
 
+(define-option *trim-trailing-whitespace-on-save* nil boolean
+  "Remove spaces and tabs at the ends of lines whenever a file is saved."
+  :category "Editing")
+
 (defun config-directory ()
   (let ((xdg (uiop:getenv "XDG_CONFIG_HOME")))
     (merge-pathnames "cadre/" (if (and xdg (plusp (length xdg)))

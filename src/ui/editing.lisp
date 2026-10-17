@@ -29,6 +29,39 @@
     (when (delete-text-between gtk-buffer start end)
       (insert-text-at gtk-buffer (min start end) string))))
 
+(defun trim-trailing-whitespace-in-buffer (buffer)
+  "Remove spaces and tabs at the ends of BUFFER's lines; return the count removed."
+  (let* ((gtk-buffer (buffer-text buffer))
+         (count 0))
+    (with-user-action (gtk-buffer)
+      ;; Work backwards so deleting from later lines does not shift the
+      ;; offsets of lines that are still to be examined.
+      (loop for line downfrom (1- (text-line-count gtk-buffer)) to 0
+            for string = (text-line-string gtk-buffer line)
+            for trimmed = (or (position-if-not (lambda (char) (member char '(#\Space #\Tab)))
+                                                 string :from-end t)
+                              -1)
+            for start-column = (1+ trimmed)
+            for end-column = (length string)
+            when (< start-column end-column)
+              do (when (delete-text-between gtk-buffer
+                                            (text-line-position gtk-buffer line start-column)
+                                            (text-line-position gtk-buffer line end-column))
+                   (incf count (- end-column start-column)))))
+    count))
+
+(define-command trim-trailing-whitespace ()
+  "Remove spaces and tabs at the ends of lines in the current buffer."
+  (let* ((buffer (view-buffer (current-view)))
+         (count (trim-trailing-whitespace-in-buffer buffer)))
+    (if (zerop count)
+        (message "No trailing whitespace to trim")
+        (message "Trimmed ~d trailing whitespace character~:p" count))))
+
+(defun trim-trailing-whitespace-before-save (buffer)
+  (when *trim-trailing-whitespace-on-save*
+    (trim-trailing-whitespace-in-buffer buffer)))
+
 (defun point-offset (view) (text-point (view-gtk-buffer view)))
 
 (defun set-point (view offset)
