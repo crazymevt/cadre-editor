@@ -2,7 +2,7 @@
 
 ## Status and Scope
 
-**Status:** Implementation in progress. The Codex driver and panel are implemented; the product-polish phase is underway. The signed-in manual integration pass remains to be done.
+**Status:** Implementation in progress. The Codex driver and panel are implemented, including product polish and deterministic UI failure/recovery coverage. Live validation with the signed-in CLI remains to be done.
 
 This document describes adding Codex as a second coding assistant in Cadre. The target is Codex CLI authenticated with the user's existing local Codex login, embedded in Cadre's assistant panel and connected to Cadre's existing editor tools. Claude remains available.
 
@@ -161,7 +161,7 @@ Codex app-server's own protocol is not MCP. The integration uses app-server's dy
 - [x] Generalize debugger, problems, and inline-edit actions while preserving Claude command aliases.
 - [x] Update the manual and installing guide for Codex CLI sign-in and provider behavior.
 - [x] Add UI smoke coverage for model discovery, dynamic tool calls, streaming replies, and per-turn Chat/Agent behavior.
-- [ ] Add UI smoke coverage for provider failure and recovery paths.
+- [x] Add UI smoke coverage for provider failure and retry recovery.
 - Run a manual integration pass with a signed-in Codex CLI in a disposable project, including one read-only tool, one proposed edit, one approved runtime action, cancellation, and session resume.
 
 ## Validation Plan

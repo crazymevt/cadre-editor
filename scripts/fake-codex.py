@@ -73,6 +73,24 @@ def main():
             turn_id = "fake-codex-turn"
             respond(message, {"turn": {"id": turn_id, "status": "inProgress"}})
 
+            prompt = "\n".join(item.get("text", "") for item in params.get("input", []))
+            if "trigger fake failure" in prompt:
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": thread_id,
+                            "turn": {
+                                "id": turn_id,
+                                "status": "failed",
+                                "error": {"message": "Fake Codex turn failure"},
+                            },
+                        },
+                    }
+                )
+                continue
+
             # Exercise app-server's server-initiated dynamic tool path.
             send(
                 {
@@ -92,12 +110,12 @@ def main():
             if tool_reply is None or tool_reply.get("id") != 900:
                 return
 
-            prompt = "\n".join(item.get("text", "") for item in params.get("input", []))
-            reply = (
-                "Fake Codex agent mode"
-                if "You are in agent mode" in prompt
-                else "Fake Codex reply"
-            )
+            if "retry after fake failure" in prompt:
+                reply = "Fake Codex recovered after failure"
+            elif "You are in agent mode" in prompt:
+                reply = "Fake Codex agent mode"
+            else:
+                reply = "Fake Codex reply"
             send(
                 {
                     "jsonrpc": "2.0",

@@ -856,6 +856,21 @@
          (eq t (jget (nth (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*))
                           cadre-ui::*codex-model-catalog*) "isDefault"))
          (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*)))
+  (chat-type "trigger fake failure"))
+
+(then-when ((chat-says "Fake Codex turn failure") :timeout 20)
+  (check "a failed Codex turn clears busy state and shows the error"
+         (and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+              (chat-says "Fake Codex turn failure")))
+  (check "a failed Codex turn preserves its thread for retry"
+         (equal "fake-codex-thread" (cadre-ui::chat-codex-thread-id cadre-ui::*chat*)))
+  (chat-type "retry after fake failure"))
+
+(then-when ((chat-says "Fake Codex recovered after failure") :timeout 20)
+  (check "Codex accepts a retry on the preserved thread"
+         (and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+              (equal "fake-codex-thread" (cadre-ui::chat-codex-thread-id cadre-ui::*chat*)))
+         (chat-texts))
   (cadre-ui::set-chat-mode :chat)
   ;; Later smoke sections exercise Claude-specific edits and assume the
   ;; provider used by the earlier Claude setup section is still selected.
