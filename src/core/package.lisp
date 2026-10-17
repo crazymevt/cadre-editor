@@ -192,6 +192,8 @@
    #:event-cost #:event-duration #:event-session-id #:event-model #:event-data #:event-subagent
    #:start-claude #:claude-alive-p #:claude-send #:claude-interrupt #:stop-claude
    #:claude-process #:cp-session-id #:cp-process #:cp-stopped
+   ;; CLOS browser
+   #:+clos-browser-helper+ #:clos-browser-call #:clos-browser-entries
    ;; MCP
    #:define-mcp-tool #:register-mcp-tool #:*mcp-tools* #:mcp-tool-name #:tool-error #:tool-argument
    #:mcp-tool-error #:mcp-handle #:call-mcp-tool #:start-mcp-server #:stop-mcp-server

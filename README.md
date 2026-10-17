@@ -17,7 +17,7 @@ the design and the milestones it was built in.
   as you go, compiler notes in the code, argument hints, completion, go to
   definition, and highlighting from the running image.
   [Common Lisp](docs/manual/common-lisp.md)
-- **Lisp tools:** a debugger, an inspector, cross-references, tracing, a
+- **Lisp tools:** a debugger, an inspector, a CLOS browser, cross-references, tracing, a
   stepper, a profiler with flame graphs, a Threads page, macros expanded in
   place, and the HyperSpec beside your code.
 - **Projects:** ASDF systems, New Project, libraries from Quicklisp, a Tests

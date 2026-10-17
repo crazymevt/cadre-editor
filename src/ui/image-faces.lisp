@@ -109,10 +109,13 @@ image knows, or nil. Unknown names are queued to be asked about."
         (forget-highlighting syntax)
         (schedule-highlight buffer)))))
 
+(defvar *image-changed-hook* '() "Functions called after evaluation, compilation or connection changes.")
+
 (defun image-changed ()
   "The image may have changed (something was evaluated, compiled or loaded):
 forget what it said about names, and ask again."
   (incf *image-generation*)
   (clrhash *image-cache*)
   (clrhash *image-queue*)
-  (rehighlight-lisp-buffers))
+  (rehighlight-lisp-buffers)
+  (run-hook '*image-changed-hook*))

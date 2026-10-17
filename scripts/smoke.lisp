@@ -4113,6 +4113,137 @@ and the number of items MODEL itself shows."
          (uiop:read-file-string (smoke-asd))))
 
 ;;; The Threads page
+(section "clos-browser")
+(defvar *clos-smoke-ready* nil)
+(defun clos-smoke-page ()
+  (let ((buffer (find-buffer "CLOS Browser")))
+    (and buffer (first (buffer-local buffer :clos-pages)))))
+(defun clos-smoke-description ()
+  (and (clos-smoke-page) (cadre-ui::cb-description (clos-smoke-page))))
+(connect-lisp)
+
+(then 50
+  (let ((file (merge-pathnames "src/clos-demo.lisp" *root*)))
+    (with-open-file (out file :direction :output :if-exists :supersede)
+      (write-string "(defpackage :clos-smoke (:use :cl))
+(in-package :clos-smoke)
+(defclass document () ((path :initarg :path)))
+(defclass text-document (document) ((text :initform \"\")))
+(defgeneric save-document (document))
+(defmethod save-document ((document document)) document)
+(defmethod save-document :before ((document text-document)) nil)
+(make-instance 'text-document :path \"sample.lisp\")" out))
+    (cadre-ui::rex cadre-ui::*connection* (swank-call "swank:load-file" (namestring file))
+                   :on-ok (lambda (reply) (declare (ignore reply)) (setf *clos-smoke-ready* t)))))
+
+(then-when (*clos-smoke-ready* :timeout 30)
+  (cadre-ui::open-clos-browser :name "text-document" :package "CLOS-SMOKE"))
+
+(then-when ((getf (clos-smoke-description) :slots) :timeout 30)
+  (let ((page (clos-smoke-page)) (description (clos-smoke-description)))
+    (check "CLOS browser opens an editor tab" (member "CLOS Browser" (tab-titles) :test #'equal))
+    (check "CLOS browser lists loaded classes and generic functions"
+           (= 3 (length (getf (cadre-ui::cb-catalog page) :entries))))
+    (check "CLOS browser includes inherited slots" (= 2 (length (getf description :slots))))
+    (check "CLOS sidebar highlights the selected class"
+           (equal "CLOS-SMOKE::TEXT-DOCUMENT"
+                  (getf (gethash (gtk:list-box-get-selected-row (cadre-ui::cb-list page))
+                                (cadre-ui::cb-rows page)) :name)))
+    (check "CLOS browser resolves definition source"
+           (equal (namestring (merge-pathnames "src/clos-demo.lisp" *root*))
+                  (getf (parse-location (getf description :source)) :file)))
+    (check "CLOS slots use compact table columns"
+           (every (lambda (name) (member name (label-texts (cadre-ui::cb-details page)) :test #'equal))
+                  '("Effective slot" "Type" "Defined by")))))
+
+(then 300
+  (screenshot "clos-browser")
+  (let ((page (clos-smoke-page)))
+    (setf (cadre-ui::cb-section page) "Methods")
+    (cadre-ui::clos-render-detail page)
+    (check "CLOS browser renders method qualifiers"
+           (some (lambda (text) (search ":BEFORE" text :test #'char-equal)) (label-texts (cadre-ui::cb-details page))))
+    (check "CLOS methods use compact table columns"
+           (every (lambda (name) (member name (label-texts (cadre-ui::cb-details page)) :test #'equal))
+                  '("Generic function" "Qualifier" "Specializers")))))
+
+(then 300
+  (screenshot "clos-browser-methods")
+  (let ((page (clos-smoke-page)))
+    (setf (cadre-ui::cb-section page) "Hierarchy")
+    (cadre-ui::clos-render-detail page)
+    (check "CLOS browser renders superclass links"
+           (find "CLOS-SMOKE::DOCUMENT"
+                 (find-widgets (cadre-ui::cb-details page) (lambda (w) (typep w 'gtk:button)))
+                 :key #'gtk:widget-get-tooltip-text :test #'equal))))
+
+(then 300
+  (screenshot "clos-browser-hierarchy")
+  (cadre-ui::clos-select-entry (clos-smoke-page) '(:kind :generic :name "CLOS-SMOKE::SAVE-DOCUMENT")))
+
+(then-when ((eq :generic (getf (clos-smoke-description) :kind)) :timeout 20)
+  (check "CLOS browser navigates to generic functions"
+         (= 2 (length (getf (clos-smoke-description) :methods))))
+  (check "CLOS Back is enabled after following a link"
+         (gtk:widget-get-sensitive (cadre-ui::cb-back (clos-smoke-page))))
+  (gtk:editable-set-text (cadre-ui::cb-search (clos-smoke-page)) "save")
+  (gtk:widget-activate (cadre-ui::cb-back (clos-smoke-page))))
+
+(then-when ((equal "CLOS-SMOKE::TEXT-DOCUMENT" (getf (clos-smoke-description) :name)))
+  (check "CLOS Back restores the class and its detail tab"
+         (and (equal "CLOS-SMOKE::TEXT-DOCUMENT" (getf (clos-smoke-description) :name))
+              (equal "Hierarchy" (cadre-ui::cb-section (clos-smoke-page)))))
+  (check "CLOS Back restores the filter"
+         (equal "" (gtk:editable-get-text (cadre-ui::cb-search (clos-smoke-page)))))
+  (check "CLOS Back is disabled at the beginning of history"
+         (not (gtk:widget-get-sensitive (cadre-ui::cb-back (clos-smoke-page)))))
+  (let* ((page (clos-smoke-page))
+         (index (position "COMMON-LISP" (getf (cadre-ui::cb-catalog page) :packages) :test #'equal)))
+    (gtk:drop-down-set-selected (cadre-ui::cb-packages page) index)))
+
+(then-when ((and (equal "COMMON-LISP" (cadre-ui::cb-package (clos-smoke-page)))
+                 (null (cadre-ui::cb-selected (clos-smoke-page)))))
+  (gtk:widget-activate (cadre-ui::cb-back (clos-smoke-page))))
+
+(then-when ((and (equal "CLOS-SMOKE" (cadre-ui::cb-package (clos-smoke-page)))
+                 (equal "CLOS-SMOKE::TEXT-DOCUMENT" (getf (clos-smoke-description) :name))))
+  (check "CLOS Back restores a previous package and definition"
+         (and (equal "CLOS-SMOKE" (cadre-ui::cb-package (clos-smoke-page)))
+              (equal "CLOS-SMOKE::TEXT-DOCUMENT" (getf (clos-smoke-description) :name))))
+  (cadre-ui::clos-select-entry (clos-smoke-page) '(:kind :generic :name "CLOS-SMOKE::SAVE-DOCUMENT")))
+
+(then-when ((eq :generic (getf (clos-smoke-description) :kind)))
+  (cadre-ui::clos-inspect-selected (clos-smoke-page)))
+
+(then-when ((search "SAVE-DOCUMENT" (text-string (cadre-ui::inspector-buffer)) :test #'char-equal) :timeout 20)
+  (check "CLOS browser opens a live object in the Inspector"
+         (and (search "GENERIC-FUNCTION" (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+              (search "SAVE-DOCUMENT" (text-string (cadre-ui::inspector-buffer)) :test #'char-equal))
+         (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*)))
+  (cadre-ui::clos-open-class (clos-smoke-page) "CLOS-SMOKE::TEXT-DOCUMENT"))
+
+(then-when ((eq :class (getf (clos-smoke-description) :kind)) :timeout 20)
+  (cadre-ui::clos-goto-source (getf (clos-smoke-description) :source)))
+
+(then-when ((equal "clos-demo.lisp" (buffer-name (current-buffer))) :timeout 20)
+  (check "CLOS source navigation opens the definition" (equal "clos-demo.lisp" (buffer-name (current-buffer))))
+  (cadre-ui::rex cadre-ui::*connection*
+                 (swank-call "swank:interactive-eval-region"
+                             "(defclass clos-smoke::text-document (clos-smoke::document)
+ ((text :initform \"\") (encoding :initform :utf-8)))
+(make-instance 'clos-smoke::text-document :path \"sample.lisp\")" 3 120)
+                 :on-ok (lambda (reply) (declare (ignore reply)) (cadre-ui::image-changed))))
+
+(then-when ((= 3 (length (getf (clos-smoke-description) :slots))) :timeout 20)
+  (check "CLOS browser refreshes after class redefinition" (= 3 (length (getf (clos-smoke-description) :slots))))
+  (call-command 'disconnect))
+
+(then-when ((not (cadre-ui::connected-p)) :timeout 20)
+  (check "CLOS browser clears stale image data on disconnect" (null (clos-smoke-description)))
+  (check "CLOS browser clears navigation history on disconnect"
+         (and (null (cadre-ui::cb-history (clos-smoke-page)))
+              (not (gtk:widget-get-sensitive (cadre-ui::cb-back (clos-smoke-page)))))))
+
 (section "threads")
 (defun threads-page () cadre-ui::*threads-page*)
 (defun shown-thread-names () (mapcar #'lisp-thread-name (cadre-ui::shown-threads (threads-page))))

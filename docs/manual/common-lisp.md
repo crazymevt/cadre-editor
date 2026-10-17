@@ -25,6 +25,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Run the project's tests in the REPL / in a new Lisp | `Ctrl+; A` / `Ctrl+; N` | `C-x p t` / `C-x p T` |
 | Run / stop the project's GTK app (keeping the REPL) | `Ctrl+F5` / `Ctrl+Shift+F5` | `C-x p r` / `C-x p k` |
 | Inspect a value | `Ctrl+K I` | `C-c I` |
+| Browse classes and generic functions | Lisp › CLOS Browser | `M-x clos-browser` |
 | Find references (all kinds) | `Shift+F12` | `M-?` |
 | Who calls / references / binds / sets | (palette) | `C-c C-w c` / `r` / `b` / `s` |
 | Who expands a macro / specializes a class | (palette) | `C-c C-w m` / `a` |
@@ -135,6 +136,38 @@ is read-only while anything is expanded, the undo history from before stays,
 and saving collapses everything first, so an expansion never reaches the file.
 
 <img alt="A macro expanded in place in the source, shaded" src="../gallery/dark/expand-in-place.png">
+
+## CLOS browser
+
+**Lisp › CLOS Browser** opens a tab showing classes and generic functions in
+the connected Common Lisp image. Choose a package and filter the list by
+name. Classes defined in the REPL and loaded libraries appear alongside
+your project's definitions. **Browse Class** in a symbol's context menu
+opens that class; the Inspector's context menu can browse the class of a
+live value, or a class object itself.
+
+Select a class to see a table of its effective slots, types and defining
+classes. Expand a slot to see its allocation and initialization arguments.
+**Methods** lists methods
+specializing that class or its superclasses, including qualifiers such as
+`:before` and `:around`; selecting a generic function shows all its methods.
+Specializers link back to their classes. **Hierarchy** shows direct
+superclasses, subclasses and the class precedence list.
+
+**Back** (`Alt+Left`) returns to the previous definition, restoring its
+detail tab, package, filter and scroll position. Each browser tab keeps its
+own navigation history, which is cleared when its Lisp disconnects.
+
+**Inspect** opens the selected class or generic function in the Inspector.
+**Go to source**, and each method's source button, open the definition when
+the Lisp retained a location. A definition entered in the REPL may have no
+file to open. The browser refreshes after Cadre evaluates, compiles or
+loads code; **Refresh** also picks up changes made elsewhere.
+
+The browser does not finalize classes to inspect them. An unfinalized class
+shows its direct slots with a notice. Built-in classes, structures and
+custom metaclasses may expose less information; unavailable metadata is
+reported in the tab.
 
 ## Threads
 

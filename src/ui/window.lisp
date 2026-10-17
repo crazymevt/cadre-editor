@@ -123,6 +123,20 @@
     (".cadre-chat-plan" :background-color "alpha(@accent_bg_color, 0.08)" :border-radius "8px" :padding "8px")
     (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
                             :padding ("0" "6px") :font-family "monospace")
+    ;; CLOS browser: compact tables, links and hierarchy nodes.
+    (".cadre-clos-table > *" :padding ("10px" "10px") :border-bottom "1px solid alpha(@view_fg_color, 0.09)")
+    (".cadre-clos-table > .cadre-clos-table-head" :padding-top "8px" :padding-bottom "8px")
+    ("button.cadre-clos-link" :padding "0" :min-height "20px" :min-width "0"
+                              :color "@accent_color" :font-weight "normal")
+    ("button.cadre-clos-source" :padding ("0" "6px") :min-height "20px" :min-width "0")
+    (".cadre-clos-tabs" :padding-bottom "8px" :margin-bottom "4px"
+                        :border-bottom "1px solid alpha(@view_fg_color, 0.12)")
+    ("button.cadre-clos-tab" :padding ("5px" "12px") :min-height "24px")
+    ("button.cadre-clos-tab:checked" :background-color "alpha(@accent_bg_color, 0.16)" :color "@accent_color")
+    ("button.cadre-clos-node" :padding ("6px" "12px") :border "1px solid alpha(@view_fg_color, 0.15)"
+                              :border-radius "6px" :background-color "alpha(@view_fg_color, 0.03)")
+    (".cadre-clos-current" :padding ("10px" "16px") :border-radius "6px"
+                           :background-color "alpha(@accent_bg_color, 0.15)" :font-weight "bold")
     ;; Database tables and query results (databases.lisp)
     (".cadre-db-grid" :padding ("0" "0" "24px" "0"))
     (".cadre-db-grid > *" :padding ("2px" "8px") :border-bottom "1px solid alpha(@view_fg_color, 0.08)")
@@ -204,7 +218,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
       (:section ("Trace Function…" trace-function) ("Show Traces" show-traces))
       (:section ("Profile Form…" profile-expression) ("Profile All Threads" profile-all-threads)
                 ("Stop Profiling" stop-profiling) ("Show Profiler" show-profiler))
-      (:section ("Threads" show-threads))
+      (:section ("Threads" show-threads) ("CLOS Browser" clos-browser))
       (:section ("Restart Lisp" restart-lisp)))
      (:submenu "Assistant"
       (:section ("Chat with Claude" claude) ("Chat with Codex" codex)

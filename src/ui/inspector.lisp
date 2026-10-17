@@ -87,9 +87,12 @@
 (defun inspector-menu-items (link)
   (let ((expression (inspector-value-expression link))
         (thread (ins-thread *inspector*)))
-    (list (cons (if (and link (eq (third link) :value)) "Copy Value" "Copy the Inspected Value")
+    (append
+     (unless (ins-clojure *inspector*)
+       (list (cons "Browse Class" (lambda () (browse-inspector-class expression thread)))))
+     (list (cons (if (and link (eq (third link) :value)) "Copy Value" "Copy the Inspected Value")
                 (lambda () (copy-value-text expression :thread thread)))
-          (cons "Open in New Tab" (lambda () (open-value-in-new-tab expression :thread thread))))))
+          (cons "Open in New Tab" (lambda () (open-value-in-new-tab expression :thread thread)))))))
 
 (defun show-inspector-menu (x y)
   (if (string= (gtk:label-get-text (ins-title *inspector*)) "Nothing inspected")

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **CLOS browser.** Browse classes and generic functions in the connected
+  Lisp by package and name, with inherited slots, method qualifiers and
+  specializers, superclass and subclass links, source navigation and live
+  inspection. The browser refreshes after evaluation and compilation;
+  classes defined directly in the REPL are included.
 - **Codex CLI support.** Choose Claude Code or Codex in the Assistant
   panel, with a separate conversation for each. Codex uses your existing
   `codex login` sign-in, offers model selection and Chat / Agent modes,

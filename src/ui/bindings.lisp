@@ -433,6 +433,9 @@
   "S-TAB" 'markdown-outdent)
 
 ;;; The HyperSpec tab: back and forward as in a browser.
+(bind-keys (major-mode-keymap (find-major-mode 'clos-browser-mode))
+  "M-Left" 'clos-browser-back)
+
 (bind-keys (major-mode-keymap (find-major-mode 'hyperspec-mode))
   "M-Left" 'hyperspec-back
   "M-Right" 'hyperspec-forward

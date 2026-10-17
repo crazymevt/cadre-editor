@@ -114,6 +114,7 @@ everyday commands, and the rest in submenus."
         (command-item symbol "Go to Definition" 'edit-definition)
         (command-item symbol "Look Up in HyperSpec" 'hyperspec-look-up)
         (command-item symbol "Describe Symbol" 'describe-symbol)
+        (command-item symbol "Browse Class" 'browse-class)
         (when lisp-file
           (command-item symbol "Evaluate or Compile Form" 'compile-or-eval-defun))
         (gio:menu-append-section menu nil symbol)))
