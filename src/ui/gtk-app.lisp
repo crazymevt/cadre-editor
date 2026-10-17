@@ -25,7 +25,9 @@
 (defparameter *gtk-app-ended-marker* ";; cadre: GTK app ended")
 
 (defparameter *gtk-close-watch-form*
-  "(let* ((application-new (find-symbol \"APPLICATION-NEW\" \"GTK\"))
+  "(progn
+     (defvar cl-user::*cadre-run-gtk-application* nil)
+     (let* ((application-new (find-symbol \"APPLICATION-NEW\" \"GTK\"))
           (original-new (symbol-function application-new))
           (application-run (find-symbol \"APPLICATION-RUN\" \"GIO\"))
           (original-run (symbol-function application-run)))
@@ -109,7 +111,7 @@
        (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\")))
          (when drain (loop repeat 15 do (ignore-errors (funcall drain)) (sleep 0.02))))
        (format t \"~~&~a~~%\")
-       (finish-output)))")
+       (finish-output))))")
 
 (defun gtk-app-running-p () (and *gtk-app* (getf *gtk-app* :running)))
 
