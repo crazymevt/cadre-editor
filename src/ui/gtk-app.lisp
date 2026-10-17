@@ -231,7 +231,7 @@ debugger."
   (with-connection (connection)
     (rex connection
          (swank-call "swank:interactive-eval"
-                     "(glib:in-main-thread () (let ((app (or (and (boundp 'cl-user::*cadre-run-gtk-application*) cl-user::*cadre-run-gtk-application*) (gio:application-get-default)))) (when app (gio:application-quit app))))"
+                     "(glib:in-main-thread () (let* ((application-var (find-symbol \"*CADRE-RUN-GTK-APPLICATION*\" \"CL-USER\")) (app (or (and application-var (boundp application-var) (symbol-value application-var)) (gio:application-get-default)))) (when app (gio:application-quit app))))"
                      3 120)
          :on-ok (lambda (v) (declare (ignore v)) (message "Quitting the GTK app…")))))
 
