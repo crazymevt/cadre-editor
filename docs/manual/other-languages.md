@@ -49,3 +49,7 @@ its line.
   default (`npm install -g prettier`). The `*formatter-commands*` setting
   names the program for any mode. A mode listed there uses it even where
   Cadre has its own formatter.
+
+Turn on **Format on save** in Settings → Editing to run the available
+formatter automatically before each save. External formatters finish before
+the save continues, so saving waits for them to complete.

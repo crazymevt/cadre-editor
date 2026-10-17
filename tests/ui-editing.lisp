@@ -26,3 +26,14 @@
   (let ((command (c:find-command 'ui:trim-trailing-whitespace)))
     (true command)
     (is string= "Trim trailing whitespace" (c::command-title command))))
+
+(define-test format-on-save-setting :parent editing
+  (let* ((buffer (buffer-with-text "{\"a\":1,\"b\":2}"))
+         (ui:*format-on-save* nil))
+    (setf (c:buffer-major-mode buffer) 'c:json-mode)
+    (c:run-hook 'c:*before-save-hook* buffer)
+    (is string= "{\"a\":1,\"b\":2}" (c:buffer-string buffer))
+    (setf ui:*format-on-save* t)
+    (c:run-hook 'c:*before-save-hook* buffer)
+    (is string= (format nil "{~%  \"a\": 1,~%  \"b\": 2~%}~%")
+               (c:buffer-string buffer))))
