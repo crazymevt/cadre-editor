@@ -691,7 +691,11 @@ Files a body names (\"< path\") are relative to DIRECTORY."
         (when (and cookie-jar (not (getf options :no-cookie-jar)))
           (option "cookie" (uiop:native-namestring cookie-jar))
           (option "cookie-jar" (uiop:native-namestring cookie-jar)))
-        (unless (getf options :no-redirect) (option "location"))
+        ;; curl forwards arbitrary custom headers to a redirected origin.
+        ;; Do not follow redirects when caller-supplied headers may contain secrets.
+        (when (and (not (getf options :no-redirect))
+                   (null (http-request-headers request)))
+          (option "location"))
         (when (getf options :insecure) (option "insecure"))
         (option "max-time" (princ-to-string (or (getf options :timeout) 60)))
         (option "silent")
@@ -840,7 +844,10 @@ relative to DIRECTORY. FINISH-CURL waits for it."
               (file (format out " \\~%  --data-binary ~a" (shell-quote (format nil "@~a" (body-path file directory)))))
               ((plusp (length (http-request-body request)))
                (format out " \\~%  --data-raw ~a" (shell-quote (http-request-body request))))))
-      (unless (getf options :no-redirect) (format out " -L"))
+      ;; Keep copied commands safe for the same reason as CURL-CONFIG.
+      (when (and (not (getf options :no-redirect))
+                 (null (http-request-headers request)))
+        (format out " -L"))
       (when (getf options :insecure) (format out " -k")))))
 
 (defun shell-words (text)

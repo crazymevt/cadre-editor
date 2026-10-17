@@ -201,7 +201,12 @@ GET https://x.test/
     (is eq t (getf (c:http-request-options r) :no-cookie-jar))
     (true (search "@no-cookie-jar" (c:render-http-request r)))
     (false (search "cookie-jar" (c:curl-config r :cookie-jar #p"/tmp/jar.txt"))))
-  (true (search "cookie-jar = \"/tmp/jar.txt\"" (c:curl-config (c:make-http-request :url "u") :cookie-jar #p"/tmp/jar.txt"))))
+  (true (search "cookie-jar = \"/tmp/jar.txt\"" (c:curl-config (c:make-http-request :url "u") :cookie-jar #p"/tmp/jar.txt")))
+  (let ((request (c:make-http-request :url "https://x.test" :headers '(("X-API-Key" . "secret")))))
+    (false (search "location" (c:curl-config request)))
+    (false (search " -L" (c:http-request-curl-command request))))
+  (true (search "location" (c:curl-config (c:make-http-request :url "https://x.test"))))
+  (true (search " -L" (c:http-request-curl-command (c:make-http-request :url "https://x.test")))))
 
 (define-test query-parameters :parent cadre-tests
   (is equal '(("q" . "a b") ("tag" . "λ") ("token" . "{{token}}") ("flag" . ""))
@@ -296,10 +301,15 @@ GET https://x.test/
                ;; The body went, and came back, as UTF-8.
                (is string= "{\"name\": \"λ\"}" (c:jget json "body")))
              (true (search (format nil "~%  \"method\"") (c:response-body-text response)))
-             ;; Redirects are followed unless the request says not to.
+             ;; Redirects are followed without custom headers, but not when
+             ;; headers could contain credentials.
              (let ((followed (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)))))
                (is = 201 (c:http-response-status followed))
                (is string= "/landed" (c:jget (c:parse-json (c:http-response-body followed)) "path")))
+             (is = 302 (c:http-response-status
+                        (c:send-http-request (c:make-http-request
+                                              :url (format nil "http://127.0.0.1:~d/redirect" port)
+                                              :headers '(("X-API-Key" . "s3cret"))))))
              (is = 302 (c:http-response-status
                         (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)
                                                                   :options '(:no-redirect t)))))

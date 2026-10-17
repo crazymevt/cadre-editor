@@ -21,7 +21,8 @@ Content-Type: application/json
 
 - **+** opens a new request in a tab: method, URL and **Send**; its
   query parameters (**Params**, kept in step with the URL: edit either),
-  headers, body and options (follow redirects, skip TLS checks, timeout);
+  headers, body and options (follow redirects when there are no custom
+  headers, skip TLS checks, timeout);
   and the response below: status, time, size, headers and body. JSON, XML
   and HTML bodies are highlighted, and JSON and XML are laid out (**Pretty**
   off shows them as they came).

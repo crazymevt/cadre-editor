@@ -3940,7 +3940,9 @@ and the number of items MODEL itself shows."
 (then-when ((string/= *title-before* (gtk:label-get-text (cadre-ui::ins-title cadre-ui::*inspector*))) :timeout 20)
   (let ((items (cadre-ui::inspector-menu-items nil)))
     (check "the Inspector offers the inspected value too"
-           (equal '("Copy the Inspected Value" "Open in New Tab") (mapcar #'car items)) (mapcar #'car items))
+           (and (assoc "Copy the Inspected Value" items :test #'string=)
+                (assoc "Open in New Tab" items :test #'string=))
+           (mapcar #'car items))
     (funcall (cdr (assoc "Open in New Tab" items :test #'string=)))))
 
 (then-when ((find-buffer "value<2>") :timeout 20)

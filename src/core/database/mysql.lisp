@@ -77,25 +77,25 @@
   (typecase value
     ((or null (eql :null)) "NULL")
     (integer (princ-to-string value))
-    (float (let ((*read-default-float-format* 'double-float)) (princ-to-string value)))
+    (float (let* ((*read-default-float-format* 'double-float)
+                  (text (princ-to-string value)))
+             ;; Common Lisp's D exponent is not part of MySQL's numeric grammar.
+             (substitute #\e #\d (substitute #\e #\D text))))
     ((vector (unsigned-byte 8)) (format nil "X'~{~2,'0X~}'" (coerce value 'list)))
     (t (with-output-to-string (out)
          (write-char #\' out)
          (loop for c across (princ-to-string value)
                do (case c
-                    (#\' (write-string "\\'" out))
-                    (#\\ (write-string "\\\\" out))
-                    (#\Nul (write-string "\\0" out))
-                    (#\Newline (write-string "\\n" out))
-                    (#\Return (write-string "\\r" out))
-                    (#\Sub (write-string "\\Z" out))
+                    ;; Doubling quotes is valid even with NO_BACKSLASH_ESCAPES.
+                    ;; Preserve backslashes and control characters literally.
+                    (#\' (write-string "''" out))
                     (t (write-char c out))))
          (write-char #\' out)))))
 
 (defun my-inline-params (sql params)
   "SQL with each ? (outside strings, quoted names and comments) replaced by
 the next of PARAMS as a literal. qmynd's prepared statements misread some
-types (dates), so parameters go in the text, escaped."
+types (dates), so parameters go in the text as SQL literals."
   (prog1 (replace-sql-placeholders sql (lambda ()
                                          (when (null params) (editor-error "More ? in the statement than values for them"))
                                          (my-literal (pop params)))

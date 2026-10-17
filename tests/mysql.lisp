@@ -44,9 +44,11 @@ password secret, database shop); nil if MariaDB isn't installed."
 (define-test mysql :parent cadre-tests
   (let ((c:*identifier-quote* #\`))
     (is string= "`a``b`" (c:quote-sql-identifier "a`b")))
-  (is string= "SELECT 'it\\'s', NULL, 3, X'0102' FROM t WHERE a = '?' AND b = 'x\\\\y'"
+  (is string= "SELECT 'it''s', NULL, 3, X'0102' FROM t WHERE a = '?' AND b = 'x\\y'"
       (cadre::my-inline-params "SELECT ?, ?, ?, ? FROM t WHERE a = '?' AND b = ?"
                                (list "it's" :null 3 (make-array 2 :element-type '(unsigned-byte 8) :initial-contents '(1 2)) "x\\y")))
+  (is string= "SELECT 1.5" (cadre::my-inline-params "SELECT ?" (list 1.5d0)))
+  (is string= "SELECT 1.0e20" (cadre::my-inline-params "SELECT ?" (list 1.0d20)))
   (is string= "SELECT 'a''?''b', /* ? */ 1 # ?
 , 'c\\'?', 2" (cadre::my-inline-params "SELECT 'a''?''b', /* ? */ ? # ?
 , 'c\\'?', ?" (list 1 2)))
@@ -58,6 +60,10 @@ password secret, database shop); nil if MariaDB isn't installed."
             (db (c:open-database connection :password "secret")))
        (unwind-protect
             (c:with-db-quoting (db)
+              (c:db-run db "SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
+              (let* ((value "it's\\a path")
+                     (result (c:db-run db "SELECT ?" :params (list value))))
+                (is string= value (aref (first (c:db-result-rows result)) 0)))
               (c:db-run db "CREATE TABLE people (id int AUTO_INCREMENT PRIMARY KEY, name varchar(40) NOT NULL, age int,
   born date, score decimal(5,2), photo blob);
 CREATE TABLE tags (tag varchar(20));
