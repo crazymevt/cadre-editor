@@ -57,7 +57,7 @@
               (lambda ()
                 (if (and server (codex-alive-p server))
                     (codex-rate-limits-from-response
-                     (codex-request server "account/rateLimits/read" (jobj)))
+                     (cadre::codex-request server "account/rateLimits/read" (jobj)))
                     (codex-read-rate-limits program directory))))
            (glib:call-in-main-thread
             (lambda ()
