@@ -405,7 +405,7 @@ chat or what is missing. THEN is called if Claude is ready."
 
 (defun show-claude-intro ()
   (chat-append (make-instance 'gtk:label :wrap t :xalign 0.0 :css-classes '("dim-label")
-                                         :label (format nil "Ask Claude about your code. It can read your buffers, look things up in your running Lisp, and propose edits, which you review in the editor before they are applied.~%~%Return sends; Shift+Return starts a new line."))))
+                                         :label (format nil "Ask the selected assistant about your code. It can read your buffers, inspect your running Lisp, and propose edits for review.~%~%Return sends; Shift+Return starts a new line."))))
 
 (defun chat-note (text &rest classes)
   (chat-append (make-instance 'gtk:label :label text :wrap t :xalign 0.0 :selectable t
@@ -884,7 +884,7 @@ and passes it the code the browser shows."
         (start-sign-in program))))
 
 (define-command ask-claude-about-error ()
-  "Ask Claude to explain the error in the debugger."
+  "Ask the selected assistant to explain the error in the debugger."
   (show-claude-page)
   (gtk:toggle-button-set-active (chat-context-debugger *chat*) t)
   (text-replace-contents (gtk:text-view-get-buffer (chat-input *chat*))
@@ -904,15 +904,15 @@ start and end offsets."
                 (if l1
                     (values (gtk:text-iter-get-offset (line-iter gtk-buffer l1 c1))
                             (gtk:text-iter-get-offset (line-iter gtk-buffer l2 c2)))
-                    (editor-error "Select the code for Claude to change")))))))))
+                    (editor-error "Select the code for the assistant to change")))))))))
 
 (define-command claude-edit ()
-  "Ask Claude to change the selected code (or the top-level form at the
+  "Ask the selected assistant to change the selected code (or the top-level form at the
 cursor) as you describe; review its edit as a diff, and accept or reject it."
   (let* ((view (current-view))
          (buffer (view-buffer view))
          (gtk-buffer (view-gtk-buffer view)))
-    (when (and *chat* (chat-busy *chat*)) (editor-error "Claude is still working"))
+    (when (and *chat* (chat-busy *chat*)) (editor-error "The assistant is still working"))
     (multiple-value-bind (start end) (region-to-edit view)
       (let ((code (text-string gtk-buffer start end))
             (first-line (1+ (text-position-line gtk-buffer start)))
@@ -920,7 +920,7 @@ cursor) as you describe; review its edit as a diff, and accept or reject it."
         (ask-name (format nil "Change lines ~d–~d: describe how" first-line last-line)
                   (lambda (instruction)
                     (show-claude-page)
-                    (check-claude-status
+                    (check-selected-assistant-status
                      :then (lambda ()
                              (send-to-claude
                               (format nil "Change this code in ~a (lines ~d–~d): ~a~%~%```~%~a~%```~%~%~
@@ -932,9 +932,21 @@ to occur once). Change nothing outside it unless the change needs it, and keep y
                                              first-line last-line instruction))))))))))
 
 (define-command ask-claude-about-problems ()
-  "Ask Claude to fix the compiler's errors and warnings."
+  "Ask the selected assistant to fix the compiler's errors and warnings."
   (show-claude-page)
   (gtk:toggle-button-set-active (chat-context-problems *chat*) t)
   (text-replace-contents (gtk:text-view-get-buffer (chat-input *chat*))
                          "Fix the compiler problems.")
   (chat-send))
+
+(define-command assistant-edit ()
+  "Ask the selected assistant to change the selected code or enclosing form."
+  (call-command 'claude-edit))
+
+(define-command ask-assistant-about-error ()
+  "Ask the selected assistant to explain the debugger error."
+  (call-command 'ask-claude-about-error))
+
+(define-command ask-assistant-about-problems ()
+  "Ask the selected assistant to fix compiler problems."
+  (call-command 'ask-claude-about-problems))

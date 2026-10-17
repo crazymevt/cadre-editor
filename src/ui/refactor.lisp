@@ -206,7 +206,7 @@ everyday commands, and the rest in submenus."
             (command-item fold "Unfold All" 'unfold-all)
             (gio:menu-append-section code nil fold)))
         (let ((claude (gio:menu-new)))
-          (command-item claude "Ask Claude to Change…" 'claude-edit)
+          (command-item claude "Ask Assistant to Change…" 'assistant-edit)
           (gio:menu-append-section code nil claude))
         (gio:menu-append-submenu more "Code" code))
       (gio:menu-append-section menu nil more))

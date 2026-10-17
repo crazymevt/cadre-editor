@@ -44,6 +44,7 @@
            #:expand-macro-once #:expand-macro-all #:expand-compiler-macro
            #:claude #:chat-send #:claude-stop #:claude-new-chat #:claude-sign-in
            #:codex #:codex-sign-in
+           #:assistant-edit #:ask-assistant-about-problems #:ask-assistant-about-error
            #:ask-claude-about-problems #:ask-claude-about-error #:accept-edit #:reject-edit))
 
 (defpackage #:cadre-user

@@ -2,7 +2,7 @@
 
 ## Status and Scope
 
-**Status:** Proposed design, not yet implemented.
+**Status:** Implementation in progress. The Codex driver and panel are implemented; the product-polish phase is underway. The signed-in manual integration pass remains to be done.
 
 This document describes adding Codex as a second coding assistant in Cadre. The target is Codex CLI authenticated with the user's existing local Codex login, embedded in Cadre's assistant panel and connected to Cadre's existing editor tools. Claude remains available.
 
@@ -157,9 +157,11 @@ Codex app-server's own protocol is not MCP. The integration uses app-server's dy
 
 ### Phase 4: Product polish
 
-- Add model selection and Chat/Agent prompt behavior.
-- Generalize menu, debugger, problems, and inline-edit actions while preserving command aliases.
-- Update manual/settings and startup checks; add UI smoke coverage and test failure/recovery paths.
+- [x] Add model selection from the app-server model catalog and apply Chat/Agent guidance on every turn.
+- [x] Generalize debugger, problems, and inline-edit actions while preserving Claude command aliases.
+- [x] Update the manual and installing guide for Codex CLI sign-in and provider behavior.
+- [x] Add UI smoke coverage for model discovery, dynamic tool calls, streaming replies, and per-turn Chat/Agent behavior.
+- [ ] Add UI smoke coverage for provider failure and recovery paths.
 - Run a manual integration pass with a signed-in Codex CLI in a disposable project, including one read-only tool, one proposed edit, one approved runtime action, cancellation, and session resume.
 
 ## Validation Plan
@@ -176,11 +178,10 @@ Codex app-server's own protocol is not MCP. The integration uses app-server's dy
 - What minimum Codex CLI/app-server version should Cadre support, and how will Cadre detect protocol compatibility?
 - Does the supported app-server version expose all current Cadre tools through `dynamicTools` without experimental protocol flags?
 - Does the selected app-server configuration provide a sufficiently restrictive sandbox and approval policy to prevent unreviewed filesystem edits in v1?
-- Should Codex's model catalog refresh on every panel open, once per process, or only when the user opens the model picker?
+- Model discovery refreshes when Codex is selected and the catalog is not available, or when the user requests a status recheck.
 - Should Codex thread IDs persist across Cadre restarts, or should v1 match current in-memory chat continuity?
-- Should the panel be renamed to **Assistant** or **AI**, and should the provider dropdown or separate provider tabs be used?
-- Which existing Claude-specific command names should remain permanent compatibility aliases?
-- Does Agent mode need a separate Codex thread/model configuration, or can it be represented as per-turn instructions in a resumed thread?
+- The panel is named **Assistant** and uses a provider dropdown. Existing Claude command names remain as aliases.
+- Codex Chat/Agent guidance is sent with each turn, so mode changes apply to a resumed thread.
 
 ## References
 

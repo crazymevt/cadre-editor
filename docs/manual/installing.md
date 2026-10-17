@@ -101,6 +101,7 @@ you what's missing when you use a feature that needs it.
 | [Format Document](other-languages.md#format-document) for JavaScript, TypeScript and HTML | [Prettier](https://prettier.io), which needs Node.js | `brew install node`, then `npm install -g prettier`. Or point `*formatter-commands*` at another formatter. JSON, CSS, XML and Lisp need nothing. |
 | The [Terminal](terminal.md) page | VTE, GNOME's terminal widget, for GTK 4 | `brew install vte3`. On Debian or Ubuntu: `sudo apt install libvte-2.91-gtk4-0` |
 | [Claude](using-claude.md) | The [Claude Code](https://claude.com/claude-code) CLI, signed in | Install it from its site, then `claude auth login` |
+| [Codex](using-claude.md#codex) | Codex CLI, signed in | Install Codex CLI, then `codex login` |
 | Run GTK App, and GTK projects from New Project | The gtk4 bindings, which you already have from setup | — |
 
 Some things need nothing extra:

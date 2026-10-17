@@ -53,6 +53,15 @@
   (is = 36 (length (c:make-uuid)))
   (is char= #\4 (char (c:make-uuid) 14)))
 
+(define-test codex-model-catalog :parent cadre-tests
+  (let ((models (c:codex-models-from-response
+                 (c:parse-json
+                  "{\"data\":[{\"id\":\"gpt-visible\",\"model\":\"gpt-visible\",\"displayName\":\"Visible\",\"hidden\":false,\"isDefault\":true,\"defaultReasoningEffort\":\"medium\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"medium\",\"description\":\"Balanced\"}]},{\"id\":\"gpt-hidden\",\"hidden\":true}]}"))))
+    (is = 1 (length models))
+    (is string= "gpt-visible" (c:jget (first models) "id"))
+    (is string= "Visible" (c:jget (first models) "displayName"))
+    (is string= "medium" (c:jget (first models) "defaultReasoningEffort"))))
+
 (c:define-mcp-tool "test_echo" (args)
   "Echo the text."
   (("text" "string" "What to echo" :required t))

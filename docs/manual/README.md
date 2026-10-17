@@ -10,7 +10,7 @@ shows each one in a picture.
 | [Common Lisp](common-lisp.md) | Evaluating and compiling, highlighting from the image, the REPL, the debugger, tracing, profiling, stepping, expanding macros, threads, scratch buffers, the HyperSpec and libraries' docs |
 | [Projects, tests and running programs](projects.md) | The Project page, libraries, New Project, Build Project, running tests and the Tests page, ▶ for a project's program, GTK apps |
 | [Racket and Clojure](racket-clojure.md) | Editing both, Clojure through nREPL, Racket through Cadre's back end |
-| [Claude](using-claude.md) | The Claude panel, asking for a change, chat and agent modes, approvals |
+| [Assistant](using-claude.md) | Claude and Codex in the assistant panel, asking for a change, chat and agent modes, approvals |
 | [Git](git.md) | The gutter, Source Control, staging parts of files, merges, history, blame, stashes, branches and remotes |
 | [Databases](databases.md) | Connections to SQLite, PostgreSQL, MySQL and MariaDB; tables in tabs; SQL consoles |
 | [API requests](api.md) | `.http` files, environments and secrets, bodies, auth, cookies, captured values, curl |

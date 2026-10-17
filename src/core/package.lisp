@@ -199,6 +199,7 @@
    ;; Codex CLI app-server
    #:*codex-program* #:find-codex-program #:codex-status #:codex-status-program #:codex-status-version
    #:codex-status-logged-in #:codex-status-error #:check-codex #:codex-dynamic-tools
+   #:codex-models-from-response #:codex-list-models
    #:codex-event #:codex-event-kind #:codex-event-text #:codex-event-name #:codex-event-id
    #:codex-event-input #:codex-event-error #:codex-event-thread-id #:codex-event-turn-id
    #:codex-event-data #:codex-app-server #:codex-thread-id #:codex-turn-id

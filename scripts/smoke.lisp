@@ -49,6 +49,7 @@
   (format o "(defsystem \"smoke\" :components ((:file \"src/lib\")))~%"))
 (setf *lisp-command* '("sbcl" "--noinform" "--no-userinit"))
 (setf *claude-program* (namestring (truename "scripts/fake-claude")))
+(setf *codex-program* (namestring (truename "scripts/fake-codex")))
 (with-open-file (o (merge-pathnames "src/m5.lisp" *root*) :direction :output)
   (format o "(a b) c~%"))
 (with-open-file (o (merge-pathnames "src/m6.lisp" *root*) :direction :output)
@@ -822,6 +823,45 @@
 
 (then-when ((not (cadre-ui::connected-p)))
   (check "disconnect closes the connection" (not (cadre-ui::connected-p))))
+
+;;; Codex CLI / app-server (scripts/fake-codex, deterministic JSON-RPC peer)
+(section "codex")
+(then 200
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 1)
+  (check "Codex can be selected in the Assistant panel"
+         (eq :codex (cadre-ui::chat-provider cadre-ui::*chat*))))
+
+(then-when ((and (cadre-ui::codex-ready-p) cadre-ui::*codex-model-catalog*) :timeout 20)
+  (check "Cadre detects the signed-in Codex CLI" (cadre-ui::codex-ready-p))
+  (check "the model picker selects the app-server default"
+         (eq t (jget (nth (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*))
+                          cadre-ui::*codex-model-catalog*) "isDefault")))
+  (chat-type "hello Codex"))
+
+(then-when ((chat-says "Fake Codex reply") :timeout 20)
+  (check "Codex streams a reply through app-server" (chat-says "Fake Codex reply"))
+  (check "Codex can call a registered Cadre tool"
+         (find-if (lambda (row) (search "current_context" (gtk:expander-get-label row)))
+                  (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)
+                                (lambda (w) (typep w 'gtk:expander))))
+         (chat-texts))
+  (check "the Codex turn completes" (not (cadre-ui::chat-busy cadre-ui::*chat*)))
+  (cadre-ui::set-chat-mode :agent)
+  (chat-type "agent check"))
+
+(then-when ((chat-says "Fake Codex agent mode") :timeout 20)
+  (check "Agent guidance applies to a turn in the existing Codex thread"
+         (chat-says "Fake Codex agent mode"))
+  (check "Codex keeps the selected model across turns"
+         (eq t (jget (nth (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*))
+                          cadre-ui::*codex-model-catalog*) "isDefault"))
+         (gtk:drop-down-get-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*)))
+  (cadre-ui::set-chat-mode :chat)
+  ;; Later smoke sections exercise Claude-specific edits and assume the
+  ;; provider used by the earlier Claude setup section is still selected.
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 0)
+  (check "Codex smoke restores the Claude provider for later sections"
+         (eq :claude (cadre-ui::chat-provider cadre-ui::*chat*))))
 
 
 ;;; M5: Emacs depth

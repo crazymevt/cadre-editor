@@ -5,6 +5,10 @@
 (defvar *codex-status* nil)
 (defvar *codex-checking* nil)
 (defvar *codex-when-checked* '())
+(defvar *codex-model-catalog* '())
+
+(defun codex-ready-p-for (status)
+  (and status (codex-status-program status) (codex-status-logged-in status)))
 
 (defparameter *codex-system-prompt*
   "You are working inside Cadre, a Common Lisp editor. Use the provided Cadre tools to inspect the user's open buffers and running Lisp image. Read files with read_buffer so you see unsaved changes. Make all file changes with propose_edit so the user can review them inline. Do not edit files or run shell commands directly. Cadre asks the user before evaluations, compilation, loading, and tests.")
@@ -24,19 +28,59 @@
     (setf *codex-checking* t
           *codex-when-checked* (if then (list then) '()))
     (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
-    (sb-thread:make-thread
+    (let ((directory (or (and *window* (window-project *window*)) (user-homedir-pathname)))
+          (deliver-models (and *chat* (eq (chat-provider *chat*) :codex))))
+     (sb-thread:make-thread
      (lambda ()
-       (let ((status (check-codex)))
+       (let* ((status (check-codex))
+              (models (when (and deliver-models (codex-ready-p-for status))
+                        (ignore-errors (codex-list-models (codex-status-program status) directory)))))
          (glib:call-in-main-thread
           (lambda ()
             (setf *codex-status* status *codex-checking* nil)
+            (when (and deliver-models models)
+              (let ((had-models *codex-model-catalog*))
+                (setf *codex-model-catalog* models)
+                (refresh-assistant-model-dropdown :preserve (not (null had-models)))))
             (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
             (let ((pending *codex-when-checked*))
               (setf *codex-when-checked* '())
               (when (codex-ready-p) (mapc #'funcall pending)))))))
-     :name "check Codex CLI"))
+     :name "check Codex CLI")))
   (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
   (when (and then (codex-ready-p)) (funcall then)))
+
+(defun refresh-assistant-model-dropdown (&key (preserve t))
+  (when (and *chat* (typep (chat-model-dropdown *chat*) 'gtk:drop-down))
+    (let* ((dropdown (chat-model-dropdown *chat*))
+           (selected (gtk:drop-down-get-selected dropdown))
+           (old-id (and preserve (eq (chat-provider *chat*) :codex)
+                        (nth selected *codex-model-catalog*)
+                        (jget (nth selected *codex-model-catalog*) "id"))))
+      (if (eq (chat-provider *chat*) :codex)
+          (gtk:drop-down-set-model dropdown
+                                   (gtk:string-list-new
+                                    (if *codex-model-catalog*
+                                        (mapcar (lambda (model) (or (jget model "displayName")
+                                                                    (jget model "model")
+                                                                    (jget model "id")))
+                                                *codex-model-catalog*)
+                                        '("Codex default"))))
+          (gtk:drop-down-set-model dropdown (gtk:string-list-new *claude-models*)))
+      (gtk:drop-down-set-selected
+       dropdown
+           (or (and old-id (position old-id *codex-model-catalog* :key (lambda (model) (jget model "id")) :test #'equal))
+           (and (eq (chat-provider *chat*) :codex)
+                (position-if (lambda (model) (eq (jget model "isDefault") t)) *codex-model-catalog*))
+       (if (eq (chat-provider *chat*) :claude)
+           (or (position *claude-model* *claude-models* :test #'equal) 0)
+           0))))))
+
+(defun selected-codex-model ()
+  (let* ((model (nth (gtk:drop-down-get-selected (chat-model-dropdown *chat*)) *codex-model-catalog*))
+         (id (and model (or (jget model "id") (jget model "model"))))
+         (effort (and model (jget model "defaultReasoningEffort"))))
+    (values id effort)))
 
 (defun check-selected-assistant-status (&key force then)
   (if (and *chat* (eq (chat-provider *chat*) :codex))
@@ -89,7 +133,7 @@
         (t
          (setf (gethash old (chat-message-boxes *chat*)) (chat-messages *chat*)
                (chat-provider *chat*) provider)
-         (gtk:widget-set-visible (chat-model-dropdown *chat*) (eq provider :claude))
+         (gtk:widget-set-visible (chat-model-dropdown *chat*) t)
          (let* ((messages (gethash provider (chat-message-boxes *chat*)))
                 (new (null messages)))
            (unless messages
@@ -99,10 +143,17 @@
                    (gethash provider (chat-message-boxes *chat*)) messages))
            (setf (chat-messages *chat*) messages)
            (gtk:scrolled-window-set-child (chat-scroller *chat*) messages)
+           ;; Replacing the scroller child creates a fresh GtkViewport. Keep
+           ;; selectable replies from pulling the conversation to their row.
+           (let ((viewport (gtk:scrolled-window-get-child (chat-scroller *chat*))))
+             (when (typep viewport 'gtk:viewport)
+               (gtk:viewport-set-scroll-to-focus viewport nil)))
            (when new
              (if (eq provider :codex) (show-codex-intro) (show-claude-intro))))
+         (refresh-assistant-model-dropdown :preserve nil)
          (show-claude-status)
-         (check-selected-assistant-status))))))
+         (check-selected-assistant-status :force (and (eq provider :codex)
+                                                     (null *codex-model-catalog*))))))))
 
 (defun show-codex-intro ()
   (chat-append (make-instance 'gtk:label :wrap t :xalign 0.0 :css-classes '("dim-label")
@@ -165,19 +216,21 @@
               (chat-codex-process *chat*) server)
         server)))
 
-(defun codex-send-worker (server text)
+(defun codex-send-worker (server text model effort mode)
   (handler-case
       (progn
-        (let ((instructions (if (eq (chat-mode *chat*) :agent)
-                                (format nil "~a~%~%~a" *codex-system-prompt* *codex-agent-prompt*)
-                                *codex-system-prompt*)))
-          (unless (codex-thread-id server)
-            (let ((thread-id (or (and (chat-codex-thread-id *chat*)
-                                      (codex-resume-thread server (chat-codex-thread-id *chat*)
-                                                           :instructions instructions))
-                                 (codex-start-thread server :instructions instructions))))
-              (setf (chat-codex-thread-id *chat*) thread-id)))
-        (codex-start-turn server text)))
+        (unless (codex-thread-id server)
+          (let ((thread-id (or (and (chat-codex-thread-id *chat*)
+                                    (codex-resume-thread server (chat-codex-thread-id *chat*)
+                                                         :instructions *codex-system-prompt*))
+                               (codex-start-thread server :model model :instructions *codex-system-prompt*))))
+            (setf (chat-codex-thread-id *chat*) thread-id)))
+        (codex-start-turn server
+                          (format nil "<cadre-mode-instructions>~%~a~%</cadre-mode-instructions>~%~%~a"
+                                  (if (eq mode :agent) *codex-agent-prompt*
+                                      "Answer the user's question directly. Use Cadre tools when editor context or live Lisp state would help.")
+                                  text)
+                          :model model :effort effort))
     (error (e)
       (deliver-to-gui
        (lambda ()
@@ -196,11 +249,13 @@
     (setf (chat-busy *chat*) t)
     (chat-update-status)
     (handler-case
-        (let* ((server (codex-process-for-chat))
+        (multiple-value-bind (model effort) (selected-codex-model)
+          (let* ((server (codex-process-for-chat))
                (prompt (if (plusp (length context))
                            (format nil "<editor-context>~%~a</editor-context>~%~%~a" context text)
                            text)))
-          (sb-thread:make-thread (lambda () (codex-send-worker server prompt)) :name "Codex turn"))
+            (sb-thread:make-thread (lambda () (codex-send-worker server prompt model effort (chat-mode *chat*)))
+                                   :name "Codex turn")))
       (error (e)
         (setf (chat-busy *chat*) nil)
         (chat-note (format nil "Could not start Codex: ~a" e) "error")

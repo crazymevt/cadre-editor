@@ -248,6 +248,22 @@
                               "inputSchema" (schema-json (mcp-tool-schema tool))))
           'vector))
 
+(defun codex-models-from-response (response)
+  "Visible model choices from a `model/list` response."
+  (remove-if (lambda (model) (eq (jget model "hidden") t))
+             (jlist (jget response "data"))))
+
+(defun codex-list-models (program directory)
+  "Return the models advertised by PROGRAM's app-server in DIRECTORY."
+  (let ((server (start-codex-app-server program directory)))
+    (unwind-protect
+         (progn
+           (codex-request server "initialize"
+                          (jobj "clientInfo" (jobj "name" "cadre" "title" "Cadre" "version" "0.1")))
+           (codex-notify server "initialized")
+           (codex-models-from-response (codex-request server "model/list" (jobj))))
+      (stop-codex-app-server server))))
+
 (defun codex-start-thread (server &key model instructions (sandbox "read-only"))
   "Initialize app-server and start a thread configured with Cadre's tools."
   (codex-request server "initialize"

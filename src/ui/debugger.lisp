@@ -100,8 +100,8 @@ into, x over and o out. Only without modifiers."
                       (gtk:box :spacing 6 :margin-top 4
                         (gtk:button :label "_Dismiss" :use-underline t :tooltip-text "Close this error (a)"
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'debugger-abort)))
-                        (gtk:button :label "Ask Claude" :tooltip-text "Send the error and stack to Claude"
-                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
+                        (gtk:button :label "Ask Assistant" :tooltip-text "Send the error and stack to the selected assistant"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-assistant-about-error))))))
     (gtk:box-append *debugger-box* (label "Stack" :margin-top 6 :css-classes '("heading")))
     (unless (dl-frames level)
       (gtk:box-append *debugger-box*
@@ -173,8 +173,8 @@ unwound: MESSAGE, its TYPE, and FRAMES as (name file line column)."
                                     :on-clicked (lambda (b) (declare (ignore b)) (call-command 'step-into)))
                         (gtk:button :label "Inspect Condition"
                                     :on-clicked (lambda (b) (declare (ignore b)) (inspect-condition level)))
-                        (gtk:button :label "Ask Claude" :tooltip-text "Send the error and backtrace to Claude"
-                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-claude-about-error))))))
+                        (gtk:button :label "Ask Assistant" :tooltip-text "Send the error and backtrace to the selected assistant"
+                                    :on-clicked (lambda (b) (declare (ignore b)) (call-command 'ask-assistant-about-error))))))
     (render-restarts level)
     (render-gui-backtrace level)
     (render-backtrace level)))
