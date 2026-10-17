@@ -59,13 +59,13 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "claude" (make-claude-widget))
       (panel-set-title panel "claude" "Assistant")
       (panel-set-page-child panel "terminal" (make-terminal-widget))
-      ;; However the Claude tab is opened (its tab, a key, the menu), find out
-      ;; whether Claude Code is ready.
+      ;; However the Assistant tab is opened, find out whether its selected
+      ;; provider is ready.
       (gobject:connect (panel-stack panel) "notify::visible-child"
                        (lambda (stack pspec)
                          (declare (ignore pspec))
                          (let ((name (gtk:stack-get-visible-child-name stack)))
-                           (cond ((equal name "claude") (check-claude-status))
+                           (cond ((equal name "claude") (check-selected-assistant-status))
                                  ((equal name "trace") (trace-page-shown))
                                  ((equal name "threads") (threads-page-shown))
                                  ((equal name "tests") (tests-page-shown))

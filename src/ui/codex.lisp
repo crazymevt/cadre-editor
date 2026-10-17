@@ -5,6 +5,7 @@
 (defvar *codex-status* nil)
 (defvar *codex-checking* nil)
 (defvar *codex-recheck-requested* nil)
+(defvar *codex-models-requested* nil)
 (defvar *codex-when-checked* '())
 (defvar *codex-model-catalog* '())
 
@@ -20,8 +21,9 @@
 (defun codex-ready-p ()
   (and *codex-status* (codex-status-program *codex-status*) (codex-status-logged-in *codex-status*)))
 
-(defun check-codex-status (&key force then)
+(defun check-codex-status (&key force then fetch-models)
   "Check Codex CLI availability and saved-login status off the GTK thread."
+  (when fetch-models (setf *codex-models-requested* t))
   (when *codex-checking*
     (when then (setf *codex-when-checked* (append *codex-when-checked* (list then))))
     (when (or force (and *chat* (eq (chat-provider *chat*) :codex)
@@ -34,7 +36,8 @@
     (when then (setf *codex-when-checked* (append *codex-when-checked* (list then))))
     (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
     (let ((directory (or (and *window* (window-project *window*)) (user-homedir-pathname)))
-          (deliver-models (and *chat* (eq (chat-provider *chat*) :codex))))
+          (deliver-models (or *codex-models-requested*
+                              (and *chat* (eq (chat-provider *chat*) :codex)))))
      (sb-thread:make-thread
      (lambda ()
        (let* ((status (check-codex))
@@ -43,10 +46,12 @@
          (glib:call-in-main-thread
           (lambda ()
             (setf *codex-status* status *codex-checking* nil)
+            (when deliver-models (setf *codex-models-requested* nil))
             (when (and deliver-models models)
               (let ((had-models *codex-model-catalog*))
                 (setf *codex-model-catalog* models)
                 (refresh-assistant-model-dropdown :preserve (not (null had-models)))))
+            (when deliver-models (refresh-codex-model-setting))
             (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
             ;; A provider switch may have happened after this worker decided
             ;; whether to load models. Retry once with the current selection;
@@ -73,7 +78,8 @@
            (selected (gtk:drop-down-get-selected dropdown))
            (old-id (and preserve (eq (chat-provider *chat*) :codex)
                         (nth selected *codex-model-catalog*)
-                        (jget (nth selected *codex-model-catalog*) "id"))))
+                        (or (jget (nth selected *codex-model-catalog*) "id")
+                            (jget (nth selected *codex-model-catalog*) "model")))))
       (if (eq (chat-provider *chat*) :codex)
           (gtk:drop-down-set-model dropdown
                                    (gtk:string-list-new
@@ -86,12 +92,18 @@
           (gtk:drop-down-set-model dropdown (gtk:string-list-new *claude-models*)))
       (gtk:drop-down-set-selected
        dropdown
-           (or (and old-id (position old-id *codex-model-catalog* :key (lambda (model) (jget model "id")) :test #'equal))
-           (and (eq (chat-provider *chat*) :codex)
-                (position-if (lambda (model) (eq (jget model "isDefault") t)) *codex-model-catalog*))
        (if (eq (chat-provider *chat*) :claude)
            (or (position *claude-model* *claude-models* :test #'equal) 0)
-           0))))))
+           (or (and old-id
+                    (position old-id *codex-model-catalog*
+                              :key (lambda (model) (or (jget model "id") (jget model "model")))
+                              :test #'equal))
+               (and *codex-model*
+                    (position *codex-model* *codex-model-catalog*
+                              :key (lambda (model) (or (jget model "id") (jget model "model")))
+                              :test #'equal))
+               (position-if (lambda (model) (eq (jget model "isDefault") t)) *codex-model-catalog*)
+               0))))))
 
 (defun selected-codex-model ()
   (let* ((model (nth (gtk:drop-down-get-selected (chat-model-dropdown *chat*)) *codex-model-catalog*))

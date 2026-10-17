@@ -199,7 +199,7 @@
    #:mcp-tool-error #:mcp-handle #:call-mcp-tool #:start-mcp-server #:stop-mcp-server
    #:mcp-server-url #:mcp-server-port #:mcp-server-token #:write-mcp-config #:http-post-json
    ;; Codex CLI app-server
-   #:*codex-program* #:find-codex-program #:codex-status #:codex-status-program #:codex-status-version
+   #:*codex-program* #:*codex-model* #:find-codex-program #:codex-status #:codex-status-program #:codex-status-version
    #:codex-status-logged-in #:codex-status-error #:check-codex #:codex-dynamic-tools
    #:codex-models-from-response #:codex-list-models
    #:codex-event #:codex-event-kind #:codex-event-text #:codex-event-name #:codex-event-id

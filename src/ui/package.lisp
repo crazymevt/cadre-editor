@@ -5,7 +5,7 @@
   (:export #:main
            ;; options
            #:*keybinding-profile* #:*layout* #:*auto-vertical-min-width*
-           #:*editor-font* #:*explorer-hidden-names* #:*explorer-hidden-types*
+           #:*editor-font* #:*explorer-hidden-names* #:*explorer-hidden-types* #:*assistant-provider*
            ;; keymaps
            #:*standard-global-keymap* #:*standard-editing-keymap*
            #:*emacs-global-keymap* #:*emacs-editing-keymap*

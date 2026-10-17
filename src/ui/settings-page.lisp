@@ -18,6 +18,10 @@
 (defun refresh-explorer ()
   (when (window-project *window*) (set-window-project *window* (window-project *window*))))
 
+(defun apply-codex-model-option ()
+  (when (and *chat* (eq (chat-provider *chat*) :codex))
+    (refresh-assistant-model-dropdown :preserve nil)))
+
 (defparameter *option-appliers*
   '((*editor-font* . install-font-css)
     (*layout* . apply-layout-option)
@@ -25,21 +29,23 @@
     (*keybinding-profile* . apply-keybinding-option)
     (*paredit* . apply-paredit-option)
     (*highlight-from-image* . image-changed)
+    (*codex-model* . apply-codex-model-option)
     (*terminal-scrollback* . restyle-terminals)
     (*explorer-hidden-names* . refresh-explorer) (*explorer-hidden-types* . refresh-explorer))
   "Option name → a function that puts a new value into effect. Other options
 take effect the next time they are used.")
 
-(defparameter *restart-options* '(*auto-vertical-min-width*)
+(defparameter *restart-options* '(*auto-vertical-min-width* *assistant-provider*)
   "Options that take effect when Cadre next starts.")
 
 (defparameter *category-icons*
   '(("Appearance" . "cadre-appearance-symbolic") ("Editing" . "cadre-edit-symbolic")
     ("Keyboard" . "cadre-keyboard-symbolic") ("Lisp" . "cadre-system-symbolic")
-    ("Claude" . "cadre-claude-symbolic") ("Codex" . "cadre-claude-symbolic") ("Explorer" . "folder-symbolic")
+    ("Assistant" . "cadre-claude-symbolic") ("Claude" . "cadre-claude-symbolic")
+    ("Codex" . "cadre-claude-symbolic") ("Explorer" . "folder-symbolic")
     ("Session" . "cadre-session-symbolic") ("Terminal" . "utilities-terminal-symbolic") ("Other" . "cadre-other-symbolic")))
 
-(defparameter *category-order* '("Appearance" "Editing" "Keyboard" "Lisp" "Claude" "Codex" "Explorer" "Session" "Other"))
+(defparameter *category-order* '("Appearance" "Editing" "Keyboard" "Lisp" "Assistant" "Claude" "Codex" "Explorer" "Session" "Other"))
 
 (defun option-changed (option)
   "OPTION was set from the page: save it and put it into effect."
@@ -59,6 +65,14 @@ take effect the next time they are used.")
     (*dark-theme* (mapcar (lambda (th) (cons (theme-name th) (theme-title th))) (theme-choices-for t)))
     (*claude-model* (mapcar (lambda (m) (cons m m))
                             (remove-duplicates (cons *claude-model* (copy-list *claude-models*)) :test #'equal)))
+    (*codex-model*
+     (let* ((models (mapcar (lambda (model)
+                              (let ((id (or (jget model "id") (jget model "model"))))
+                                (cons id (or (jget model "displayName") (jget model "model") id))))
+                            *codex-model-catalog*))
+            (configured (and *codex-model* (not (assoc *codex-model* models :test #'equal))
+                             (list (cons *codex-model* *codex-model*)))))
+       (append (list (cons nil "Codex default")) configured models)))
     (t (let ((kind (option-kind option)))
          (when (and (consp kind) (eq (first kind) :choice))
            (mapcar (lambda (v) (cons v (if v (string-capitalize (princ-to-string v)) "Not set")))
@@ -104,8 +118,11 @@ take effect the next time they are used.")
                                            (set-option-value option (car choice))
                                            (option-changed option))))))
            (values row (lambda ()
-                         (let ((i (position (option-value option) choices :key #'car :test #'equal)))
-                           (when i (quietly (adw:combo-row-set-selected row i))))))))
+                         (quietly
+                           (setf choices (option-choices option))
+                           (adw:combo-row-set-model row (gtk:string-list-new (mapcar #'cdr choices)))
+                           (let ((i (position (option-value option) choices :key #'car :test #'equal)))
+                             (when i (adw:combo-row-set-selected row i))))))))
         ((and (consp kind) (eq (first kind) :integer))
          (let ((row (adw:spin-row-new-with-range (float (or (second kind) 0) 1d0)
                                                  (float (or (third kind) 1000000) 1d0) 1d0)))
@@ -158,6 +175,11 @@ take effect the next time they are used.")
                       :on-activated (lambda (r) (declare (ignore r)) (call-command 'choose-theme))))))
 
 (defvar *settings-dialog* nil)
+(defvar *codex-model-setting-refresh* nil)
+
+(defun refresh-codex-model-setting ()
+  (when *codex-model-setting-refresh*
+    (funcall *codex-model-setting-refresh*)))
 
 (defun make-settings-dialog ()
   (let ((dialog (make-instance 'adw:preferences-dialog :title "Settings" :search-enabled t
@@ -178,6 +200,8 @@ take effect the next time they are used.")
             (dolist (option (sort (copy-list options) #'string< :key #'option-title))
               (multiple-value-bind (row refresh) (make-option-row option)
                 (funcall refresh)
+                (when (eq (option-name option) '*codex-model*)
+                  (setf *codex-model-setting-refresh* refresh))
                 (add-reset-button row option refresh)
                 (adw:preferences-group-add group row)))
             (adw:preferences-page-add page group)
@@ -190,8 +214,11 @@ take effect the next time they are used.")
 (define-command settings ()
   "Show the settings: every option, by category, searchable."
   ;; Built afresh each time, so it shows options defined since (in init.lisp, say).
+  (setf *codex-model-setting-refresh* nil)
   (setf *settings-dialog* (make-settings-dialog))
-  (adw:dialog-present *settings-dialog* (window-gtk-window *window*)))
+  (adw:dialog-present *settings-dialog* (window-gtk-window *window*))
+  (unless *codex-model-catalog*
+    (check-codex-status :force t :fetch-models t)))
 
 (define-command customize ()
   "Show the settings (as M-x customize does in Emacs)."

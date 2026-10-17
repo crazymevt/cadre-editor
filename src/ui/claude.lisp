@@ -9,6 +9,10 @@
 
 (in-package #:cadre-ui)
 
+(define-option *assistant-provider* :claude (member :claude :codex)
+  "The provider selected when Cadre starts: Claude or Codex."
+  :category "Assistant")
+
 (defparameter *claude-system-prompt*
   "You are working inside Cadre, a Common Lisp editor, through its MCP tools (mcp__cadre__…).
 The user's Lisp image is running and connected: ask it instead of guessing. Use describe_symbol,
@@ -120,13 +124,14 @@ of proposing every change for review. Open files reload when they change on disk
          (debugger (make-instance 'gtk:toggle-button :label "Debugger" :css-classes '("flat")
                                                      :tooltip-text "Attach the debugger's condition and backtrace"))
          (stack (make-instance 'gtk:stack :vexpand t))
-         (chat (make-chat :messages messages :scroller scroller :input input :send-button send :status status
+         (chat (make-chat :provider *assistant-provider* :messages messages :scroller scroller :input input :send-button send :status status
                           :provider-dropdown provider :model-dropdown models :mode-dropdown modes
                           :stack stack :context-file file :context-problems problems
                           :context-debugger debugger :session-id (make-uuid))))
     (setf *chat* chat
           (chat-message-boxes chat) (make-hash-table :test 'eq)
-          (gethash :claude (chat-message-boxes chat)) messages)
+          (gethash *assistant-provider* (chat-message-boxes chat)) messages)
+    (gtk:drop-down-set-selected provider (if (eq *assistant-provider* :codex) 1 0))
     (gobject:connect provider "notify::selected"
                      (lambda (d pspec) (declare (ignore pspec))
                        (assistant-provider-selected (if (= 1 (gtk:drop-down-get-selected d)) :codex :claude))))
@@ -154,7 +159,9 @@ of proposing every change for review. Open files reload when they change on disk
       (gtk:widget-add-controller input keys))
     (gtk:stack-add-named stack (claude-status-page) "status")
     (gtk:stack-add-named stack scroller "chat")
-    (show-claude-intro)
+    (if (eq *assistant-provider* :codex)
+        (progn (show-codex-intro) (refresh-assistant-model-dropdown :preserve nil))
+        (show-claude-intro))
     ;; The context chips and the message box; hidden while the selected provider isn't
     ;; ready, so the sign-in page has the room.
     (setf (chat-composer chat)

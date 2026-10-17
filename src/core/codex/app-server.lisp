@@ -10,6 +10,10 @@
   "The Codex CLI. Nil: `codex` on PATH, then the bundled ChatGPT app copy."
   :category "Codex")
 
+(define-option *codex-model* nil (or null string)
+  "The default Codex model ID. Nil uses the model Codex marks as its default."
+  :category "Codex")
+
 (defun find-codex-program ()
   "The Codex CLI executable, or nil."
   (if *codex-program*
