@@ -252,21 +252,25 @@
       (:table (page-table (rest block) styles))
       (:quote (page-blocks (rest block) (1+ level) (cons :quote styles)))
       (:list
-       (dolist (item (rest block))
-         (let* ((parts (rest item))
-                (label (and (consp (first parts)) (eq (first (first parts)) :label) (pop parts)))
-                (hang (margin-tag gtk-buffer (1+ level) :hang t)))
-           (if label
-               (page-inlines (rest label) (list hang :bold))
-               (page-insert (if (evenp level) "•" "◦") (list hang :marker)))
-           (page-insert "  " (list hang))
-           ;; The first paragraph goes beside the marker, the rest below it.
-           (if (and parts (eq (first (first parts)) :p))
-               (progn (page-inlines (rest (first parts)) (cons hang (rest styles)))
-                      (page-insert (format nil "~%") (list hang))
-                      (page-blocks-tight (rest parts) (1+ level) (rest styles)))
-               (progn (page-insert (format nil "~%") (list hang))
-                      (page-blocks-tight parts (1+ level) (rest styles)))))))
+       (loop for item in (rest block)
+             for first = t then nil
+             do (let* ((parts (rest item))
+                       (label (and (consp (first parts)) (eq (first (first parts)) :label) (pop parts)))
+                       (hang (margin-tag gtk-buffer (1+ level) :hang t)))
+                  ;; Give each labeled argument its own visual group.
+                  (when (and label (not first))
+                    (page-insert (format nil "~%") '(:gap)))
+                  (if label
+                      (page-inlines (rest label) (list hang :bold))
+                      (page-insert (if (evenp level) "•" "◦") (list hang :marker)))
+                  (page-insert "  " (list hang))
+                  ;; The first paragraph goes beside the marker, the rest below it.
+                  (if (and parts (eq (first (first parts)) :p))
+                      (progn (page-inlines (rest (first parts)) (cons hang (rest styles)))
+                             (page-insert (format nil "~%") (list hang))
+                             (page-blocks-tight (rest parts) (1+ level) (rest styles)))
+                      (progn (page-insert (format nil "~%") (list hang))
+                             (page-blocks-tight parts (1+ level) (rest styles)))))))
       (t ;; A kind of block this reader doesn't know: its text.
        (page-insert (format nil "~a~%" (inline-text (cons :x (remove-if-not #'stringp (rest block))))) styles)))))
 
