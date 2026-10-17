@@ -19,9 +19,11 @@
                                      (uiop:run-program '("/bin/sh" "-c" "command -v codex")
                                                        :output :string :error-output nil))))
               (and (plusp (length path)) path)))
-          (let ((path (merge-pathnames "Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
-                                        (user-homedir-pathname))))
-            (and (probe-file path) (namestring path))))))
+          (some (lambda (path)
+                  (and (probe-file path) (namestring path)))
+                (list #P"/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+                      (merge-pathnames "Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+                                       (user-homedir-pathname)))))))
 
 (defstruct (codex-status (:conc-name codex-status-))
   program version logged-in error)
@@ -267,7 +269,8 @@
 (defun codex-start-thread (server &key model instructions (sandbox "read-only"))
   "Initialize app-server and start a thread configured with Cadre's tools."
   (codex-request server "initialize"
-                 (jobj "clientInfo" (jobj "name" "cadre" "title" "Cadre" "version" "0.1")))
+                 (jobj "clientInfo" (jobj "name" "cadre" "title" "Cadre" "version" "0.1")
+                       "capabilities" (jobj "experimentalApi" t)))
   (codex-notify server "initialized")
   (let* ((result (codex-request server "thread/start"
                                 (jobj "cwd" (uiop:native-namestring (codex-directory server))

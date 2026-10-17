@@ -840,6 +840,9 @@
 
 (then-when ((chat-says "Fake Codex reply") :timeout 20)
   (check "Codex streams a reply through app-server" (chat-says "Fake Codex reply"))
+  (check "Codex renders Markdown after streaming completes"
+         (and (chat-says "Fake Codex reply") (not (chat-says "**Codex**")))
+         (chat-texts))
   (check "Codex can call a registered Cadre tool"
          (find-if (lambda (row) (search "current_context" (gtk:expander-get-label row)))
                   (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)

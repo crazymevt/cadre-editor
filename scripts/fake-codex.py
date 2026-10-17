@@ -115,7 +115,7 @@ def main():
             elif "You are in agent mode" in prompt:
                 reply = "Fake Codex agent mode"
             else:
-                reply = "Fake Codex reply"
+                reply = "Fake **Codex** reply"
             send(
                 {
                     "jsonrpc": "2.0",

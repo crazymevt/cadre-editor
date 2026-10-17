@@ -172,6 +172,11 @@
       (:protocol-error (chat-note (format nil "Codex protocol error: ~a" (codex-event-text event)) "error"))
       (:stderr (panel-log-raw (window-panel *window*) (format nil "codex: ~a" (codex-event-text event))))
       (:result
+       ;; Codex streams plain text deltas but does not send Claude's separate
+       ;; finalized :text event. Replace the streaming label with the shared
+       ;; Markdown rendering when the turn completes.
+       (when (chat-stream-box *chat*)
+         (chat-finish-text (chat-stream-text *chat*)))
        (setf (chat-busy *chat*) nil (chat-stream-box *chat*) nil)
        (when (codex-event-error event)
          (chat-note (or (codex-event-text event) "Codex turn failed") "error"))
