@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Codex CLI support.** Choose Claude Code or Codex in the Assistant
+  panel, with a separate conversation for each. Codex uses your existing
+  `codex login` sign-in, offers model selection and Chat / Agent modes,
+  streams replies with Markdown formatting, and receives the enabled File,
+  Problems and Debugger context. It can use Cadre's editor and Lisp tools:
+  edits appear as inline diffs to accept or reject, and evaluation,
+  compilation, loading and tests use Cadre's approval prompts. Stop cancels
+  pending tool approvals, and conversations follow the open project folder.
+
 ## 1.1.1
 
 Fixes, and a manual. The packages are named as in 1.1.0, with 1.1.1 for
