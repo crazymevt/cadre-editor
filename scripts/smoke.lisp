@@ -2615,8 +2615,12 @@ d" 0 0)
   (check "the Profiler's tab appears, to profile the app"
          (gtk:stack-page-get-visible (cadre-ui::panel-page (cadre-ui::window-panel *window*) "profiler"))))
 
-(defun gtk-title-form ()
-  "(let ((app (gio:application-get-default))) (and app (gtk:application-get-active-window app) (gtk:window-get-title (gtk:application-get-active-window app))))")
+(defun gtk-title-form (&optional marker)
+  (if marker
+      (format nil
+              "(let* ((app cl-user::*cadre-run-gtk-application*) (window (and app (gtk:application-get-active-window app)))) (format nil ~s (and window (gtk:window-get-title window))))"
+              (concatenate 'string marker ":~a"))
+      "(let ((app cl-user::*cadre-run-gtk-application*)) (and app (gtk:application-get-active-window app) (gtk:window-get-title (gtk:application-get-active-window app))))"))
 
 (then 3000
   (cadre-ui::repl-eval (gtk-title-form)))
@@ -2661,18 +2665,59 @@ d" 0 0)
 (section "run-app" :needs ("gtk-app"))
 
 (defun run-button () (gethash :run-button cadre-ui::*named-widgets*))
+(defvar *run-app-window-seen* nil)
 
 (then 300
+  (setf *run-app-window-seen* nil)
   (check "▶ is shown for a project with an :entry-point" (gtk:widget-get-visible (run-button)))
   (call-command 'cadre-ui::run-app))
 
 (then-when ((cadre-ui::gtk-app-running-p) :timeout 30)
   (check "▶ runs a gtk4 app as Run GTK App does" (cadre-ui::gtk-app-running-p))
   (check "and becomes a stop button" (equal "Stop the app" (gtk:widget-get-tooltip-text (run-button))))
-  (call-command 'cadre-ui::stop-app))
+  ;; Match the user's red close button: closing the last window should end the
+  ;; application, and the Run button should start a fresh application instance.
+  (cadre-ui::repl-eval (gtk-title-form "run-app-first")))
+
+(then-when ((search "run-app-first:smoke-gtk" (repl-output-text)) :timeout 30)
+  (if (search "run-app-first:smoke-gtk" (repl-output-text))
+      (progn
+        (setf *run-app-window-seen* t)
+        (cadre-ui::repl-eval
+         "(format nil \"run-app-front:~a\" (gtk:window-is-active (gtk:application-get-active-window cl-user::*cadre-run-gtk-application*)))"))
+      (progn
+        (check "Run App opens the GTK window before close testing" nil (repl-output-text))
+        (call-command 'cadre-ui::stop-app))))
+
+(then-when ((search "run-app-front:" (repl-output-text)) :timeout 10)
+  (let ((output (repl-output-text)))
+    (check "Run App brings the GTK window in front of Cadre"
+           (search "run-app-front:T" output)
+           output)
+    (cadre-ui::repl-eval
+     "(gtk:window-close (gtk:application-get-active-window cl-user::*cadre-run-gtk-application*))")))
 
 (then-when ((not (cadre-ui::gtk-app-running-p)) :timeout 30)
-  (check "Stop App quits it" (not (cadre-ui::gtk-app-running-p)))
+  (when *run-app-window-seen*
+    (check "closing the GTK window ends the app" (not (cadre-ui::gtk-app-running-p)))
+    (call-command 'cadre-ui::run-app)))
+
+(then-when ((cadre-ui::gtk-app-running-p) :timeout 30)
+  (when *run-app-window-seen*
+    (check "▶ starts the GTK app again after its window closes" (cadre-ui::gtk-app-running-p))
+    (cadre-ui::repl-eval (gtk-title-form "run-app-restart"))))
+
+(then-when ((search "run-app-restart:smoke-gtk" (repl-output-text)) :timeout 30)
+  (if (search "run-app-restart:smoke-gtk" (repl-output-text))
+      (progn
+        (check "the restarted GTK app opens a fresh window" t)
+        (call-command 'cadre-ui::stop-app))
+      (progn
+        (check "the restarted GTK app opens a fresh window" nil (repl-output-text))
+        (when (cadre-ui::gtk-app-running-p) (call-command 'cadre-ui::stop-app)))))
+
+(then-when ((not (cadre-ui::gtk-app-running-p)) :timeout 30)
+  (check "Stop App quits the restarted GTK app" (not (cadre-ui::gtk-app-running-p)))
   (cadre-ui::make-new-project *new-parent* "smoke-cli" :kind :application :tests :parachute :license nil))
 
 (then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-cli/" *new-parent*))))

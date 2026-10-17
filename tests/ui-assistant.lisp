@@ -3,6 +3,18 @@
 
 (define-test assistants)
 
+(define-test gtk-launch-form-evaluates-entry :parent assistants
+  (let ((source (ui::gtk-app-launch-form #P"/tmp/" "ai-bible" "ai-bible:main")))
+    ;; The hook stays quoted until gtk4 has loaded, then must be evaluated so
+    ;; that the entry point actually runs.
+    (true (search "(eval (read-from-string" source))
+    (true (search "APPLICATION-RUN" source))
+    (true (search ":window-added" source))
+    (true (search "(gtk:window-present window)" source))
+    (true (search "(apply original-run application arguments)" source))
+    (false (search "(apply original application arguments)" source))
+    (true (ignore-errors (read-from-string source)))))
+
 (defmacro with-assistant-functions (bindings &body body)
   (let ((originals (gensym "ORIGINALS")))
     `(sb-ext:with-unlocked-packages (:sb-thread)

@@ -651,6 +651,8 @@ Over lines.\"
       (false (search ":build-operation" asd))
       (true (search "org.example.my_gui" main))
       (true (search "gio:application-run" main))
+      (true (search ":window-removed" main))
+      (true (search "gio:application-quit" main))
       (true (search "gtk4:save-executable" makefile))
       (true (search (format nil "~%dev:~%") makefile))
       (true (search "Run GTK App" (cdr (assoc "README.md" files :test #'string=))))))

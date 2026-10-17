@@ -130,6 +130,11 @@ keywords and strings."
                "  \"Run the application; returns when its last window closes. On macOS it"
                "must run on the first thread: in Cadre, use Run GTK App.\""
                "  (let ((app (gtk:application-new \"{{app-id}}\" '(:default-flags))))"
+               "    (gobject:connect app :window-removed"
+               "                     (lambda (application window)"
+               "                       (declare (ignore window))"
+               "                       (when (null (gtk:application-get-windows application))"
+               "                         (gio:application-quit application))))"
                "    (gobject:connect app :activate 'activate)"
                "    (gio:application-run app nil)))"))))))
 

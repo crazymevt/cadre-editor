@@ -82,6 +82,13 @@
 (defun repl-text ()
   (buffer-string (cadre-ui::repl-buffer cadre-ui::*repl*)))
 
+(defun repl-output-text ()
+  (let ((gtk-buffer (cadre-ui::repl-gtk-buffer)))
+    (gtk:text-buffer-get-text gtk-buffer
+                              (gtk:text-buffer-get-start-iter gtk-buffer)
+                              (cadre-ui::mark-iter (cadre-ui::repl-output-mark cadre-ui::*repl*))
+                              t)))
+
 (defun tab-titles ()
   (mapcar #'adw:tab-page-get-title (cadre-ui::window-pages *window*)))
 

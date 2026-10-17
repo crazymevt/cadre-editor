@@ -24,6 +24,93 @@
 
 (defparameter *gtk-app-ended-marker* ";; cadre: GTK app ended")
 
+(defparameter *gtk-close-watch-form*
+  "(let* ((application-new (find-symbol \"APPLICATION-NEW\" \"GTK\"))
+          (original-new (symbol-function application-new))
+          (application-run (find-symbol \"APPLICATION-RUN\" \"GIO\"))
+          (original-run (symbol-function application-run)))
+     (unwind-protect
+          (progn
+            (setf (symbol-function application-new)
+                  (lambda (&rest arguments)
+                    (let ((application (apply original-new arguments)))
+                      (gio:application-set-flags
+                       application
+                       (adjoin :non-unique (gio:application-get-flags application)))
+                      (setf (symbol-value (intern \"*CADRE-RUN-GTK-APPLICATION*\" \"CL-USER\"))
+                            application)
+                      application)))
+            (setf (symbol-function application-run)
+                  (lambda (application &rest arguments)
+                    (setf (symbol-value (intern \"*CADRE-RUN-GTK-APPLICATION*\" \"CL-USER\"))
+                          application)
+                    ;; Each editor run needs its own local application instance.
+                    ;; Set this before GApplication registers the app ID.
+                    (gio:application-set-flags
+                     application
+                     (adjoin :non-unique (gio:application-get-flags application)))
+                    (when (typep application 'gtk:application)
+                      ;; Project activation handlers usually present their window
+                      ;; while GApplication is still activating. Present it once
+                      ;; more on the next GTK turn so it comes in front of Cadre.
+                      (gobject:connect
+                       application :window-added
+                       (lambda (added-application window)
+                         (declare (ignore added-application))
+                         (glib:idle-add
+                          glib:+priority-default+
+                          (lambda ()
+                            (when (gtk:widget-get-visible window)
+                              (gtk:window-present window)
+                              ;; Activate this GTK process after presenting
+                              ;; the window so macOS brings it in front.
+                              (when (member :darwin *features*)
+                                (ignore-errors
+                                  (flet ((sel (name)
+                                           (cffi:foreign-funcall \"sel_registerName\"
+                                                                 :string name :pointer)))
+                                    (let ((app
+                                            (cffi:foreign-funcall
+                                             \"objc_msgSend\" :pointer
+                                             (cffi:foreign-funcall \"objc_getClass\"
+                                                                   :string \"NSApplication\" :pointer)
+                                             :pointer (sel \"sharedApplication\") :pointer)))
+                                      (unless (cffi:null-pointer-p app)
+                                        (cffi:foreign-funcall
+                                         \"objc_msgSend\" :pointer app :pointer
+                                         (sel \"activateIgnoringOtherApps:\")
+                                         :boolean t :void)))))))
+                            nil))))
+                      (gobject:connect
+                       application :window-removed
+                       (lambda (removed-application removed-window)
+                         (declare (ignore removed-window))
+                         (when (null (gtk:application-get-windows removed-application))
+                           (gio:application-quit removed-application)))))
+                    (apply original-run application arguments)))
+            (if (find-package \"QL\")
+                (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a)
+                (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a))
+            (let ((handler (find-symbol \"*CALLBACK-ERROR-HANDLER*\" \"GTK4.RUNTIME\")))
+              (when handler
+                (setf (symbol-value handler)
+                      (lambda (condition where)
+                        (with-simple-restart (abort \"Return from the GTK callback (~~a)\" where)
+                          (invoke-debugger condition))))))
+            (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\")))
+              (when drain (ignore-errors (funcall drain))))
+            (funcall (read-from-string ~a)))
+       (setf (symbol-function application-new) original-new)
+       (setf (symbol-function application-run) original-run)
+       (let ((application-var (find-symbol \"*CADRE-RUN-GTK-APPLICATION*\" \"CL-USER\")))
+         (when application-var (setf (symbol-value application-var) nil)))
+       (let ((clear (find-symbol \"APPLICATION-SET-DEFAULT\" \"GIO\")))
+         (when clear (ignore-errors (funcall clear nil))))
+       (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\")))
+         (when drain (loop repeat 15 do (ignore-errors (funcall drain)) (sleep 0.02))))
+       (format t \"~~&~a~~%\")
+       (finish-output)))")
+
 (defun gtk-app-running-p () (and *gtk-app* (getf *gtk-app* :running)))
 
 (defun gtk-thread-evaluation-p ()
@@ -65,11 +152,13 @@ events, so events pending when the app ends (clicks on a window that just
 closed) are handled before it stops, and any that arrive meanwhile are
 handled, with no windows to reach, before the next run starts: else the
 next run's new window would get them."
-  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (if (find-package \"QL\") (funcall (find-symbol \"QUICKLOAD\" \"QL\") ~a) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") ~a)) (let ((handler (find-symbol \"*CALLBACK-ERROR-HANDLER*\" \"GTK4.RUNTIME\"))) (when handler (setf (symbol-value handler) (lambda (condition where) (with-simple-restart (abort \"Return from the GTK callback (~~a)\" where) (invoke-debugger condition)))))) (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\"))) (when drain (ignore-errors (funcall drain))) (unwind-protect (funcall (read-from-string ~a)) (let ((clear (find-symbol \"APPLICATION-SET-DEFAULT\" \"GIO\"))) (when clear (ignore-errors (funcall clear nil)))) (when drain (loop repeat 15 do (ignore-errors (funcall drain)) (sleep 0.02))) (format t \"~~&~a~~%\") (finish-output))))"
+  (format nil "(progn (require \"ASDF\") (pushnew ~a (symbol-value (find-symbol \"*CENTRAL-REGISTRY*\" \"ASDF\")) :test (function equal)) (funcall (find-symbol \"LOAD-SYSTEM\" \"ASDF\") \"gtk4\") (eval (read-from-string ~a)))"
           (cadre::lisp-string (uiop:native-namestring root))
-          (cadre::lisp-string system) (cadre::lisp-string system)
-          (cadre::lisp-string entry)
-          *gtk-app-ended-marker*))
+          (cadre::lisp-string
+           (format nil *gtk-close-watch-form*
+                   (cadre::lisp-string system) (cadre::lisp-string system)
+                   (cadre::lisp-string entry)
+                   *gtk-app-ended-marker*))))
 
 (defun gtk-app-output (line)
   "See each line the started Lisp prints: notice when the GTK app ends."
@@ -142,7 +231,7 @@ debugger."
   (with-connection (connection)
     (rex connection
          (swank-call "swank:interactive-eval"
-                     "(glib:in-main-thread () (let ((app (gio:application-get-default))) (when app (gio:application-quit app))))"
+                     "(glib:in-main-thread () (let ((app (or (and (boundp 'cl-user::*cadre-run-gtk-application*) cl-user::*cadre-run-gtk-application*) (gio:application-get-default)))) (when app (gio:application-quit app))))"
                      3 120)
          :on-ok (lambda (v) (declare (ignore v)) (message "Quitting the GTK app…")))))
 
