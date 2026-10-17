@@ -80,7 +80,7 @@ of proposing every change for review. Open files reload when they change on disk
   (pending-approvals '())               ; functions that deny the waiting approvals
   (directory nil)                       ; the folder the conversation runs in (Claude Code keeps it there)
   (pending-directory nil)               ; a folder opened while Claude was replying, to move to after
-  codex-process codex-thread-id codex-directory)
+  codex-process codex-thread-id codex-directory (codex-turn-generation 0))
 
 (defvar *chat* nil)
 
@@ -543,13 +543,14 @@ and links, nested as Markdown nests them (bold around code, say)."
 the next message restarts Claude Code with that mode's tools and model."
   (unless (eq mode (chat-mode *chat*))
     (setf (chat-mode *chat*) mode)
-    (let ((i (position (if (eq mode :agent) *claude-agent-model* *claude-model*) *claude-models* :test #'string=)))
-      (when i (gtk:drop-down-set-selected (chat-model-dropdown *chat*) i)))
+    (when (eq (chat-provider *chat*) :claude)
+      (let ((i (position (if (eq mode :agent) *claude-agent-model* *claude-model*) *claude-models* :test #'string=)))
+        (when i (gtk:drop-down-set-selected (chat-model-dropdown *chat*) i))))
     (unless (= (gtk:drop-down-get-selected (chat-mode-dropdown *chat*)) (if (eq mode :agent) 1 0))
       (gtk:drop-down-set-selected (chat-mode-dropdown *chat*) (if (eq mode :agent) 1 0)))
     (chat-update-status)
     (chat-note (if (eq mode :agent)
-                   "Agent mode: Claude works through the task, planning, editing, compiling and testing. Each edit, evaluation, compile and test run still asks you first."
+                   "Agent mode: The assistant works through the task, planning, editing, compiling and testing. Each edit, evaluation, compile and test run still asks you first."
                    "Chat mode."))))
 
 (defun todo-mark (status)
@@ -604,7 +605,9 @@ the next message restarts Claude Code with that mode's tools and model."
     (when entry
       (gtk:label-set-text (cdr entry) (if (> (length text) 4000) (concatenate 'string (subseq text 0 4000) "…") text))
       (when error
-        (set-tool-row-label (car entry) (format nil "~a — failed" (gtk:expander-get-label (car entry))))))))
+        (let* ((title (gtk:expander-get-label-widget (car entry)))
+               (label (gtk:label-get-text title)))
+          (set-tool-row-label (car entry) (format nil "~a — failed" label)))))))
 
 (defun chat-thinking (text)
   "Show TEXT, Claude's thinking, folded under a row whose title starts it.
@@ -829,20 +832,59 @@ started in the other mode is replaced, resuming the same conversation."
                                   nil)))))
 
 (defun claude-follow-folder (directory)
-  "Move the active assistant conversation to DIRECTORY when its turn ends."
-  (let* ((codex (and *chat* (eq (chat-provider *chat*) :codex)))
-         (started (and *chat* (if codex (chat-codex-thread-id *chat*) (chat-started *chat*))))
-         (current (and *chat* (if codex (chat-codex-directory *chat*) (chat-directory *chat*)))))
-   (when (and *chat* started current
-             (not (equal (namestring (uiop:ensure-directory-pathname directory))
-                         (namestring (uiop:ensure-directory-pathname current)))))
-    (if (chat-busy *chat*)
-        (setf (chat-pending-directory *chat*) directory)
-        (let ((old current))
-          (claude-new-chat)
-          (chat-note (format nil "~a now works in ~a, the folder you opened: this is a new conversation there. The one in ~a remains in its CLI history for that folder."
-                             (if codex "Codex" "Claude")
-                             (uiop:native-namestring directory) (uiop:native-namestring old))))))))
+  "Move both assistant conversations to DIRECTORY when the active turn ends."
+  (when *chat*
+    (let* ((active (chat-provider *chat*))
+           (target (namestring (uiop:ensure-directory-pathname directory)))
+           (changed '()))
+      (dolist (provider '(:claude :codex))
+        (let* ((started (if (eq provider :codex)
+                            (chat-codex-thread-id *chat*)
+                            (chat-started *chat*)))
+               (current (if (eq provider :codex)
+                            (chat-codex-directory *chat*)
+                            (chat-directory *chat*))))
+          (when (and started current
+                     (not (equal target
+                                 (namestring (uiop:ensure-directory-pathname current)))))
+            (push (cons provider current) changed))))
+      (when changed
+        (if (chat-busy *chat*)
+            (setf (chat-pending-directory *chat*) directory)
+            (progn
+              ;; Approvals are currently shared by both providers. Any reset
+              ;; starts a new conversation, including an inactive provider.
+              (deny-pending-approvals)
+              (clrhash *session-allowed*)
+              (dolist (entry changed)
+                (let ((provider (car entry)))
+                  (if (eq provider active)
+                      (claude-new-chat)
+                      (progn
+                        (if (eq provider :codex)
+                            (progn
+                              (when (chat-codex-process *chat*)
+                                (stop-codex-app-server (chat-codex-process *chat*)))
+                              (setf (chat-codex-process *chat*) nil
+                                    (chat-codex-thread-id *chat*) nil
+                                    (chat-codex-directory *chat*) nil))
+                            (progn
+                              (when (chat-process *chat*) (stop-claude (chat-process *chat*)))
+                              (setf (chat-process *chat*) nil (chat-started *chat*) nil
+                                    (chat-session-id *chat*) (make-uuid)
+                                    (chat-directory *chat*) nil)))
+                        ;; Drop the inactive provider's old transcript so its
+                        ;; next selection starts with a fresh intro in the new folder.
+                        (setf (gethash provider (chat-message-boxes *chat*)) nil)))))
+              (let* ((entries (nreverse changed))
+                     (names (mapcar (lambda (entry) (if (eq (car entry) :codex) "Codex" "Claude")) entries)))
+                (chat-note
+                 (if (= (length entries) 1)
+                     (format nil "~a now works in ~a, the folder you opened: this is a new conversation there. The one in ~a remains in its CLI history for that folder."
+                             (first names) (uiop:native-namestring directory)
+                             (uiop:native-namestring (cdar entries)))
+                     (format nil "~{~a~^ and ~} now work in ~a, the folder you opened. Each conversation in the previous folder remains in its CLI history."
+                             names (uiop:native-namestring directory)))))))))))
 
 (defun claude-reply-ended ()
   "Move to a folder opened while Claude was replying."

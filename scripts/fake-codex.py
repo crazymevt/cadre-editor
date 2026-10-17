@@ -2,6 +2,7 @@
 """Deterministic Codex CLI and app-server peer for Cadre's smoke suite."""
 
 import json
+import subprocess
 import sys
 
 
@@ -33,6 +34,7 @@ def main():
         raise SystemExit(2)
 
     thread_id = "fake-codex-thread"
+    turn_number = 0
     while True:
         message = read_message()
         if message is None:
@@ -42,6 +44,20 @@ def main():
             respond(message, {"protocolVersion": "2025-06-18", "capabilities": {}})
         elif method == "initialized":
             continue
+        elif method == "test/hang":
+            # Used by the Lisp unit test to prove a missing response times out.
+            continue
+        elif method == "test/unicode":
+            respond(message, message.get("params", {}).get("text", ""))
+        elif method == "test/exit-with-inherited-stderr":
+            # Keep only stderr inherited after this peer exits.
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(10)"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+            )
+            respond(message, child.pid)
+            return
         elif method == "model/list":
             respond(
                 message,
@@ -70,8 +86,16 @@ def main():
             respond(message, {"thread": {"id": thread_id}})
         elif method == "turn/start":
             params = message.get("params", {})
-            turn_id = "fake-codex-turn"
+            turn_number += 1
+            turn_id = f"fake-codex-turn-{turn_number}"
             respond(message, {"turn": {"id": turn_id, "status": "inProgress"}})
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "turn/started",
+                    "params": {"threadId": thread_id, "turn": {"id": turn_id}},
+                }
+            )
 
             prompt = "\n".join(item.get("text", "") for item in params.get("input", []))
             if "trigger fake failure" in prompt:

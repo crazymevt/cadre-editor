@@ -194,8 +194,9 @@
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-tests)))
 
 (defsystem "cadre/ui-tests"
-  :description "Save and close regression tests; loads the UI without opening a window."
+  :description "UI regression tests; loads the UI without opening a window."
   :depends-on ("cadre" "parachute")
   :pathname "tests/"
-  :components ((:file "ui-saves"))
+  :components ((:file "ui-saves")
+               (:file "ui-assistant" :depends-on ("ui-saves")))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-ui-tests)))

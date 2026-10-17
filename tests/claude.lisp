@@ -62,6 +62,71 @@
     (is string= "Visible" (c:jget (first models) "displayName"))
     (is string= "medium" (c:jget (first models) "defaultReasoningEffort"))))
 
+(define-test codex-login-and-utf8 :parent cadre-tests
+  (true (c::codex-login-output-logged-in-p "Logged in using ChatGPT"))
+  (false (c::codex-login-output-logged-in-p "Not logged in"))
+  (false (c::codex-login-output-logged-in-p "Authentication required; not authenticated"))
+  (let ((c:*codex-program* (namestring (truename "scripts/fake-codex"))))
+    (let ((status (c:check-codex)))
+      (true (c:codex-status-logged-in status))
+      (true (search "0.0.0-fake" (c:codex-status-version status))))))
+
+(define-test codex-unicode-streams :parent cadre-tests
+  (let ((server (c:start-codex-app-server (namestring (truename "scripts/fake-codex.py"))
+                                          (truename "."))))
+    (unwind-protect
+         (progn
+           (c::codex-initialize-app-server server)
+           (is string= (format nil "Café ~a λ" (code-char #x1F680))
+               (c::codex-request server "test/unicode"
+                                 (c:jobj "text" (format nil "Café ~a λ" (code-char #x1F680))))))
+      (c:stop-codex-app-server server))))
+
+(define-test codex-exit-with-inherited-stderr :parent cadre-tests
+  (let* ((exited (sb-thread:make-semaphore))
+         (exit-code nil)
+         (child-pid nil)
+         (server (c:start-codex-app-server
+                  (namestring (truename "scripts/fake-codex.py")) (truename ".")
+                  :on-exit (lambda (code)
+                             (setf exit-code code)
+                             (sb-thread:signal-semaphore exited)))))
+    (unwind-protect
+         (progn
+           (setf child-pid (c::codex-request server "test/exit-with-inherited-stderr"))
+           (true (sb-thread:wait-on-semaphore exited :timeout 3))
+           (is eql 0 exit-code)
+           (sb-thread:join-thread (c::codex-stdout-thread server) :timeout 3 :default nil)
+           (false (sb-thread:thread-alive-p (c::codex-stdout-thread server)))
+           (false (sb-thread:thread-alive-p (c::codex-stderr-thread server)))
+           (false (open-stream-p (sb-ext:process-error (c::codex-process server))))
+           (false (open-stream-p (sb-ext:process-output (c::codex-process server)))))
+      (when child-pid (ignore-errors (sb-posix:kill child-pid 15)))
+      (c:stop-codex-app-server server))))
+
+(define-test codex-activity-completion :parent cadre-tests
+  (let* ((events '())
+         (server (c::make-codex-app-server :deliver #'funcall :on-event (lambda (event) (push event events)))))
+    (c::codex-handle-notification
+     server (c:parse-json
+             "{\"method\":\"item/completed\",\"params\":{\"threadId\":\"t1\",\"turnId\":\"u1\",\"item\":{\"id\":\"i1\",\"type\":\"commandExecution\",\"status\":\"failed\",\"exitCode\":1}}}"))
+    (let ((event (first events)))
+      (is eq :activity-completed (c:codex-event-kind event))
+      (is string= "i1" (c:codex-event-id event))
+      (true (c:codex-event-error event))
+      (is string= "u1" (c:codex-event-turn-id event)))))
+
+(define-test codex-request-timeout :parent cadre-tests
+  (let ((now #x10000000))
+    (is eql (+ now (round (* 0.1 c::internal-time-units-per-second)))
+        (c::codex-request-deadline 0.1 now)))
+  (let ((server (c:start-codex-app-server (namestring (truename "scripts/fake-codex.py"))
+                                          (truename "."))))
+    (unwind-protect
+         (let ((c::*codex-request-timeout* 0.1))
+           (fail (c::codex-request server "test/hang") 'error))
+      (c:stop-codex-app-server server))))
+
 (c:define-mcp-tool "test_echo" (args)
   "Echo the text."
   (("text" "string" "What to echo" :required t))

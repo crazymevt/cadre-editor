@@ -4,6 +4,7 @@
 
 (defvar *codex-status* nil)
 (defvar *codex-checking* nil)
+(defvar *codex-recheck-requested* nil)
 (defvar *codex-when-checked* '())
 (defvar *codex-model-catalog* '())
 
@@ -23,10 +24,14 @@
   "Check Codex CLI availability and saved-login status off the GTK thread."
   (when *codex-checking*
     (when then (setf *codex-when-checked* (append *codex-when-checked* (list then))))
+    (when (or force (and *chat* (eq (chat-provider *chat*) :codex)
+                         (null *codex-model-catalog*)))
+      (setf *codex-recheck-requested* t))
     (return-from check-codex-status))
   (when (or force (null *codex-status*))
     (setf *codex-checking* t
-          *codex-when-checked* (if then (list then) '()))
+          *codex-recheck-requested* nil)
+    (when then (setf *codex-when-checked* (append *codex-when-checked* (list then))))
     (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
     (let ((directory (or (and *window* (window-project *window*)) (user-homedir-pathname)))
           (deliver-models (and *chat* (eq (chat-provider *chat*) :codex))))
@@ -43,10 +48,22 @@
                 (setf *codex-model-catalog* models)
                 (refresh-assistant-model-dropdown :preserve (not (null had-models)))))
             (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
-            (let ((pending *codex-when-checked*))
-              (setf *codex-when-checked* '())
-              (when (codex-ready-p) (mapc #'funcall pending)))))))
-     :name "check Codex CLI")))
+            ;; A provider switch may have happened after this worker decided
+            ;; whether to load models. Retry once with the current selection;
+            ;; a failed model fetch itself must not cause an endless retry.
+            (let ((recheck (or *codex-recheck-requested*
+                               (and (not deliver-models) (codex-ready-p)
+                                    *chat* (eq (chat-provider *chat*) :codex)
+                                    (null *codex-model-catalog*)))))
+              (setf *codex-recheck-requested* nil)
+              (if recheck
+                  (check-codex-status :force t)
+                  (let ((pending *codex-when-checked*))
+                    (setf *codex-when-checked* '())
+                    (when (codex-ready-p) (mapc #'funcall pending)))))))))
+     :name "check Codex CLI"))
+    ;; A queued continuation runs only after the asynchronous check finishes.
+    (return-from check-codex-status))
   (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
   (when (and then (codex-ready-p)) (funcall then)))
 
@@ -160,13 +177,19 @@
                               :label (format nil "Ask Codex about your code. It can use Cadre's editor and Lisp tools, and propose edits for review.~%~%Return sends; Shift+Return starts a new line."))))
 
 (defun handle-codex-chat-event (server event)
-  (when (and *chat* (eq server (chat-codex-process *chat*)))
+  (when (and *chat* (eq server (chat-codex-process *chat*))
+             (or (null (codex-event-turn-id event))
+                 (null (codex-turn-id server))
+                 (equal (codex-event-turn-id event) (codex-turn-id server))))
     (case (codex-event-kind event)
       (:thread-started (setf (chat-codex-thread-id *chat*) (codex-event-thread-id event)))
       (:text-delta (chat-append-delta (codex-event-text event)))
       (:tool-start (chat-tool-row (codex-event-id event) (codex-event-name event) (codex-event-input event)))
       (:tool-result (chat-tool-result (codex-event-id event) (codex-event-text event) (codex-event-error event)))
       (:activity (chat-tool-row (codex-event-id event) (codex-event-name event) (codex-event-data event)))
+      (:activity-completed (chat-tool-result (codex-event-id event)
+                                             (json-string (codex-event-data event))
+                                             (codex-event-error event)))
       (:permission-denied
        (chat-note "Codex requested a direct file or shell action. Cadre denied it; use the Cadre tools so edits remain reviewable."))
       (:protocol-error (chat-note (format nil "Codex protocol error: ~a" (codex-event-text event)) "error"))
@@ -190,20 +213,33 @@
       (setf (chat-busy *chat*) nil)
       (unless (codex-stopped server)
         (chat-note (format nil "Codex app-server exited (status ~a). See Output for its messages." code) "error")))
+    (claude-reply-ended)
     (chat-update-status)))
 
 (defun codex-chat-stop ()
   "Interrupt Codex, then terminate its process if it does not finish promptly."
-  (let ((server (and *chat* (chat-codex-process *chat*))))
+  (let* ((server (and *chat* (chat-codex-process *chat*)))
+         (thread-id (and server (codex-thread-id server)))
+         (turn-id (and server (codex-turn-id server)))
+         (generation (and *chat* (chat-codex-turn-generation *chat*))))
     (when server
-      (sb-thread:make-thread (lambda () (ignore-errors (codex-interrupt server))) :name "interrupt Codex")
+      (codex-cancel-tools server)
+      (deny-pending-approvals)
+      ;; Capture the target before scheduling: this worker may run after a
+      ;; subsequent send has changed the server's active turn.
+      (sb-thread:make-thread
+       (lambda () (ignore-errors (codex-interrupt server :thread-id thread-id :turn-id turn-id)))
+       :name "interrupt Codex")
       (glib:timeout-add-seconds
        glib:+priority-default+ 3
        (lambda ()
-         (when (and *chat* (chat-busy *chat*) (eq server (chat-codex-process *chat*)))
+         (when (and *chat* (chat-busy *chat*) (eq (chat-provider *chat*) :codex)
+                    (eq server (chat-codex-process *chat*))
+                    (= generation (chat-codex-turn-generation *chat*)))
            (stop-codex-app-server server)
            (setf (chat-busy *chat*) nil)
            (chat-note "Stopped.")
+           (claude-reply-ended)
            (chat-update-status))
          nil)))))
 
@@ -221,21 +257,30 @@
               (chat-codex-process *chat*) server)
         server)))
 
-(defun codex-send-worker (server text model effort mode)
+(defun codex-send-worker (server text model effort mode &optional (tool-token (cadre::codex-tool-token server)))
   (handler-case
       (progn
         (unless (codex-thread-id server)
-          (let ((thread-id (or (and (chat-codex-thread-id *chat*)
-                                    (codex-resume-thread server (chat-codex-thread-id *chat*)
-                                                         :instructions *codex-system-prompt*))
-                               (codex-start-thread server :model model :instructions *codex-system-prompt*))))
+          (let* ((saved-thread-id (chat-codex-thread-id *chat*))
+                 (resumed (when saved-thread-id
+                            (handler-case
+                                (codex-resume-thread server saved-thread-id
+                                                     :instructions *codex-system-prompt*)
+                              (error (e)
+                                (deliver-to-gui
+                                 (lambda ()
+                                   (when (and *chat* (eq server (chat-codex-process *chat*)))
+                                     (chat-note (format nil "Could not resume the saved Codex conversation (~a). Starting a new conversation." e)))))
+                                nil))))
+                 (thread-id (or resumed
+                                (codex-start-thread server :model model :instructions *codex-system-prompt*))))
             (setf (chat-codex-thread-id *chat*) thread-id)))
         (codex-start-turn server
                           (format nil "<cadre-mode-instructions>~%~a~%</cadre-mode-instructions>~%~%~a"
                                   (if (eq mode :agent) *codex-agent-prompt*
                                       "Answer the user's question directly. Use Cadre tools when editor context or live Lisp state would help.")
                                   text)
-                          :model model :effort effort))
+                          :model model :effort effort :tool-token tool-token))
     (error (e)
       (deliver-to-gui
        (lambda ()
@@ -243,6 +288,7 @@
            (setf (chat-busy *chat*) nil)
            (unless (codex-stopped server)
              (chat-note (format nil "Could not start Codex: ~a" e) "error"))
+           (claude-reply-ended)
            (chat-update-status)))))))
 
 (defun send-to-codex (text &key shown)
@@ -251,15 +297,17 @@
     (chat-append (gtk:build
                    (gtk:box :halign :end :css-classes '("cadre-chat-user")
                      (gtk:label :label (or shown text) :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char))))
+    (incf (chat-codex-turn-generation *chat*))
     (setf (chat-busy *chat*) t)
     (chat-update-status)
     (handler-case
         (multiple-value-bind (model effort) (selected-codex-model)
           (let* ((server (codex-process-for-chat))
+               (tool-token (codex-prepare-tools server))
                (prompt (if (plusp (length context))
                            (format nil "<editor-context>~%~a</editor-context>~%~%~a" context text)
                            text)))
-            (sb-thread:make-thread (lambda () (codex-send-worker server prompt model effort (chat-mode *chat*)))
+            (sb-thread:make-thread (lambda () (codex-send-worker server prompt model effort (chat-mode *chat*) tool-token))
                                    :name "Codex turn")))
       (error (e)
         (setf (chat-busy *chat*) nil)

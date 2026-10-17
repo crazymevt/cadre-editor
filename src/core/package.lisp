@@ -203,7 +203,7 @@
    #:codex-event #:codex-event-kind #:codex-event-text #:codex-event-name #:codex-event-id
    #:codex-event-input #:codex-event-error #:codex-event-thread-id #:codex-event-turn-id
    #:codex-event-data #:codex-app-server #:codex-thread-id #:codex-turn-id
-   #:codex-stopped
+   #:codex-stopped #:codex-cancel-tools #:codex-prepare-tools #:*tool-call-active-p* #:ensure-tool-call-active
    #:start-codex-app-server #:codex-start-thread #:codex-resume-thread #:codex-start-turn #:codex-interrupt
    #:codex-alive-p #:stop-codex-app-server
    ;; Cadre's own files, and an app's environment

@@ -18,16 +18,34 @@
 
 (defmacro on-main (&body body)
   "Run BODY on the GTK thread and return its values."
-  `(glib:call-in-main-thread (lambda () ,@body) :wait t))
+  (let ((active (gensym "ACTIVE")))
+    `(let ((,active *tool-call-active-p*))
+       (glib:call-in-main-thread
+        (lambda ()
+          (let ((*tool-call-active-p* ,active))
+            (ensure-tool-call-active)
+            ,@body))
+        :wait t))))
 
 (defun wait-for (setup &key (timeout nil))
   "Call SETUP on the main thread with a function that takes the result;
 wait for that result here."
-  (let ((semaphore (sb-thread:make-semaphore)) (result nil))
+  (let ((semaphore (sb-thread:make-semaphore)) (result nil)
+        (failure nil) (active *tool-call-active-p*))
     (glib:call-in-main-thread
-     (lambda () (funcall setup (lambda (value) (setf result value) (sb-thread:signal-semaphore semaphore)))))
+     (lambda ()
+       (let ((*tool-call-active-p* active))
+         (handler-case
+             (progn
+               (ensure-tool-call-active)
+               (funcall setup (lambda (value) (setf result value) (sb-thread:signal-semaphore semaphore))))
+           (error (e)
+             (setf failure e)
+             (sb-thread:signal-semaphore semaphore))))))
     (unless (sb-thread:wait-on-semaphore semaphore :timeout timeout)
       (tool-error "Timed out"))
+    (when failure (error failure))
+    (ensure-tool-call-active)
     result))
 
 ;;; The Lisp
