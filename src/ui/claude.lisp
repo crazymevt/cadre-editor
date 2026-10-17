@@ -381,11 +381,20 @@ chat or what is missing. THEN is called if Claude is ready."
 
 (defun chat-update-status ()
   (when *chat*
+    (gtk:widget-set-tooltip-text (chat-status *chat*) nil)
     (chat-set-status
      (cond ((chat-busy *chat*) (if (eq (chat-provider *chat*) :codex) "Codex is working…" "Claude is working…"))
            ((eq (chat-provider *chat*) :codex)
-            (if (codex-ready-p) (format nil "~:[~;Agent · ~]Codex ~a" (eq (chat-mode *chat*) :agent)
-                                         (codex-status-version *codex-status*))
+            (if (codex-ready-p)
+                (let ((usage (codex-usage-summary)))
+                  (gtk:widget-set-tooltip-text
+                   (chat-status *chat*)
+                   (format nil "Codex CLI ~a~@[~%Remaining usage: ~a~]~@[~%Usage status: ~a~]"
+                           (codex-status-version *codex-status*) usage
+                           (and (null usage) *codex-rate-limits-error*)))
+                  (format nil "~:[~;Agent · ~]Codex · ~a"
+                        (eq (chat-mode *chat*) :agent)
+                        (or usage "usage unavailable")))
                 (if *codex-status* "Codex is not ready" "")))
            ((not (claude-ready-p)) (if *claude-status* "Claude Code is not ready" ""))
            (t (format nil "~:[~;Agent · ~]~a~@[ · $~,4f this conversation~]" (eq (chat-mode *chat*) :agent)

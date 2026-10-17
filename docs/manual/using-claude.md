@@ -18,6 +18,11 @@ unavailable, Codex's default model remains available. The **Chat / Agent**
 switch changes the guidance sent with each turn, including when you change
 modes in an existing conversation.
 
+When Codex provides account rate limits, the Assistant status line shows the
+remaining percentage for each available usage window and refreshes after a
+Codex turn. Some sign-in types do not expose this data; in that case no usage
+percentage is shown.
+
 Codex runs in the open project folder. Cadre sends enabled File, Problems, and
 Debugger context with your prompt. Codex's native shell and file-change
 requests are denied; code changes go through `propose_edit` and appear as an

@@ -8,6 +8,64 @@
 (defvar *codex-models-requested* nil)
 (defvar *codex-when-checked* '())
 (defvar *codex-model-catalog* '())
+(defvar *codex-rate-limits* nil)
+(defvar *codex-rate-limits-error* nil)
+
+(defun read-codex-rate-limits-safely (thunk)
+  "Return rate-limit data and an explanation when the app-server read fails."
+  (handler-case
+      (let ((limits (funcall thunk)))
+        (if limits
+            (values limits nil)
+            (values nil "Codex returned no rate-limit windows")))
+    (error (condition)
+      (values nil (princ-to-string condition)))))
+
+(defun codex-rate-window-label (minutes)
+  (cond ((and (integerp minutes) (zerop (mod minutes 1440)))
+         (format nil "~dd" (/ minutes 1440)))
+        ((and (integerp minutes) (zerop (mod minutes 60)))
+         (format nil "~dh" (/ minutes 60)))
+        ((integerp minutes) (format nil "~dm" minutes))
+        (t nil)))
+
+(defun codex-usage-summary ()
+  "A compact summary of remaining usage across Codex quota windows."
+  (let ((windows
+          (loop for (bucket-id . bucket) in *codex-rate-limits*
+                for multi-bucket-p = (> (length *codex-rate-limits*) 1)
+                append (loop for window-name in '("primary" "secondary")
+                             for window = (jget bucket window-name)
+                             for used = (jget window "usedPercent")
+                             when (numberp used)
+                               collect (format nil "~a~d%~@[ ~a~]"
+                                               (if multi-bucket-p (format nil "~a " bucket-id) "")
+                                               (round (max 0 (min 100 (- 100 used))))
+                                               (codex-rate-window-label
+                                                (jget window "windowDurationMins")))))))
+    (and windows (format nil "~{~a~^ / ~}" windows))))
+
+(defun refresh-codex-rate-limits (&optional server)
+  "Refresh usage in the background, using SERVER when its app-server is live."
+  (when (and (codex-ready-p) *chat* (eq (chat-provider *chat*) :codex))
+    (let ((program (codex-status-program *codex-status*))
+          (directory (or (and *window* (window-project *window*)) (user-homedir-pathname))))
+      (sb-thread:make-thread
+       (lambda ()
+         (multiple-value-bind (limits problem)
+             (read-codex-rate-limits-safely
+              (lambda ()
+                (if (and server (codex-alive-p server))
+                    (codex-rate-limits-from-response
+                     (codex-request server "account/rateLimits/read" (jobj)))
+                    (codex-read-rate-limits program directory))))
+           (glib:call-in-main-thread
+            (lambda ()
+              (when (and *chat* (eq (chat-provider *chat*) :codex))
+                (setf *codex-rate-limits* limits
+                      *codex-rate-limits-error* problem)
+                (chat-update-status)))))
+       :name "refresh Codex usage")))))
 
 (defun codex-ready-p-for (status)
   (and status (codex-status-program status) (codex-status-logged-in status)))
@@ -42,10 +100,18 @@
      (lambda ()
        (let* ((status (check-codex))
               (models (when (and deliver-models (codex-ready-p-for status))
-                        (ignore-errors (codex-list-models (codex-status-program status) directory)))))
+                        (ignore-errors (codex-list-models (codex-status-program status) directory))))
+              (usage-result
+                (when (and deliver-models (codex-ready-p-for status))
+                  (multiple-value-list
+                   (read-codex-rate-limits-safely
+                    (lambda () (codex-read-rate-limits (codex-status-program status) directory)))))))
          (glib:call-in-main-thread
           (lambda ()
             (setf *codex-status* status *codex-checking* nil)
+            (when deliver-models
+              (setf *codex-rate-limits* (first usage-result)
+                    *codex-rate-limits-error* (second usage-result)))
             (when deliver-models (setf *codex-models-requested* nil))
             (when (and deliver-models models)
               (let ((had-models *codex-model-catalog*))
@@ -181,6 +247,8 @@
              (if (eq provider :codex) (show-codex-intro) (show-claude-intro))))
          (refresh-assistant-model-dropdown :preserve nil)
          (show-claude-status)
+         (when (and (eq provider :codex) *codex-model-catalog*)
+           (refresh-codex-rate-limits))
          (check-selected-assistant-status :force (and (eq provider :codex)
                                                      (null *codex-model-catalog*))))))))
 
@@ -216,6 +284,7 @@
        (when (codex-event-error event)
          (chat-note (or (codex-event-text event) "Codex turn failed") "error"))
        (chat-update-status)
+       (refresh-codex-rate-limits server)
        (claude-reply-ended)))))
 
 (defun codex-process-exited (server code)

@@ -362,6 +362,26 @@
   (remove-if (lambda (model) (eq (jget model "hidden") t))
              (jlist (jget response "data"))))
 
+(defun codex-rate-limits-from-response (response)
+  "Return rate-limit buckets from an `account/rateLimits/read` response."
+  (let ((buckets (jget response "rateLimitsByLimitId")))
+    (cond ((and (jobject-p buckets) (cdr buckets)) (cdr buckets))
+          ((jget response "rateLimits")
+           (list (cons (or (jget (jget response "rateLimits") "limitId") "codex")
+                       (jget response "rateLimits"))))
+          (t nil))))
+
+(defun codex-read-rate-limits (program directory)
+  "Read the signed-in account's Codex rate limits using app-server."
+  (let ((server (start-codex-app-server program directory)))
+    (unwind-protect
+         (progn
+           ;; Request the extended protocol surface for the account read.
+           (codex-initialize-app-server server :experimental-api t)
+           (codex-rate-limits-from-response
+            (codex-request server "account/rateLimits/read" (jobj))))
+      (stop-codex-app-server server))))
+
 (defun codex-initialize-app-server (server &key experimental-api)
   "Initialize SERVER once, optionally enabling the experimental tool bridge."
   (unless (codex-initialized server)
