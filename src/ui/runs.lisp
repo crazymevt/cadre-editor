@@ -23,7 +23,7 @@
 (defvar *runs-page* nil)
 
 (defstruct (runs-page (:conc-name rnp-))
-  list output output-scroller end-mark search title rerun stop locations selected
+  list output output-scroller end-mark search title rerun stop clear locations selected
   ;; The project filter: its drop-down and the roots it offers (nil: all).
   project-filter (project-roots (list nil))
   (filling nil) (output-pending nil)
@@ -299,6 +299,20 @@ disk once, however many places name it."
 
 (defun project-root-key (root) (namestring (uiop:ensure-directory-pathname root)))
 
+(defun clearable-project-runs (&optional root)
+  "The finished runs, of ROOT's project or of all: what clearing forgets."
+  (remove-if (lambda (run) (eq (pr-status run) :running)) (visible-project-runs root)))
+
+(defun clear-project-runs (&optional root)
+  "Forget the finished runs of ROOT's project (all of them, if ROOT is nil),
+here and in runs.sexp. Runs still going are kept. Returns how many went."
+  (load-project-runs)
+  (let ((cleared (clearable-project-runs root)))
+    (setf *project-runs* (remove-if (lambda (run) (member run cleared)) *project-runs*))
+    (save-project-runs)
+    (when *runs-page* (refresh-runs-page))
+    (length cleared)))
+
 (defun visible-project-runs (root)
   "The runs the Runs page lists: all of them, or ROOT's when the project filter chooses one."
   (if root
@@ -361,6 +375,7 @@ disk once, however many places name it."
              (unless (member (rnp-selected page) runs)
                (setf (rnp-selected page) (first runs)))
              (gtk:list-box-remove-all (rnp-list page))
+             (gtk:widget-set-sensitive (rnp-clear page) (and (clearable-project-runs root) t))
              (dolist (run runs)
                (let ((row (make-instance 'gtk:list-box-row
                                          :child (label (project-run-row-label run (null root))
@@ -429,12 +444,14 @@ runner is free."
          (title (label "" :xalign 0.0 :wrap t :wrap-mode :word-char :selectable t :margin-start 8 :margin-end 8))
          (rerun (make-instance 'gtk:button :label "Rerun" :tooltip-text "Save files and rerun this activity in its original project"))
          (stop (make-instance 'gtk:button :label "Stop"))
+         (clear (make-instance 'gtk:button :icon-name "edit-clear-all-symbolic" :css-classes '("flat")
+                                           :tooltip-text "Clear finished runs (of the project shown)"))
          (locations (make-instance 'gtk:list-box :selection-mode :none))
          (widget (gtk:build
                    (gtk:box :orientation :vertical :spacing 4
                      (gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 4
                        search
-                       (gtk:box :spacing 4 rerun stop project-filter))
+                       (gtk:box :spacing 4 rerun stop project-filter clear))
                      (gtk:scrolled-window :height-request 100 :child list)
                      title
                      output-scroller
@@ -442,7 +459,7 @@ runner is free."
     (setf *runs-page* (make-runs-page :list list :output output :output-scroller output-scroller
                                      :end-mark end-mark :search search :title title
                                      :project-filter project-filter
-                                     :rerun rerun :stop stop :locations locations :selected (first *project-runs*)))
+                                     :rerun rerun :stop stop :clear clear :locations locations :selected (first *project-runs*)))
     (gobject:connect list :row-selected
                      (lambda (box row) (declare (ignore box))
                        (when (and row (not (rnp-filling *runs-page*)))
@@ -456,6 +473,10 @@ runner is free."
                      (lambda (b) (declare (ignore b))
                        (handler-case (rerun-project-run (rnp-selected *runs-page*))
                          (editor-error (e) (message "~a" (editor-error-message e))))))
+    (gobject:connect clear :clicked
+                     (lambda (b) (declare (ignore b))
+                       (handler-case (call-command 'clear-runs)
+                         (editor-error (e) (message "~a" (editor-error-message e))))))
     (gobject:connect stop :clicked
                      (lambda (b) (declare (ignore b))
                        (handler-case (stop-project-run (rnp-selected *runs-page*))
@@ -464,6 +485,25 @@ runner is free."
     (setf (rnp-selected *runs-page*) (first *project-runs*))
     (refresh-runs-page)
     widget))
+
+(define-command clear-runs ()
+  "Forget the finished runs shown on the Runs page (one project's, or all),
+after asking. Runs still going are kept."
+  (let* ((root (and *runs-page* (selected-project-root *runs-page*)))
+         (count (length (clearable-project-runs root))))
+    (when (zerop count) (editor-error "There are no finished runs to clear"))
+    (let ((dialog (adw:alert-dialog-new
+                   "Clear finished runs?"
+                   (format nil "Forget ~d finished run~:p of ~a, here and in later sessions. Runs still going are kept."
+                           count (if root (project-root-label root (project-run-roots)) "all projects")))))
+      (adw:alert-dialog-add-response dialog "cancel" "Cancel")
+      (adw:alert-dialog-add-response dialog "clear" "Clear Runs")
+      (adw:alert-dialog-set-response-appearance dialog "clear" :destructive)
+      (adw:alert-dialog-set-close-response dialog "cancel")
+      (gio:async (adw:alert-dialog-choose dialog (window-gtk-window *window*))
+                 (lambda (response)
+                   (when (string= response "clear")
+                     (message "Cleared ~d finished run~:p" (clear-project-runs root))))))))
 
 (define-command show-runs ()
   "Show recent process builds and tests, with separate output and rerun controls."

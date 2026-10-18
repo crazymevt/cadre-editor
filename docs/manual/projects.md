@@ -103,7 +103,9 @@ the rerun button is unavailable while the relevant runner is busy.
 
 The project menu beside **Stop** shows one project's runs, or **All
 projects**, where each run names its project. Runs from an earlier day show
-their date.
+their date. The clear button after it (or **Project › Clear Finished Runs…**)
+forgets the finished runs shown, those of the chosen project or of all, here
+and in later sessions, after asking. Runs still going are kept.
 
 History keeps the latest 30 runs (active runs are never evicted) and up to
 262,144 characters per run. Full output continues in the original Output or

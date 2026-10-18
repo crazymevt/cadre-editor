@@ -391,3 +391,23 @@
       (let ((roots (ui::project-run-roots)))
         (is equal "/tmp/three/app/" (ui::project-root-label #P"/tmp/three/app/" roots))
         (is equal "lib" (ui::project-root-label #P"/tmp/two/lib/" roots))))))
+
+(define-test clearing-runs :parent runs
+  (with-saved-runs-fixture
+    (let ((a-old (ui::begin-project-run #P"/tmp/a/" '(:program "true") "A old"))
+          (b (ui::begin-project-run #P"/tmp/b/" '(:program "true") "B"))
+          (a-new (ui::begin-project-run #P"/tmp/a/" '(:program "true") "A new"))
+          (a-running (ui::begin-project-run #P"/tmp/a/" '(:program "sleep") "A running")))
+      (declare (ignore a-running))
+      (dolist (run (list a-old b a-new)) (ui::finish-project-run run 0))
+      (is equal '("A new" "A old") (mapcar #'ui::pr-title (ui::clearable-project-runs #P"/tmp/a/")))
+      ;; One project's finished runs go, here and in the saved history;
+      ;; a run still going stays.
+      (is = 2 (ui::clear-project-runs #P"/tmp/a/"))
+      (is equal '("A running" "B") (mapcar #'ui::pr-title ui::*project-runs*))
+      (is equal '("B") (mapcar #'ui::pr-title (ui::read-project-runs)))
+      (is = 0 (ui::clear-project-runs #P"/tmp/a/"))
+      ;; All projects.
+      (is = 1 (ui::clear-project-runs))
+      (is equal '("A running") (mapcar #'ui::pr-title ui::*project-runs*))
+      (false (ui::read-project-runs)))))

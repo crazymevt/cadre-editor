@@ -2919,7 +2919,16 @@ d" 0 0)
                        (cadre-ui::visible-project-runs *root*)))
            (length rows))
     (screenshot "runs-project-filter")
-    (gtk:drop-down-set-selected (cadre-ui::rnp-project-filter page) 0)))
+    (gtk:drop-down-set-selected (cadre-ui::rnp-project-filter page) 0)
+    (check "Clear is offered while there are finished runs" (gtk:widget-get-sensitive (cadre-ui::rnp-clear page)))
+    ;; Clearing the other project's runs (the button asks first; this is what it does).
+    (cadre-ui::clear-project-runs #P"/tmp/cadre-smoke-other-project/")
+    (check "clearing a project forgets its runs, here and for later sessions"
+           (and (null (cadre-ui::visible-project-runs #P"/tmp/cadre-smoke-other-project/"))
+                (not (member "Other project" (mapcar #'cadre-ui::pr-title (cadre-ui::read-project-runs)) :test #'string=))
+                (cadre-ui::visible-project-runs *root*)
+                (= 2 (length (cadre-ui::rnp-project-roots page))))
+           (cadre-ui::rnp-project-roots page))))
 
 ;;; Build Project
 (section "build" :needs ("new-project"))
