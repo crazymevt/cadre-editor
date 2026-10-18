@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Runs history across restarts, by project.** Finished runs are kept for
+  the next session, each with the last 64 KB of its output. Build and
+  process runs from earlier sessions can be rerun. A project menu on the
+  Runs page shows one project's runs; with All projects, each run names its
+  project, and runs from earlier days show their date.
+
 - **Format on save no longer blocks the editor.** External formatters such
   as Prettier now run in the background, for saving and for Format Document
   alike. A formatter that takes longer than 20 seconds is stopped. If it

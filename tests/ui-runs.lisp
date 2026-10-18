@@ -302,3 +302,92 @@
       (true interrupted)
       (false continued)
       (is eq :stopped (ui::pr-status ui::*clojure-project-test-run*)))))
+
+;;; Runs kept across sessions, and the project filter.
+
+(defmacro with-saved-runs-fixture (&body body)
+  `(let ((state (merge-pathnames (format nil "cadre-runs-state-~a/" (c:make-uuid)) (uiop:temporary-directory)))
+         (ui::*project-runs-loaded* t))
+     (ensure-directories-exist state)
+     (unwind-protect
+          (with-assistant-functions ((ui::state-directory (lambda () state)))
+            (with-runs-fixture ,@body))
+       (uiop:delete-directory-tree state :validate t :if-does-not-exist :ignore))))
+
+(define-test runs-are-saved-for-later-sessions :parent runs
+  (with-saved-runs-fixture
+    (let* ((ui::*project-run-saved-output-limit* 10)
+           (build (ui::begin-project-run #P"/tmp/alpha/" '(:program "make" :arguments ("build") :description "make build")
+                                         "Build"))
+           (tests (ui::begin-project-run #P"/tmp/beta/" '(:description "asdf:test-system beta (REPL)") "Tests"
+                                         :rerun (lambda ()) :stop (lambda ())))
+           (running (ui::begin-project-run #P"/tmp/alpha/" '(:program "sleep") "Still running")))
+      (declare (ignore running))
+      (ui::append-project-run-output build "0123456789abcdef")
+      (ui::finish-project-run build 2)
+      (ui::append-project-run-output tests "all passed")
+      (ui::finish-project-run tests 0)
+      (let ((restored (ui::read-project-runs)))
+        ;; Finished runs only, newest first.
+        (is equal '("Tests" "Build") (mapcar #'ui::pr-title restored))
+        (destructuring-bind (tests-again build-again) restored
+          (is eq :failed (ui::pr-status build-again))
+          (is eql 2 (ui::pr-exit-code build-again))
+          (is equal '(:program "make" :arguments ("build") :description "make build") (ui::pr-plan build-again))
+          (is equal #P"/tmp/alpha/" (ui::pr-root build-again))
+          (true (ui::pr-restored build-again))
+          ;; The end of a long output, marked as cut.
+          (is equal (format nil "[Earlier output wasn't kept.]~%789abcdef~%") (ui::project-run-output-text build-again))
+          (is eq :passed (ui::pr-status tests-again))
+          ;; A restored process can run again; a REPL run, without its rerun function, can't.
+          (true (ui::project-run-rerunnable-p build-again))
+          (false (ui::project-run-rerunnable-p tests-again))
+          (false (ui::project-run-stoppable-p build-again)))))))
+
+(define-test runs-history-is-read-before-it-is-written :parent runs
+  (with-saved-runs-fixture
+    (let ((ui::*project-run-limit* 3))
+      (ui::finish-project-run (ui::begin-project-run #P"/tmp/a/" '(:program "true") "Earlier one") 0)
+      (ui::finish-project-run (ui::begin-project-run #P"/tmp/a/" '(:program "true") "Earlier two") 0)
+      ;; A new session: nothing is saved until the earlier runs are read.
+      (let ((ui::*project-runs* nil) (ui::*project-runs-loaded* nil))
+        (ui::finish-project-run (ui::begin-project-run #P"/tmp/b/" '(:program "true") "Before loading") 0)
+        (is equal '("Earlier two" "Earlier one") (mapcar #'ui::pr-title (ui::read-project-runs)))
+        (ui::load-project-runs)
+        (is equal '("Before loading" "Earlier two" "Earlier one") (mapcar #'ui::pr-title ui::*project-runs*))
+        (ui::load-project-runs)
+        (is = 3 (length ui::*project-runs*))
+        (ui::finish-project-run (ui::begin-project-run #P"/tmp/b/" '(:program "true") "After loading") 0)
+        ;; The limit counts every kept run.
+        (is equal '("After loading" "Before loading" "Earlier two")
+            (mapcar #'ui::pr-title (ui::read-project-runs)))))))
+
+(define-test bad-runs-history-is-skipped :parent runs
+  (with-saved-runs-fixture
+    (with-open-file (out (ui::project-runs-file) :direction :output :if-exists :supersede)
+      (prin1 '(:version 1 :runs ((:title "Good" :root "/tmp/a/" :plan (:program "true") :started 3900000000
+                                  :seconds 1.5 :exit-code 0 :status :passed :output "ok")
+                                 (:title "No status" :root "/tmp/a/" :plan nil :started 3900000000
+                                  :seconds 1 :exit-code 0 :status :running :output "")
+                                 (:title 7 :root "/tmp/a/")))
+             out))
+    (is equal '("Good") (mapcar #'ui::pr-title (ui::read-project-runs)))
+    (is = 1.5 (ui::project-run-seconds (first (ui::read-project-runs))))
+    ;; A file that would evaluate code when read is ignored whole.
+    (with-open-file (out (ui::project-runs-file) :direction :output :if-exists :supersede)
+      (write-string "(:version 1 :runs #.(error \"evaluated\"))" out))
+    (false (ui::read-project-runs))))
+
+(define-test runs-filter-by-project :parent runs
+  (with-runs-fixture
+    (let ((a1 (ui::begin-project-run #P"/tmp/one/app/" nil "A1"))
+          (b (ui::begin-project-run #P"/tmp/two/lib/" nil "B"))
+          (a2 (ui::begin-project-run #P"/tmp/one/app" nil "A2"))
+          (c (ui::begin-project-run #P"/tmp/three/app/" nil "C")))
+      (is equal (list c a2 b a1) (ui::visible-project-runs nil))
+      (is equal (list a2 a1) (ui::visible-project-runs #P"/tmp/one/app/"))
+      (is equal '(#P"/tmp/three/app/" #P"/tmp/one/app/" #P"/tmp/two/lib/") (ui::project-run-roots))
+      ;; Folders with the same name are told apart by their paths.
+      (let ((roots (ui::project-run-roots)))
+        (is equal "/tmp/three/app/" (ui::project-root-label #P"/tmp/three/app/" roots))
+        (is equal "lib" (ui::project-root-label #P"/tmp/two/lib/" roots))))))

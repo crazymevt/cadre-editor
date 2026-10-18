@@ -5,11 +5,11 @@ implemented work; a feature stays open until its remaining scope is covered.
 
 ## 1. Runs page
 
-- [ ] Bring builds, tests and program runs together in a Runs panel.
+- [x] Bring builds, tests and program runs together in a Runs panel.
   - [x] Keep recent process runs with status, duration and separate output.
   - [x] Filter output, open reported file locations, rerun and stop.
   - [x] Include Test Explorer, REPL tests and console/GTK/Racket/Clojure apps.
-  - [ ] Retain history across restarts and group/filter by project.
+  - [x] Retain history across restarts and group/filter by project.
 
 ## 2. Local history and crash recovery
 

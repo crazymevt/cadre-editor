@@ -101,11 +101,19 @@ interrupts REPL tests or console/language apps, or quits a GTK app. Runs sharing
 a REPL also share its interrupt behavior. Builds still run one process at a time;
 the rerun button is unavailable while the relevant runner is busy.
 
-History lasts for the current session, keeping the latest 30 runs (active runs
-are never evicted) and up to 262,144 characters per run. Full output continues
-in the original Output or REPL page. REPL output is captured from the run's
-connection while it is active, so unrelated evaluations on that same connection
-can also appear. Test Explorer adds a per-test result and failure summary.
+The project menu beside **Stop** shows one project's runs, or **All
+projects**, where each run names its project. Runs from an earlier day show
+their date.
+
+History keeps the latest 30 runs (active runs are never evicted) and up to
+262,144 characters per run. Full output continues in the original Output or
+REPL page. Finished runs are kept for the next session, in `runs.sexp` in
+Cadre's state folder, each with the last 65,536 characters of its output.
+A build or other process run from an earlier session can be rerun; a REPL test
+or app run from one can't, since it needs the session it ran in. REPL output is
+captured from the run's connection while it is active, so unrelated evaluations
+on that same connection can also appear. A GTK app's run takes its output from
+its Lisp's own stream instead. Test Explorer adds a per-test result and failure summary.
 A normally returning `asdf:test-system` run is marked finished; unlike Test
 Explorer, ASDF does not reliably report test assertion failures.
 

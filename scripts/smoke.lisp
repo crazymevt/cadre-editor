@@ -2893,7 +2893,33 @@ d" 0 0)
   (check "a launch error is retained as a failed run"
          (and (null cadre-ui::*build*)
               (eq :failed (cadre-ui::pr-status (first cadre-ui::*project-runs*)))
-              (search "Could not run" (cadre-ui::project-run-output-text (first cadre-ui::*project-runs*))))))
+              (search "Could not run" (cadre-ui::project-run-output-text (first cadre-ui::*project-runs*)))))
+  (check "finished runs are saved for the next session"
+         (let ((titles (mapcar #'cadre-ui::pr-title (cadre-ui::read-project-runs))))
+           (and (member "Smoke success" titles :test #'string=)
+                (member "Smoke failure" titles :test #'string=)))
+         (mapcar #'cadre-ui::pr-title (cadre-ui::read-project-runs)))
+  ;; A run of another project, so the filter has a choice to make.
+  (let ((other (cadre-ui::begin-project-run #P"/tmp/cadre-smoke-other-project/" '(:description "elsewhere") "Other project")))
+    (cadre-ui::finish-project-run other 0))
+  (let* ((page cadre-ui::*runs-page*)
+         (roots (cadre-ui::rnp-project-roots page))
+         (index (position (cadre-ui::project-root-key *root*) roots
+                          :key (lambda (r) (and r (cadre-ui::project-root-key r))) :test #'equal)))
+    (check "the project filter offers each project" (and index (> (length roots) 2)) roots)
+    (gtk:drop-down-set-selected (cadre-ui::rnp-project-filter page) index)))
+
+(then 100
+  (let* ((page cadre-ui::*runs-page*)
+         (rows (find-widgets (cadre-ui::rnp-list page) (lambda (w) (typep w 'gtk:list-box-row)))))
+    (check "choosing a project lists only its runs"
+           (and rows (= (length rows) (length (cadre-ui::visible-project-runs *root*)))
+                (< (length rows) (length cadre-ui::*project-runs*))
+                (every (lambda (run) (equal (cadre-ui::project-root-key *root*) (cadre-ui::project-root-key (cadre-ui::pr-root run))))
+                       (cadre-ui::visible-project-runs *root*)))
+           (length rows))
+    (screenshot "runs-project-filter")
+    (gtk:drop-down-set-selected (cadre-ui::rnp-project-filter page) 0)))
 
 ;;; Build Project
 (section "build" :needs ("new-project"))

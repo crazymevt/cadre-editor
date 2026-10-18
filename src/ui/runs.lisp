@@ -9,16 +9,23 @@
   (truncated nil) rerun stop available connection (stop-requested nil)
   ;; Whether what CONNECTION prints is this run's output too (not for a GTK
   ;; app, whose output comes from its Lisp's own stream).
-  (capture-output t))
+  (capture-output t)
+  ;; Read back from runs.sexp: from an earlier session of Cadre.
+  (restored nil))
 
 (defvar *project-runs* nil "Recent project processes, newest first; this session only.")
 (defparameter *project-run-limit* 30)
 (defparameter *project-run-output-limit* (* 256 1024))
+(defparameter *project-run-saved-output-limit* (* 64 1024)
+  "Characters of each run's output saved for later sessions (its last ones).")
+(defvar *project-runs-loaded* nil "Whether runs.sexp has been read in this session.")
 (defvar *build* nil)
 (defvar *runs-page* nil)
 
 (defstruct (runs-page (:conc-name rnp-))
   list output output-scroller end-mark search title rerun stop locations selected
+  ;; The project filter: its drop-down and the roots it offers (nil: all).
+  project-filter (project-roots (list nil))
   (filling nil) (output-pending nil)
   ;; What the output view shows: which run, how much of its output, under
   ;; which filter, and whether with the truncation notice.
@@ -47,6 +54,10 @@
                                  (when (plusp remaining) (decf remaining) t)))
                            *project-runs*)))
     (when *runs-page*
+      ;; A new run shows, under the filter if it's this project's.
+      (let ((root (selected-project-root *runs-page*)))
+        (when (and root (not (equal (project-root-key root) (project-root-key (pr-root run)))))
+          (gtk:drop-down-set-selected (rnp-project-filter *runs-page*) 0)))
       (setf (rnp-selected *runs-page*) run)
       (refresh-runs-page))
     run))
@@ -77,9 +88,97 @@
   (when (eq (pr-status run) :running)
     (setf (pr-end run) (get-internal-real-time)
           (pr-exit-code run) code
-          (pr-status run) (cond ((or stopped (pr-stop-requested run)) :stopped) ((eql code 0) :passed) (t :failed))))
+          (pr-status run) (cond ((or stopped (pr-stop-requested run)) :stopped) ((eql code 0) :passed) (t :failed)))
+    (save-project-runs))
   (when *runs-page* (refresh-runs-page))
   run)
+
+;;; Runs kept across sessions, in runs.sexp in the state directory: the
+;;; finished ones, each with the end of its output. A restored run can be run
+;;; again only if it was a process (its plan names a program); the closures
+;;; that rerun or stop the others don't outlive the session.
+
+(defun project-runs-file () (merge-pathnames "runs.sexp" (state-directory)))
+
+(defun plain-data-p (value)
+  "Whether VALUE is strings, numbers, keywords and lists of them, which read back as written."
+  (typecase value
+    ((or string real keyword null) t)
+    (cons (and (plain-data-p (car value)) (plain-data-p (cdr value))))
+    (t nil)))
+
+(defun project-run-record (run)
+  "RUN, finished, as plain data for runs.sexp."
+  (let* ((output (pr-output run))
+         (limit *project-run-saved-output-limit*)
+         (cut (> (length output) limit))
+         (plan (pr-plan run)))
+    (list :title (pr-title run) :root (namestring (pr-root run))
+          :plan (if (plain-data-p plan) plan (list :description (princ-to-string (getf plan :description))))
+          :started (pr-started run) :seconds (project-run-seconds run)
+          :exit-code (and (integerp (pr-exit-code run)) (pr-exit-code run))
+          :status (pr-status run)
+          :output (if cut (subseq output (- (length output) limit)) (copy-seq output))
+          :output-cut cut :truncated (and (pr-truncated run) t))))
+
+(defun valid-run-record-p (record)
+  (and (listp record)
+       (stringp (getf record :title)) (stringp (getf record :root))
+       (listp (getf record :plan)) (plain-data-p (getf record :plan))
+       (integerp (getf record :started))
+       (realp (getf record :seconds)) (not (minusp (getf record :seconds)))
+       (typep (getf record :exit-code) '(or null integer))
+       (member (getf record :status) '(:passed :failed :stopped))
+       (stringp (getf record :output))))
+
+(defun restore-project-run (record)
+  (let* ((text (concatenate 'string
+                            (if (getf record :output-cut) (format nil "[Earlier output wasn't kept.]~%") "")
+                            (getf record :output)))
+         (output (make-array (length text) :element-type 'character :adjustable t :fill-pointer (length text)
+                                           :initial-contents text)))
+    (make-project-run :title (getf record :title)
+                      :root (uiop:ensure-directory-pathname (getf record :root))
+                      :plan (getf record :plan) :started (getf record :started)
+                      :start 0 :end (round (* (getf record :seconds) internal-time-units-per-second))
+                      :exit-code (getf record :exit-code) :status (getf record :status)
+                      :output output :truncated (getf record :truncated) :restored t)))
+
+(defun save-project-runs ()
+  "Write the finished runs to runs.sexp, once the earlier ones have been
+read (load-project-runs), so they aren't written over."
+  (when *project-runs-loaded*
+   (handler-case
+      (let ((records (loop for run in *project-runs*
+                           unless (eq (pr-status run) :running) collect (project-run-record run))))
+        (write-private-state (project-runs-file)
+                             (lambda (out)
+                               (with-standard-io-syntax
+                                 (let ((*package* (find-package :keyword)))
+                                   (prin1 (list :version 1 :runs records) out)
+                                   (terpri out))))))
+    (error (e) (message "Could not save the Runs history: ~a" e)))))
+
+(defun read-project-runs (&optional (file (project-runs-file)))
+  "The runs saved in FILE, newest first; nil if there are none or it can't be read."
+  (let ((data (ignore-errors
+               (with-open-file (in file :external-format :utf-8 :if-does-not-exist nil)
+                 (when in
+                   (with-standard-io-syntax
+                     (let ((*read-eval* nil) (*package* (find-package :keyword)))
+                       (read in nil nil))))))))
+    (when (and (listp data) (eql 1 (getf data :version)) (listp (getf data :runs)))
+      (mapcar #'restore-project-run (remove-if-not #'valid-run-record-p (getf data :runs))))))
+
+(defun load-project-runs ()
+  "Add the runs of earlier sessions after this session's, once."
+  (unless *project-runs-loaded*
+    (setf *project-runs-loaded* t)
+    (let ((restored (read-project-runs)))
+      (setf *project-runs*
+            (append *project-runs*
+                    (subseq restored 0 (min (length restored)
+                                            (max 0 (- *project-run-limit* (length *project-runs*))))))))))
 
 (defun project-run-output-text (run &optional (query ""))
   (let ((text (pr-output run)))
@@ -198,27 +297,86 @@ disk once, however many places name it."
     (gtk:widget-set-sensitive (rnp-stop page) (project-run-stoppable-p run))
     (refresh-run-output)))
 
+(defun project-root-key (root) (namestring (uiop:ensure-directory-pathname root)))
+
+(defun visible-project-runs (root)
+  "The runs the Runs page lists: all of them, or ROOT's when the project filter chooses one."
+  (if root
+      (let ((key (project-root-key root)))
+        (remove-if-not (lambda (run) (string= key (project-root-key (pr-root run)))) *project-runs*))
+      *project-runs*))
+
+(defun project-run-roots ()
+  "The projects of the runs, most recent first, as directory pathnames."
+  (let ((roots '()))
+    (dolist (run *project-runs* (nreverse roots))
+      (unless (member (project-root-key (pr-root run)) roots :key #'project-root-key :test #'string=)
+        (push (uiop:ensure-directory-pathname (pr-root run)) roots)))))
+
+(defun project-root-label (root roots)
+  "ROOT's folder name, or its whole path if another of ROOTS has that name too."
+  (let ((name (car (last (pathname-directory root)))))
+    (if (< 1 (count name roots :key (lambda (r) (car (last (pathname-directory r)))) :test #'equal))
+        (uiop:native-namestring root)
+        name)))
+
+(defun project-run-row-label (run show-project)
+  (multiple-value-bind (s m h day month year) (decode-universal-time (pr-started run))
+    (multiple-value-bind (s2 m2 h2 today this-month this-year) (decode-universal-time (get-universal-time))
+      (declare (ignore s2 m2 h2))
+      (format nil "~:[~*~*~;~a ~d · ~]~2,'0d:~2,'0d:~2,'0d · ~@[~a · ~]~a · ~a · ~,1f s"
+              (not (and (= day today) (= month this-month) (= year this-year)))
+              (aref #("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec") (1- month)) day
+              h m s
+              (and show-project (car (last (pathname-directory (uiop:ensure-directory-pathname (pr-root run))))))
+              (pr-title run) (project-run-status-text run) (project-run-seconds run)))))
+
+(defun selected-project-root (page)
+  (nth (gtk:drop-down-get-selected (rnp-project-filter page)) (rnp-project-roots page)))
+
+(defun refresh-project-filter (page)
+  "Offer All projects and each project with runs, keeping the one chosen."
+  (let ((roots (cons nil (project-run-roots)))
+        (chosen (selected-project-root page)))
+    (unless (equal (mapcar (lambda (r) (and r (project-root-key r))) roots)
+                   (mapcar (lambda (r) (and r (project-root-key r))) (rnp-project-roots page)))
+      (setf (rnp-project-roots page) roots)
+      (gtk:drop-down-set-model (rnp-project-filter page)
+                               (gtk:string-list-new
+                                (cons "All projects" (mapcar (lambda (r) (project-root-label r (rest roots))) (rest roots)))))
+      (gtk:drop-down-set-selected (rnp-project-filter page)
+                                  (or (and chosen (position (project-root-key chosen) roots
+                                                            :key (lambda (r) (and r (project-root-key r)))
+                                                            :test #'equal))
+                                      0)))))
+
 (defun refresh-runs-page ()
   (let ((page *runs-page*))
     (setf (rnp-filling page) t)
     (unwind-protect
          (progn
-           (gtk:list-box-remove-all (rnp-list page))
-           (dolist (run *project-runs*)
-             (multiple-value-bind (s m h) (decode-universal-time (pr-started run))
+           (refresh-project-filter page)
+           (let* ((root (selected-project-root page))
+                  (runs (visible-project-runs root)))
+             (unless (member (rnp-selected page) runs)
+               (setf (rnp-selected page) (first runs)))
+             (gtk:list-box-remove-all (rnp-list page))
+             (dolist (run runs)
                (let ((row (make-instance 'gtk:list-box-row
-                                        :child (label (format nil "~2,'0d:~2,'0d:~2,'0d · ~a · ~a · ~,1f s"
-                                                              h m s (pr-title run) (project-run-status-text run)
-                                                              (project-run-seconds run))
-                                                      :xalign 0.0 :ellipsize :end
-                                                      :margin-start 8 :margin-end 8 :margin-top 4 :margin-bottom 4))))
+                                         :child (label (project-run-row-label run (null root))
+                                                       :xalign 0.0 :ellipsize :end
+                                                       :margin-start 8 :margin-end 8 :margin-top 4 :margin-bottom 4))))
                  (gtk:list-box-append (rnp-list page) row)
                  (when (eq run (rnp-selected page)) (gtk:list-box-select-row (rnp-list page) row)))))
            (select-project-run (rnp-selected page)))
       (setf (rnp-filling page) nil))))
 
 (defun project-run-rerunnable-p (run)
+  "Whether RUN can be run again now: it has a way to (its rerun function, or
+a plan naming a program, for a run restored from an earlier session) and its
+runner is free."
   (and run (not (eq (pr-status run) :running))
+       (or (pr-rerun run) (getf (pr-plan run) :program))
        (if (pr-available run) (funcall (pr-available run)) (null *build*))))
 
 (defun project-run-stoppable-p (run)
@@ -266,6 +424,8 @@ disk once, however many places name it."
          (end-mark (let ((buffer (gtk:text-view-get-buffer output)))
                      (gtk:text-buffer-create-mark buffer "cadre-runs-end" (gtk:text-buffer-get-end-iter buffer) nil)))
          (search (make-instance 'gtk:search-entry :placeholder-text "Filter output…" :hexpand t))
+         (project-filter (make-instance 'gtk:drop-down :model (gtk:string-list-new '("All projects"))
+                                                       :tooltip-text "Show the runs of one project"))
          (title (label "" :xalign 0.0 :wrap t :wrap-mode :word-char :selectable t :margin-start 8 :margin-end 8))
          (rerun (make-instance 'gtk:button :label "Rerun" :tooltip-text "Save files and rerun this activity in its original project"))
          (stop (make-instance 'gtk:button :label "Stop"))
@@ -274,18 +434,23 @@ disk once, however many places name it."
                    (gtk:box :orientation :vertical :spacing 4
                      (gtk:box :orientation :vertical :spacing 4 :margin-start 8 :margin-end 8 :margin-top 4
                        search
-                       (gtk:box :spacing 4 rerun stop))
+                       (gtk:box :spacing 4 rerun stop project-filter))
                      (gtk:scrolled-window :height-request 100 :child list)
                      title
                      output-scroller
                      (gtk:scrolled-window :max-content-height 80 :propagate-natural-height t :child locations)))))
     (setf *runs-page* (make-runs-page :list list :output output :output-scroller output-scroller
                                      :end-mark end-mark :search search :title title
+                                     :project-filter project-filter
                                      :rerun rerun :stop stop :locations locations :selected (first *project-runs*)))
     (gobject:connect list :row-selected
                      (lambda (box row) (declare (ignore box))
                        (when (and row (not (rnp-filling *runs-page*)))
-                         (select-project-run (nth (gtk:list-box-row-get-index row) *project-runs*)))))
+                         (select-project-run (nth (gtk:list-box-row-get-index row)
+                                                  (visible-project-runs (selected-project-root *runs-page*)))))))
+    (gobject:connect project-filter "notify::selected"
+                     (lambda (d pspec) (declare (ignore d pspec))
+                       (unless (rnp-filling *runs-page*) (refresh-runs-page))))
     (gobject:connect search :search-changed (lambda (entry) (declare (ignore entry)) (refresh-run-output)))
     (gobject:connect rerun :clicked
                      (lambda (b) (declare (ignore b))
@@ -295,6 +460,8 @@ disk once, however many places name it."
                      (lambda (b) (declare (ignore b))
                        (handler-case (stop-project-run (rnp-selected *runs-page*))
                          (editor-error (e) (message "~a" (editor-error-message e))))))
+    (load-project-runs)
+    (setf (rnp-selected *runs-page*) (first *project-runs*))
     (refresh-runs-page)
     widget))
 
