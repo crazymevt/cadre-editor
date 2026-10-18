@@ -313,8 +313,11 @@
        (when (chat-stream-box *chat*)
          (chat-finish-text (chat-stream-text *chat*)))
        (setf (chat-busy *chat*) nil (chat-stream-box *chat*) nil)
-       (when (codex-event-error event)
-         (chat-note (or (codex-event-text event) "Codex turn failed") "error"))
+       (cond ((equal (jget (codex-event-data event) "status") "interrupted")
+              ;; The user pressed Stop: not a failure.
+              (chat-note "Stopped."))
+             ((codex-event-error event)
+              (chat-note (or (codex-event-text event) "Codex turn failed") "error")))
        (chat-update-status)
        (refresh-codex-rate-limits server)
        (claude-reply-ended)))))
@@ -370,24 +373,26 @@
               (chat-codex-process *chat*) server)
         server)))
 
-(defun codex-send-worker (server text model effort mode &optional (tool-token (cadre::codex-tool-token server)))
+(defun codex-send-worker (server text model effort mode
+                          &key (tool-token (cadre::codex-tool-token server)) saved-thread-id)
+  "Start a turn on SERVER, in a thread of its own: resume SAVED-THREAD-ID (read
+on the GTK thread) or start a conversation first if SERVER has none. Chat
+state changes only on the GTK thread: the :thread-started event records the
+conversation, and only while SERVER is still the chat's."
   (handler-case
       (progn
-        (unless (codex-thread-id server)
-          (let* ((saved-thread-id (chat-codex-thread-id *chat*))
-                 (resumed (when saved-thread-id
-                            (handler-case
-                                (codex-resume-thread server saved-thread-id
-                                                     :instructions *codex-system-prompt*)
-                              (error (e)
-                                (deliver-to-gui
-                                 (lambda ()
-                                   (when (and *chat* (eq server (chat-codex-process *chat*)))
-                                     (chat-note (format nil "Could not resume the saved Codex conversation (~a). Starting a new conversation." e)))))
-                                nil))))
-                 (thread-id (or resumed
-                                (codex-start-thread server :model model :instructions *codex-system-prompt*))))
-            (setf (chat-codex-thread-id *chat*) thread-id)))
+        (unless (or (codex-thread-id server)
+                    (and saved-thread-id
+                         (handler-case
+                             (codex-resume-thread server saved-thread-id
+                                                  :instructions *codex-system-prompt*)
+                           (error (e)
+                             (deliver-to-gui
+                              (lambda ()
+                                (when (and *chat* (eq server (chat-codex-process *chat*)))
+                                  (chat-note (format nil "Could not resume the saved Codex conversation (~a). Starting a new conversation." e)))))
+                             nil))))
+          (codex-start-thread server :model model :instructions *codex-system-prompt*))
         (codex-start-turn server
                           (format nil "<cadre-mode-instructions>~%~a~%</cadre-mode-instructions>~%~%~a"
                                   (if (eq mode :agent) *codex-agent-prompt*
@@ -420,8 +425,12 @@
                (prompt (if (plusp (length context))
                            (format nil "<editor-context>~%~a</editor-context>~%~%~a" context text)
                            text)))
-            (sb-thread:make-thread (lambda () (codex-send-worker server prompt model effort (chat-mode *chat*) tool-token))
-                                   :name "Codex turn")))
+            (let ((mode (chat-mode *chat*))
+                  (saved-thread-id (chat-codex-thread-id *chat*)))
+              (sb-thread:make-thread (lambda () (codex-send-worker server prompt model effort mode
+                                                                   :tool-token tool-token
+                                                                   :saved-thread-id saved-thread-id))
+                                     :name "Codex turn"))))
       (error (e)
         (setf (chat-busy *chat*) nil)
         (chat-note (format nil "Could not start Codex: ~a" e) "error")

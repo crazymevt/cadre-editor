@@ -4,13 +4,15 @@
 
 (defmacro with-history-fixture (&body body)
   `(let* ((directory (merge-pathnames (format nil "cadre-history-test-~a/" (c:make-uuid)) (uiop:temporary-directory)))
-          (ui::*recovery-session* nil) (ui::*local-history* t) (ui::*recover-unsaved-buffers* t)
+          (ui::*recovery-session* nil) (ui::*recovery-lock* nil) (ui::*own-recovery-sessions* '())
+          (ui::*local-history* t) (ui::*recover-unsaved-buffers* t)
           (ui::*local-history-revisions* 20) (ui::*local-history-total* 200)
           (ui::*snapshot-max-characters* 1048576)
           (c::*buffers* nil) (c:*buffer-created-hook* nil) (c:*buffer-killed-hook* nil))
      (ensure-directories-exist directory)
      (unwind-protect
           (with-assistant-functions ((ui::state-directory (lambda () directory))) ,@body)
+       (ui::unlock-recovery-session)
        (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))))
 
 (defun fixture-checkpoint-buffer (file text)
@@ -83,6 +85,41 @@
       (ui::forget-buffer-checkpoint buffer)
       (false (probe-file (c:buffer-local buffer :checkpoint-path)))
       (true (probe-file dead)))))
+
+(define-test recovery-goes-by-lock-not-process-id :parent local-history
+  (with-history-fixture
+    (let* ((recovery (ui::snapshot-directory :recovery))
+           ;; Named for a live process (this one), as a crashed Cadre's
+           ;; folder would be once its process ID is reused, but unlocked.
+           (reused (merge-pathnames (format nil "~d-crashed/" (sb-posix:getpid)) recovery))
+           (locked (merge-pathnames "1-other-cadre/" recovery))
+           (holder nil))
+      (dolist (folder (list reused locked))
+        (ui::write-snapshot (merge-pathnames "draft.sexp" folder)
+                            '(:version 1 :file nil :name "untitled" :time 100 :text "orphan"))
+        (with-open-file (out (ui::recovery-lock-file folder) :direction :output :if-does-not-exist :create)))
+      (unwind-protect
+           (progn
+             ;; Another process holds the lock of the second.
+             (setf holder (uiop:launch-program
+                           (list "python3" "-c" "import fcntl,sys,time; f=open(sys.argv[1],'r+'); fcntl.lockf(f, fcntl.LOCK_EX); print('locked', flush=True); time.sleep(30)"
+                                 (namestring (ui::recovery-lock-file locked)))
+                           :output :stream))
+             (is string= "locked" (read-line (uiop:process-info-output holder)))
+             (false (ui::recovery-session-active-p reused))
+             (true (ui::recovery-session-active-p locked))
+             (is equal (list (merge-pathnames "draft.sexp" reused))
+                 (mapcar #'car (ui::recoverable-snapshots)))
+             ;; This process's own folder is in use, and checking it keeps its lock.
+             (let ((own (ui::recovery-session-directory)))
+               (true (ui::recovery-session-active-p own))
+               (true (ui::recovery-session-active-p own))
+               (true ui::*recovery-lock*))
+             (uiop:terminate-process holder)
+             (uiop:wait-process holder)
+             (setf holder nil)
+             (false (ui::recovery-session-active-p locked)))
+        (when holder (uiop:terminate-process holder) (uiop:wait-process holder))))))
 
 (define-test recovery-copy-preserves-newer-disk-file :parent local-history
   (with-history-fixture

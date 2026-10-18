@@ -250,7 +250,7 @@ answers, and nil is returned for now."
     (gobject:connect text-view :query-tooltip
                      (lambda (widget x y keyboard tooltip)
                        (declare (ignore widget))
-                       (when (and *symbol-hover* (not keyboard))
+                       (when (and *symbol-hover* (not keyboard) (source-editor-view-p view))
                          (multiple-value-bind (token line name) (hovered-symbol view x y)
                            (let ((description
                                    (and token

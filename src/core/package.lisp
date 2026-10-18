@@ -247,7 +247,7 @@
    #:http-response #:make-http-response #:http-response-status #:http-response-reason
    #:http-response-headers #:http-response-body #:http-response-size #:http-response-milliseconds
    #:http-response-content-type #:http-response-url #:http-response-error #:response-body-text #:response-body-mode
-   #:http-request-curl-command #:shell-words #:parse-curl-command #:base64-string
+   #:http-request-curl-command #:http-redirect-blocking-headers #:http-request-follows-redirects-p #:shell-words #:parse-curl-command #:base64-string
    #:percent-decode #:percent-encode-component #:url-query-parameters #:url-with-query-parameters
    #:json-path-value #:capture-response-values #:http-request-auth #:auth-header #:*api-key-headers*
    #:http-request-content-type #:multipart-boundary #:form-body-pairs #:pairs-form-body #:body-file-reference

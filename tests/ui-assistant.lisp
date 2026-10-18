@@ -104,6 +104,42 @@
     (is = 0 stops)
     (true (ui::chat-busy ui::*chat*))))
 
+(define-test interrupted-codex-turn-is-a-stop :parent assistants
+  (let* ((server (c::make-codex-app-server))
+         (ui::*chat* (ui::make-chat :provider :codex :busy t :codex-process server))
+         (notes '()))
+    (with-assistant-functions
+        ((ui::chat-note (lambda (text &rest classes) (push (cons text classes) notes)))
+         (ui::chat-update-status (lambda ()))
+         (ui::refresh-codex-rate-limits (lambda (&optional server) (declare (ignore server))))
+         (ui::claude-reply-ended (lambda ())))
+      (ui::handle-codex-chat-event
+       server (c::make-codex-event :kind :result :error t :data (c:jobj "id" "t1" "status" "interrupted")))
+      (is equal '(("Stopped.")) notes)
+      (false (ui::chat-busy ui::*chat*))
+      (setf notes '() (ui::chat-busy ui::*chat*) t)
+      (ui::handle-codex-chat-event
+       server (c::make-codex-event :kind :result :error t :text "Boom" :data (c:jobj "id" "t2" "status" "failed")))
+      (is equal '(("Boom" "error")) notes))))
+
+(define-test codex-worker-leaves-chat-state-to-the-gtk-thread :parent assistants
+  ;; The worker resumes the conversation it was given, read on the GTK
+  ;; thread, and doesn't write the chat's thread ID itself.
+  (let* ((server (c::make-codex-app-server))
+         (ui::*chat* (ui::make-chat :provider :codex :busy t :codex-process server
+                                   :codex-thread-id "cleared-meanwhile"))
+         (resumed nil) (started nil))
+    (with-assistant-functions
+        ((c:codex-resume-thread (lambda (server thread-id &rest args)
+                                  (declare (ignore args))
+                                  (setf resumed thread-id (c:codex-thread-id server) thread-id)))
+         (c:codex-start-thread (lambda (&rest args) (declare (ignore args)) (setf started t)))
+         (c:codex-start-turn (lambda (&rest args) (declare (ignore args)) t)))
+      (ui::codex-send-worker server "prompt" nil nil :chat :saved-thread-id "saved-thread"))
+    (is equal "saved-thread" resumed)
+    (false started)
+    (is equal "cleared-meanwhile" (ui::chat-codex-thread-id ui::*chat*))))
+
 (define-test failed-send-applies-pending-folder :parent assistants
   (dolist (failure '(:thread :turn))
     (let* ((server (c::make-codex-app-server :thread-id (when (eq failure :turn) "thread")))

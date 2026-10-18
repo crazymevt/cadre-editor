@@ -29,25 +29,42 @@
     (when (delete-text-between gtk-buffer start end)
       (insert-text-at gtk-buffer (min start end) string))))
 
+(defun trailing-whitespace-kept-p (buffer line string start)
+  "Whether the whitespace from START at the end of LINE (its text STRING)
+means something: in Markdown, two or more spaces after text are a line
+break; in Lisp, a line that ends inside a string (or |symbol|) ends with
+part of it."
+  (let ((syntax (buffer-sexp-syntax buffer)))
+    (cond ((eq (buffer-major-mode buffer) 'markdown-mode)
+           (and (plusp start)
+                (>= (- (length string) start) 2)
+                (every (lambda (char) (char= char #\Space)) (subseq string start))))
+          (syntax
+           (member (cadre::state-mode (line-end-state syntax line)) '(:string :here :bar)))
+          (t nil))))
+
 (defun trim-trailing-whitespace-in-buffer (buffer)
-  "Remove spaces and tabs at the ends of BUFFER's lines; return the count removed."
+  "Remove spaces and tabs at the ends of BUFFER's lines, except where they
+mean something (trailing-whitespace-kept-p); return the count removed."
   (let* ((gtk-buffer (buffer-text buffer))
-         (count 0))
+         (count 0)
+         ;; Decided before any change, while the syntax describes the text.
+         (trims (loop for line below (text-line-count gtk-buffer)
+                      for string = (text-line-string gtk-buffer line)
+                      for start = (1+ (or (position-if-not (lambda (char) (member char '(#\Space #\Tab)))
+                                                           string :from-end t)
+                                          -1))
+                      when (and (< start (length string))
+                                (not (trailing-whitespace-kept-p buffer line string start)))
+                        collect (list line start (length string)))))
     (with-user-action (gtk-buffer)
       ;; Work backwards so deleting from later lines does not shift the
       ;; offsets of lines that are still to be examined.
-      (loop for line downfrom (1- (text-line-count gtk-buffer)) to 0
-            for string = (text-line-string gtk-buffer line)
-            for trimmed = (or (position-if-not (lambda (char) (member char '(#\Space #\Tab)))
-                                                 string :from-end t)
-                              -1)
-            for start-column = (1+ trimmed)
-            for end-column = (length string)
-            when (< start-column end-column)
-              do (when (delete-text-between gtk-buffer
-                                            (text-line-position gtk-buffer line start-column)
-                                            (text-line-position gtk-buffer line end-column))
-                   (incf count (- end-column start-column)))))
+      (loop for (line start-column end-column) in (reverse trims)
+            do (when (delete-text-between gtk-buffer
+                                          (text-line-position gtk-buffer line start-column)
+                                          (text-line-position gtk-buffer line end-column))
+                 (incf count (- end-column start-column)))))
     count))
 
 (define-command trim-trailing-whitespace ()

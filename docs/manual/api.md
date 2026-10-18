@@ -21,8 +21,10 @@ Content-Type: application/json
 
 - **+** opens a new request in a tab: method, URL and **Send**; its
   query parameters (**Params**, kept in step with the URL: edit either),
-  headers, body and options (follow redirects when there are no custom
-  headers, skip TLS checks, timeout);
+  headers, body and options (follow redirects, skip TLS checks, timeout).
+  A redirect isn't followed when the request has a header that could carry
+  a secret (anything but standard ones such as Content-Type and Accept),
+  since curl would send it to the new host; the status line says so;
   and the response below: status, time, size, headers and body. JSON, XML
   and HTML bodies are highlighted, and JSON and XML are laid out (**Pretty**
   off shows them as they came).

@@ -263,22 +263,27 @@ selection), so the commands act on what was clicked."
     (gobject:connect click :pressed
                      (lambda (gesture n x y)
                        (declare (ignore n))
-                       ;; Claimed, so the text view doesn't show its own menu too.
-                       (gtk:gesture-set-state gesture :claimed)
-                       (setf *context-menu-view* view)
-                       (multiple-value-bind (bx by)
-                           (gtk:text-view-window-to-buffer-coords text-view :widget (round x) (round y))
-                         (multiple-value-bind (ok iter) (gtk:text-view-get-iter-at-location text-view bx by)
-                           (when ok
-                             (let ((gtk-buffer (view-gtk-buffer view)))
-                               (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
-                                 (unless (and has (gtk:text-iter-in-range iter start end))
-                                   (gtk:text-buffer-place-cursor gtk-buffer iter)))))))
-                       (focus-view view)))
+                       (if (not (source-editor-view-p view))
+                           ;; A preview keeps GTK's own menu (Copy, Select All).
+                           (gtk:gesture-set-state gesture :denied)
+                           (progn
+                             ;; Claimed, so the text view doesn't show its own menu too.
+                             (gtk:gesture-set-state gesture :claimed)
+                             (setf *context-menu-view* view)
+                             (multiple-value-bind (bx by)
+                                 (gtk:text-view-window-to-buffer-coords text-view :widget (round x) (round y))
+                               (multiple-value-bind (ok iter) (gtk:text-view-get-iter-at-location text-view bx by)
+                                 (when ok
+                                   (let ((gtk-buffer (view-gtk-buffer view)))
+                                     (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds gtk-buffer)
+                                       (unless (and has (gtk:text-iter-in-range iter start end))
+                                         (gtk:text-buffer-place-cursor gtk-buffer iter)))))))
+                             (focus-view view)))))
     ;; Up on the release, not the press: a menu opened above the pointer
     ;; has its last item (Code) under it, and the release would choose it.
     (gobject:connect click :released
                      (lambda (gesture n x y)
                        (declare (ignore gesture n))
-                       (show-context-menu view x y)))
+                       (when (source-editor-view-p view)
+                         (show-context-menu view x y))))
     (gtk:widget-add-controller text-view click)))

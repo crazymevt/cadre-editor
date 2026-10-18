@@ -77,8 +77,12 @@ Signals an editor-error otherwise."
                               (make-string column :initial-element #\Space) -1))))
 
 (defun indent-lines (view first last)
-  (let* ((gtk-buffer (view-gtk-buffer view))
-         (syntax (buffer-sexp-syntax (view-buffer view))))
+  (indent-buffer-lines (view-buffer view) first last))
+
+(defun indent-buffer-lines (buffer first last)
+  "Indent BUFFER's lines FIRST to LAST as Lisp, as one undo step."
+  (let* ((gtk-buffer (buffer-text buffer))
+         (syntax (buffer-sexp-syntax buffer)))
     (with-user-action (gtk-buffer)
       (loop for line from first to last
             for column = (lisp-indentation syntax line)

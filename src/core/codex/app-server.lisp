@@ -79,7 +79,7 @@
 (defstruct (codex-app-server (:conc-name codex-))
   process program directory deliver on-event on-exit stdout-thread stderr-thread
   (thread-id nil) (turn-id nil) (stopped nil) (initialized nil)
-  (tool-token (list t)) (tool-turns (make-hash-table :test 'equal))
+  (tool-token (list t)) (tool-turns (make-hash-table :test 'equal)) (finished-turns '())
   (next-id 0) (pending (make-hash-table :test 'equal))
   (lock (sb-thread:make-mutex :name "codex app-server"))
   (write-lock (sb-thread:make-mutex :name "codex app-server stdin")))
@@ -108,6 +108,20 @@ server) or :codex. Approvals given for a session cover only that assistant.")
   (or (gethash (jget request "params" "turnId") (codex-tool-turns server))
       (setf (gethash (jget request "params" "turnId") (codex-tool-turns server))
             (codex-tool-token server))))
+
+(defparameter *codex-finished-turns-kept* 64
+  "Finished turns whose dead tool tokens are kept, so a late tool call for
+one of them is refused rather than given the current turn's token.")
+
+(defun codex-forget-finished-turns (server turn-id)
+  "Note that TURN-ID finished; forget the oldest finished turns past
+*CODEX-FINISHED-TURNS-KEPT*."
+  (when turn-id
+    (let ((finished (append (remove turn-id (codex-finished-turns server) :test #'equal)
+                            (list turn-id))))
+      (loop while (> (length finished) *codex-finished-turns-kept*)
+            do (remhash (pop finished) (codex-tool-turns server)))
+      (setf (codex-finished-turns server) finished))))
 
 (defun codex-send-json (server object)
   (sb-thread:with-mutex ((codex-write-lock server))
@@ -271,7 +285,8 @@ server) or :codex. Approvals given for a session cover only that assistant.")
        (let* ((turn (jget params "turn"))
               (status (jget turn "status")))
          (let ((token (gethash (jget turn "id") (codex-tool-turns server))))
-           (when token (setf (car token) nil)))
+           (when token (setf (car token) nil))
+           (codex-forget-finished-turns server (jget turn "id")))
          (codex-deliver-event server (make-codex-event :kind :result :error (not (equal status "completed"))
                                                        :text (jget turn "error" "message")
                                                        :turn-id (jget turn "id") :thread-id thread-id

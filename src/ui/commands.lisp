@@ -65,9 +65,28 @@ picture opens to be looked at (image-view.lisp)."
                (lambda (ok etag) (declare (ignore ok etag)) (funcall success))
                :error failure)))
 
+(defvar *save-preparer* nil
+  "Nil, or a function of a buffer and a thunk that changes the buffer before
+it is saved, then calls the thunk once on the GTK thread, perhaps later (format
+on save runs an external formatter in the background). Saves of one buffer
+are prepared one at a time, in the order they were asked for.")
+
+(defun buffer-save-busy-p (buffer)
+  "Whether a save of BUFFER is being prepared or written."
+  (or (buffer-local buffer :write-in-flight) (buffer-local buffer :save-preparing)))
+
+(defun notify-write-waiters (buffer)
+  "Once nothing is preparing or writing BUFFER, call what waited for that."
+  (unless (buffer-save-busy-p buffer)
+    (let ((waiters (buffer-local buffer :write-waiters)))
+      (setf (buffer-local buffer :write-waiters) nil)
+      (dolist (waiter (reverse waiters))
+        (handler-case (funcall waiter)
+          (error (e) (message "Waiting for saves failed: ~a" e)))))))
+
 (defun wait-for-buffer-writes (buffers continuation)
-  "Call CONTINUATION once BUFFERS have no writes in progress."
-  (let ((active (find-if (lambda (b) (buffer-local b :write-in-flight)) buffers)))
+  "Call CONTINUATION once BUFFERS have no saves being prepared or written."
+  (let ((active (find-if #'buffer-save-busy-p buffers)))
     (if active
         (setf (buffer-local active :write-waiters)
               (cons (lambda () (wait-for-buffer-writes buffers continuation))
@@ -132,21 +151,45 @@ picture opens to be looked at (image-view.lisp)."
                      (setf (buffer-local buffer :pending-writes) (rest pending)
                            (buffer-local buffer :write-in-flight) nil)
                      (when pending (start-buffer-write buffer (first pending))))
-                   (unless (buffer-local buffer :write-in-flight)
-                     (let ((waiters (buffer-local buffer :write-waiters)))
-                       (setf (buffer-local buffer :write-waiters) nil)
-                       (dolist (waiter (reverse waiters))
-                         (handler-case (funcall waiter)
-                           (error (e) (message "Waiting for saves failed: ~a" e))))))))))
+                   (notify-write-waiters buffer)))))
       (handler-case
           (write-buffer-contents pathname text (lambda () (finish t))
                                  (lambda (e) (finish nil e)))
         (error (e) (finish nil e))))))
 
 (defun write-buffer (buffer pathname continuation)
-  "Save BUFFER's current text to PATHNAME. Call CONTINUATION with t only
-if the write succeeded and that text is still current when it completes.
-A newer queued save to the same file defers the callback to that save."
+  "Save BUFFER's text to PATHNAME, once *SAVE-PREPARER* has had its turn.
+Call CONTINUATION with t only if the write succeeded and that text is still
+current when it completes. A newer queued save to the same file defers the
+callback to that save."
+  (if (buffer-local buffer :save-preparing)
+      (setf (buffer-local buffer :pending-saves)
+            (append (buffer-local buffer :pending-saves) (list (list pathname continuation))))
+      (prepare-buffer-save buffer pathname continuation)))
+
+(defun prepare-buffer-save (buffer pathname continuation)
+  (setf (buffer-local buffer :save-preparing) t)
+  (let ((done nil))
+    (flet ((then ()
+             (unless done
+               (setf done t)
+               (unwind-protect (write-buffer-snapshot buffer pathname continuation)
+                 (setf (buffer-local buffer :save-preparing) nil)
+                 (let ((next (pop (buffer-local buffer :pending-saves))))
+                   (if next
+                       (apply #'prepare-buffer-save buffer next)
+                       (notify-write-waiters buffer)))))))
+      (if *save-preparer*
+          (handler-case (funcall *save-preparer* buffer #'then)
+            (error (e)
+              ;; Once the save itself has started, its errors are the caller's.
+              (when done (error e))
+              (message "Could not prepare ~a for saving: ~a" (buffer-name buffer) e)
+              (then)))
+          (then)))))
+
+(defun write-buffer-snapshot (buffer pathname continuation)
+  "Write BUFFER's text as it is now, after the before-save hooks."
   (run-hook '*before-save-hook* buffer)
   (let* ((text (buffer-string buffer))
          (active (buffer-local buffer :write-in-flight))

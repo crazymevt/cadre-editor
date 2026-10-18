@@ -691,10 +691,7 @@ Files a body names (\"< path\") are relative to DIRECTORY."
         (when (and cookie-jar (not (getf options :no-cookie-jar)))
           (option "cookie" (uiop:native-namestring cookie-jar))
           (option "cookie-jar" (uiop:native-namestring cookie-jar)))
-        ;; curl forwards arbitrary custom headers to a redirected origin.
-        ;; Do not follow redirects when caller-supplied headers may contain secrets.
-        (when (and (not (getf options :no-redirect))
-                   (null (http-request-headers request)))
+        (when (http-request-follows-redirects-p request)
           (option "location"))
         (when (getf options :insecure) (option "insecure"))
         (option "max-time" (princ-to-string (or (getf options :timeout) 60)))
@@ -703,6 +700,27 @@ Files a body names (\"< path\") are relative to DIRECTORY."
         (when header-file (option "dump-header" (uiop:native-namestring header-file)))
         (when output-file (option "output" (uiop:native-namestring output-file)))
         (option "write-out" "%{json}")))))
+
+;;; Redirects. curl sends a request's headers again to wherever a redirect
+;;; goes, another host too; it leaves out only Authorization and Cookie, and
+;;; only in newer versions. So redirects are followed only when every header
+;;; is one that can't carry a secret.
+
+(defparameter *redirect-safe-headers*
+  '("Accept" "Accept-Encoding" "Accept-Language" "Cache-Control" "Content-Language"
+    "Content-Type" "If-Match" "If-Modified-Since" "If-None-Match" "If-Unmodified-Since"
+    "Origin" "Pragma" "Range" "Referer" "User-Agent")
+  "Request headers that are safe to send to another host after a redirect.")
+
+(defun http-redirect-blocking-headers (request)
+  "The names of REQUEST's headers that keep its redirects from being followed."
+  (loop for (name) in (http-request-headers request)
+        unless (member name *redirect-safe-headers* :test #'string-equal)
+          collect name))
+
+(defun http-request-follows-redirects-p (request)
+  (and (not (getf (http-request-options request) :no-redirect))
+       (null (http-redirect-blocking-headers request))))
 
 (defstruct (http-response (:conc-name http-response-))
   (status 0) (reason "") (headers '()) (body "") (size 0) (milliseconds 0)
@@ -844,9 +862,7 @@ relative to DIRECTORY. FINISH-CURL waits for it."
               (file (format out " \\~%  --data-binary ~a" (shell-quote (format nil "@~a" (body-path file directory)))))
               ((plusp (length (http-request-body request)))
                (format out " \\~%  --data-raw ~a" (shell-quote (http-request-body request))))))
-      ;; Keep copied commands safe for the same reason as CURL-CONFIG.
-      (when (and (not (getf options :no-redirect))
-                 (null (http-request-headers request)))
+      (when (http-request-follows-redirects-p request)
         (format out " -L"))
       (when (getf options :insecure) (format out " -k")))))
 

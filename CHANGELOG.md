@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+- **Format on save no longer blocks the editor.** External formatters such
+  as Prettier now run in the background, for saving and for Format Document
+  alike. A formatter that takes longer than 20 seconds is stopped. If it
+  fails, takes too long, or the text changes meanwhile, the file is saved
+  unformatted. Saves of a file still happen in the order they were asked
+  for.
+
+- **API client redirects.** Redirects are followed again for requests whose
+  headers are only standard ones (Content-Type, Accept, User-Agent and
+  similar). A header that could carry a secret still stops a redirect, since
+  curl would send it to the new host, and the status line now says so.
+
+- **Trim trailing whitespace keeps meaningful spaces.** Two or more spaces
+  ending a Markdown line (a line break) are kept, and so are the spaces of
+  Lisp lines that end inside a string.
+
+- **Runs page output.** Streaming output is added as it arrives instead of
+  being redrawn ten times a second, so you can select or scroll back while a
+  run continues. The view follows the end only when it is already there. A
+  GTK app's run no longer collects what you evaluate in the REPL while it
+  runs.
+
+- **Codex Stop.** A stopped Codex turn now says "Stopped." instead of
+  reporting a failure.
+
+- **Unsaved-buffer recovery after a crash.** Each Cadre process now holds a
+  lock on its recovery folder. Checkpoints are no longer hidden when the
+  crashed process's ID has been reused by another program.
+
+- **MySQL single-float parameters** are written as valid numbers.
+
+- **Markdown preview.** A tab switched to its rendered preview shows GTK's
+  Copy and Select All menu and no symbol tooltips. Previously it showed the
+  code editor's menu and tooltips.
+
 - **MySQL string values are safe in every sql_mode.** Values in queries and
   table edits are now sent as hex string literals. Previously, with the
   server's default sql_mode, a backslash in a value was read as an escape:

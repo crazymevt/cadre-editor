@@ -100,17 +100,67 @@
           (prune-snapshots (snapshot-files (snapshot-directory :history)) *local-history-total*)
           path)))))
 
+;;; A process's recovery folder is in use while the process holds a write
+;;; lock on the folder's lock file. The system drops the lock when the
+;;; process ends, however it ends; a process ID alone could belong to some
+;;; other process by then. (A process drops its own fcntl locks on a file
+;;; when it closes any descriptor of it, so it never tests its own.)
+
+(defvar *recovery-lock* nil "The descriptor of this process's recovery lock file, while it holds the lock.")
+(defvar *own-recovery-sessions* '() "The recovery folders this process made (namestrings).")
+
+(defun recovery-lock-file (directory) (merge-pathnames "lock" directory))
+
+(defun whole-file-lock (type)
+  (make-instance 'sb-posix:flock :type type :whence sb-posix:seek-set :start 0 :len 0))
+
+(defun lock-recovery-session (directory)
+  (handler-case
+      (let ((fd (sb-posix:open (namestring (recovery-lock-file directory))
+                               (logior sb-posix:o-creat sb-posix:o-rdwr) #o600)))
+        (sb-posix:fcntl fd sb-posix:f-setlk (whole-file-lock sb-posix:f-wrlck))
+        (setf *recovery-lock* fd))
+    (error (e) (message "Could not lock the recovery folder; telling it from others by process ID: ~a" e))))
+
+(defun unlock-recovery-session ()
+  (when *recovery-lock*
+    (ignore-errors (sb-posix:close *recovery-lock*))
+    (setf *recovery-lock* nil)))
+
 (defun recovery-session-directory ()
   (or *recovery-session*
-      (setf *recovery-session*
-            (merge-pathnames (format nil "~d-~a/" (sb-posix:getpid) (make-uuid)) (snapshot-directory :recovery)))))
+      (let ((directory (merge-pathnames (format nil "~d-~a/" (sb-posix:getpid) (make-uuid))
+                                        (snapshot-directory :recovery))))
+        (ensure-directories-exist directory)
+        (sb-posix:chmod directory #o700)
+        (lock-recovery-session directory)
+        (push (namestring directory) *own-recovery-sessions*)
+        (setf *recovery-session* directory))))
+
+(defun recovery-lock-held-p (lock-file)
+  "Whether another process holds LOCK-FILE's lock; t if that can't be told."
+  (handler-case
+      (let ((fd (sb-posix:open (namestring lock-file) sb-posix:o-rdwr)))
+        (unwind-protect
+             (let ((lock (whole-file-lock sb-posix:f-wrlck)))
+               (sb-posix:fcntl fd sb-posix:f-getlk lock)
+               (/= (sb-posix:flock-type lock) sb-posix:f-unlck))
+          (sb-posix:close fd)))
+    (error () t)))
 
 (defun recovery-session-active-p (directory)
-  "Ignore checkpoints belonging to another live Cadre process."
-  (let ((pid (ignore-errors (parse-integer (car (last (pathname-directory directory))) :junk-allowed t))))
-    (and pid
-         (handler-case (progn (sb-posix:kill pid 0) t)
-           (sb-posix:syscall-error (e) (not (= (sb-posix:syscall-errno e) sb-posix:esrch)))))))
+  "Whether DIRECTORY's checkpoints belong to a running Cadre process: this
+one, or one holding the folder's lock. A folder without a lock file (from
+before there was one) goes by the process ID its name starts with."
+  (let ((lock-file (recovery-lock-file directory)))
+    (cond ((member (namestring (uiop:ensure-directory-pathname directory)) *own-recovery-sessions*
+                   :test #'string=)
+           t)
+          ((probe-file lock-file) (recovery-lock-held-p lock-file))
+          (t (let ((pid (ignore-errors (parse-integer (car (last (pathname-directory directory))) :junk-allowed t))))
+               (and pid
+                    (handler-case (progn (sb-posix:kill pid 0) t)
+                      (sb-posix:syscall-error (e) (not (= (sb-posix:syscall-errno e) sb-posix:esrch))))))))))
 
 (defun recoverable-snapshots ()
   (sort (loop for path in (snapshot-files (snapshot-directory :recovery))
@@ -196,6 +246,9 @@
         (when (and *recovery-session* (uiop:directory-exists-p *recovery-session*)
                    (null (snapshot-files *recovery-session*)))
           (uiop:delete-directory-tree *recovery-session* :validate t))
+        ;; Checkpoints left behind stay locked until this process ends.
+        (unless (and *recovery-session* (uiop:directory-exists-p *recovery-session*))
+          (unlock-recovery-session))
         (setf *recovery-session* nil))
     (error (e) (message "Could not clear this session's recovery checkpoints: ~a" e))))
 

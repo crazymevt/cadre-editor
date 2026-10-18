@@ -83,7 +83,8 @@ server's sql_mode (NO_BACKSLASH_ESCAPES), which a hex string doesn't."
     ((or null (eql :null)) "NULL")
     (integer (princ-to-string value))
     (float (let* ((*read-default-float-format* 'double-float)
-                  (text (princ-to-string value)))
+                  ;; A single-float would print with an F exponent.
+                  (text (princ-to-string (coerce value 'double-float))))
              ;; Common Lisp's D exponent is not part of MySQL's numeric grammar.
              (substitute #\e #\d (substitute #\e #\D text))))
     ((vector (unsigned-byte 8)) (my-hex-literal value))

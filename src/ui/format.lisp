@@ -50,51 +50,93 @@ uses its program even if Cadre has a formatter of its own (JSON, CSS)."
 (defun external-formatter (mode)
   (cdr (assoc mode *formatter-commands*)))
 
-(defun external-format-buffer-text (buffer command)
-  "Return the formatted text and success flag for BUFFER using COMMAND."
-  (let* ((text (buffer-string buffer))
-         (file (if (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)) (buffer-name buffer)))
+(defparameter *formatter-timeout* 20
+  "Seconds an external formatter may take before it is stopped.")
+
+(defun run-formatter-process (buffer text command then &key (deliver #'glib:call-in-main-thread)
+                                                            (timeout *formatter-timeout*))
+  "Run COMMAND, an external formatter (*formatter-commands*), on TEXT, from
+BUFFER, in the background. Call THEN through DELIVER with the formatted text,
+or with nil and why not. A formatter still running after TIMEOUT seconds is
+stopped."
+  (let* ((file (if (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)) (buffer-name buffer)))
+         (directory (and (buffer-file buffer)
+                         (uiop:native-namestring (uiop:pathname-directory-pathname (buffer-file buffer)))))
          (program (first command))
          (arguments (mapcar (lambda (a) (cl-ppcre:regex-replace-all "\\{file\\}" a file)) (rest command))))
-    (handler-case
-        (multiple-value-bind (output error code)
-            (with-input-from-string (in text)
-              (uiop:run-program (cons program arguments) :input in :output :string :error-output :string
-                                                        :ignore-error-status t
-                                                        :directory (and (buffer-file buffer)
-                                                                        (uiop:pathname-directory-pathname
-                                                                         (buffer-file buffer)))))
-          (if (zerop code)
-              (values output t)
-              (progn
-                (message "~a couldn't format it; saving without formatting: ~a"
-                         program (string-trim '(#\Newline) error))
-                (values nil nil))))
-      (error (e)
-        (message "Could not run formatter ~a; saving without formatting: ~a" program e)
-        (values nil nil)))))
+    (flet ((temporary-file ()
+             (uiop:with-temporary-file (:pathname path :keep t :prefix "cadre-format") path)))
+      (let ((input (temporary-file)) (output (temporary-file)) (errors (temporary-file)))
+        (with-open-file (out input :direction :output :if-exists :supersede :external-format :utf-8)
+          (write-string text out))
+        (sb-thread:make-thread
+         (lambda ()
+           (let ((result
+                   (handler-case
+                       (let ((process (sb-ext:run-program program arguments
+                                                          :search t :wait nil :directory directory
+                                                          :input input
+                                                          :output output :if-output-exists :supersede
+                                                          :error errors :if-error-exists :supersede))
+                             (deadline (+ (get-internal-real-time)
+                                          (* timeout internal-time-units-per-second))))
+                         (unwind-protect
+                              (progn
+                                (loop while (sb-ext:process-alive-p process)
+                                      do (when (> (get-internal-real-time) deadline)
+                                           (sb-ext:process-kill process 15)
+                                           (sb-ext:process-wait process)
+                                           (return))
+                                         (sleep 0.02))
+                                (let ((code (sb-ext:process-exit-code process))
+                                      (status (sb-ext:process-status process)))
+                                  (cond ((eq status :signaled)
+                                         (list nil (format nil "~a took longer than ~d s and was stopped" program timeout)))
+                                        ((eql code 0)
+                                         (list (uiop:read-file-string output :external-format :utf-8) nil))
+                                        (t (let ((error (string-trim '(#\Newline #\Space)
+                                                                     (uiop:read-file-string errors :external-format :utf-8))))
+                                             (list nil (format nil "~a couldn't format it: ~a" program
+                                                               (subseq error 0 (or (position #\Newline error) (length error))))))))))
+                           (sb-ext:process-close process)))
+                     (error (e) (list nil (format nil "Could not run ~a: ~a" program e))))))
+             (dolist (path (list input output errors)) (ignore-errors (delete-file path)))
+             (funcall deliver (lambda () (apply then result)))))
+         :name "cadre format")))))
+
+(defun format-externally-before-save (buffer then)
+  "The save preparer (*save-preparer*): with *FORMAT-ON-SAVE*, run BUFFER's
+external formatter in the background, then call THEN to save. The text is
+saved unformatted if the formatter fails, takes too long, or the text changes
+meanwhile."
+  (let ((command (and *format-on-save* (external-formatter (buffer-major-mode buffer)))))
+    (if (null command)
+        (funcall then)
+        (let ((text (buffer-string buffer)))
+          (message "Formatting with ~a before saving…" (first command))
+          (run-formatter-process
+           buffer text command
+           (lambda (formatted problem)
+             (cond (problem (message "~a; saving without formatting" problem))
+                   ((not (string= text (buffer-string buffer)))
+                    (message "The text changed while it was being formatted; saving without formatting"))
+                   (t (replace-buffer-with-formatted buffer formatted)))
+             (funcall then)))))))
+
+(setf *save-preparer* 'format-externally-before-save)
 
 (defun format-lisp-buffer (buffer)
   "Indent all Lisp-family lines in BUFFER as one undo step."
-  (let* ((gtk-buffer (buffer-text buffer))
-         (syntax (buffer-sexp-syntax buffer)))
-    (with-user-action (gtk-buffer)
-      (loop for line below (text-line-count gtk-buffer)
-            for column = (lisp-indentation syntax line)
-            when (and column (plusp (length (string-trim '(#\Space #\Tab)
-                                                         (text-line-string gtk-buffer line)))))
-              do (indent-line-to gtk-buffer line column)))))
+  (indent-buffer-lines buffer 0 (1- (text-line-count (buffer-text buffer)))))
 
 (defun format-buffer-before-save (buffer)
-  "Format BUFFER before saving when *FORMAT-ON-SAVE* is enabled."
+  "Format BUFFER before saving when *FORMAT-ON-SAVE* is enabled, with Cadre's
+own formatters (format-externally-before-save runs the external ones)."
   (when *format-on-save*
     (handler-case
-        (let* ((mode (buffer-major-mode buffer))
-               (external (external-formatter mode)))
+        (let ((mode (buffer-major-mode buffer)))
           (cond
-            (external
-             (multiple-value-bind (text ok) (external-format-buffer-text buffer external)
-               (when ok (replace-buffer-with-formatted buffer text))))
+            ((external-formatter mode))
             ((eq mode 'json-mode)
              (replace-buffer-with-formatted buffer (format-json (buffer-string buffer) :indent *code-indent-width*)))
             ((eq mode 'css-mode)
@@ -110,37 +152,25 @@ uses its program even if Cadre has a formatter of its own (JSON, CSS)."
 (add-hook '*before-save-hook* #'format-buffer-before-save)
 
 (defun run-external-formatter (view command)
-  "Format VIEW's buffer with COMMAND on a thread; apply the result if the text hasn't changed meanwhile."
+  "Format VIEW's buffer with COMMAND in the background; apply the result if the text hasn't changed meanwhile."
   (let* ((buffer (view-buffer view))
          (text (buffer-string buffer))
-         (file (if (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)) (buffer-name buffer)))
-         (program (first command))
-         (arguments (mapcar (lambda (a) (cl-ppcre:regex-replace-all "\\{file\\}" a file)) (rest command))))
+         (program (first command)))
     (unless (ignore-errors (uiop:run-program (list "/bin/sh" "-c" (format nil "command -v ~a" program))
                                              :output :string))
       (editor-error "Format Document for ~a uses ~a, which isn't installed~:[~; (npm install -g prettier)~]; *formatter-commands* chooses the program"
                     (major-mode-title (find-major-mode (buffer-major-mode buffer))) program (string= program "prettier")))
     (message "Formatting with ~a…" program)
-    (sb-thread:make-thread
-     (lambda ()
-       (multiple-value-bind (output error code)
-           (with-input-from-string (in text)
-             (uiop:run-program (cons program arguments) :input in :output :string :error-output :string
-                                                       :ignore-error-status t
-                                                       :directory (and (buffer-file buffer)
-                                                                       (uiop:pathname-directory-pathname (buffer-file buffer)))))
-         (glib:call-in-main-thread
-          (lambda ()
-            (cond ((not (zerop code))
-                   (panel-log (window-panel *window*) (format nil "~a: ~a" program (string-trim '(#\Newline) error)))
-                   (message "~a couldn't format it: ~a" program
-                            (let ((first-line (subseq error 0 (or (position #\Newline error) (length error)))))
-                              first-line)))
-                  ((not (string= text (buffer-string buffer)))
-                   (message "The text changed while it was being formatted; Format Document again"))
-                  ((member view (buffer-views *window* buffer))
-                   (replace-with-formatted view output)))))))
-     :name "cadre format")))
+    (run-formatter-process
+     buffer text command
+     (lambda (formatted problem)
+       (cond (problem
+              (panel-log (window-panel *window*) problem)
+              (message "~a" problem))
+             ((not (string= text (buffer-string buffer)))
+              (message "The text changed while it was being formatted; Format Document again"))
+             ((member view (buffer-views *window* buffer))
+              (replace-with-formatted view formatted)))))))
 
 (define-command format-document ()
   "Lay out the whole file again: JSON, CSS and XML with Cadre's formatters, Lisp

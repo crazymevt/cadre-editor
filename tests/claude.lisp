@@ -142,6 +142,21 @@
              (check-thread-params)))
       (c:stop-codex-app-server server))))
 
+(define-test codex-finished-turns-are-bounded :parent cadre-tests
+  (let ((server (c::make-codex-app-server :deliver #'funcall))
+        (c::*codex-finished-turns-kept* 3))
+    (dotimes (n 10)
+      (let ((turn (format nil "turn-~d" n)))
+        (c::codex-prepare-tools server)
+        (c::codex-handle-notification
+         server (c:jobj "method" "turn/started" "params" (c:jobj "turn" (c:jobj "id" turn))))
+        (c::codex-handle-notification
+         server (c:jobj "method" "turn/completed"
+                        "params" (c:jobj "turn" (c:jobj "id" turn "status" "completed"))))))
+    (is = 3 (hash-table-count (c::codex-tool-turns server)))
+    ;; A late tool call for a recent finished turn still gets its dead token.
+    (false (car (c::codex-tool-request-token server (c:jobj "params" (c:jobj "turnId" "turn-9")))))))
+
 (define-test codex-request-timeout :parent cadre-tests
   (let ((now #x10000000))
     (is eql (+ now (round (* 0.1 c::internal-time-units-per-second)))

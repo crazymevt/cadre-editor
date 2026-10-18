@@ -13,6 +13,20 @@
     ;; A second call is safe and reports that there was nothing left to remove.
     (is = 0 (ui::trim-trailing-whitespace-in-buffer buffer))))
 
+(define-test trim-keeps-meaningful-whitespace :parent editing
+  ;; Markdown: two or more spaces after text are a line break.
+  (let ((buffer (buffer-with-text (format nil "line break  ~%three   ~%one ~%tab~c~%  ~%end" #\Tab))))
+    (setf (c:buffer-major-mode buffer) 'c::markdown-mode)
+    (ui::trim-trailing-whitespace-in-buffer buffer)
+    (is string= (format nil "line break  ~%three   ~%one~%tab~%~%end") (c:buffer-string buffer)))
+  ;; Lisp: a line ending inside a string keeps its spaces; code lines don't.
+  (let ((buffer (buffer-with-text (format nil "(defun f ()   ~%  \"doc   ~%  more\"  ~%  1)"))))
+    (setf (c:buffer-major-mode buffer) 'c::lisp-mode)
+    ;; attach-syntax needs a display; trimming only reads the syntax.
+    (setf (c:buffer-local buffer :syntax) (c::make-lisp-syntax (c:buffer-text buffer)))
+    (ui::trim-trailing-whitespace-in-buffer buffer)
+    (is string= (format nil "(defun f ()~%  \"doc   ~%  more\"~%  1)") (c:buffer-string buffer))))
+
 (define-test trim-trailing-whitespace-save-setting :parent editing
   (let* ((buffer (buffer-with-text (format nil "one  ~%two~c~%" #\Tab)))
          (ui:*trim-trailing-whitespace-on-save* nil))

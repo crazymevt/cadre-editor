@@ -890,8 +890,12 @@ ON-CHANGE is called after either changes, or the row goes."
          (gtk:widget-set-visible (ap-copy-body-button page) nil))
         (t
          (let ((status (http-response-status response)))
-           (show-api-status page (format nil "~d ~a · ~:d ms · ~a" status (http-response-reason response)
-                                         (http-response-milliseconds response) (byte-size-text (http-response-size response)))
+           (show-api-status page (format nil "~d ~a · ~:d ms · ~a~@[ · redirect not followed: ~{~a~^, ~} could carry a secret to another host~]"
+                                         status (http-response-reason response)
+                                         (http-response-milliseconds response) (byte-size-text (http-response-size response))
+                                         (and (<= 300 status 399)
+                                              (not (getf (http-request-options (page-request page)) :no-redirect))
+                                              (http-redirect-blocking-headers (page-request page))))
                             (cond ((< status 300) "success") ((< status 400) "warning") (t "error"))))
          (show-response-body page response)
          (gtk:text-buffer-set-text (gtk:text-view-get-buffer (ap-response-headers page))

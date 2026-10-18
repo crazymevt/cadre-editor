@@ -6,7 +6,10 @@
   title root plan (started (get-universal-time))
   (start (get-internal-real-time)) end exit-code (status :running)
   (output (make-array 0 :element-type 'character :adjustable t :fill-pointer 0))
-  (truncated nil) rerun stop available connection (stop-requested nil))
+  (truncated nil) rerun stop available connection (stop-requested nil)
+  ;; Whether what CONNECTION prints is this run's output too (not for a GTK
+  ;; app, whose output comes from its Lisp's own stream).
+  (capture-output t))
 
 (defvar *project-runs* nil "Recent project processes, newest first; this session only.")
 (defparameter *project-run-limit* 30)
@@ -15,7 +18,11 @@
 (defvar *runs-page* nil)
 
 (defstruct (runs-page (:conc-name rnp-))
-  list output search title rerun stop locations selected (filling nil) (output-pending nil))
+  list output output-scroller end-mark search title rerun stop locations selected
+  (filling nil) (output-pending nil)
+  ;; What the output view shows: which run, how much of its output, under
+  ;; which filter, and whether with the truncation notice.
+  shown-run (shown-length 0) shown-query shown-truncated)
 
 (defun project-run-seconds (run)
   (/ (- (or (pr-end run) (get-internal-real-time)) (pr-start run))
@@ -26,9 +33,10 @@
     (:running (if (pr-stop-requested run) "Stopping" "Running")) (:passed "Finished") (:stopped "Stopped")
     (otherwise (format nil "Failed~@[ (exit ~a)~]" (pr-exit-code run)))))
 
-(defun begin-project-run (root plan title &key rerun stop available connection)
+(defun begin-project-run (root plan title &key rerun stop available connection (capture-output t))
   (let ((run (make-project-run :root root :plan (copy-tree plan) :title title :rerun rerun :stop stop
-                               :available available :connection connection)))
+                               :available available :connection connection
+                               :capture-output capture-output)))
     (push run *project-runs*)
     ;; Never evict an active run: it still owns output and cancellation.
     (let ((remaining (max 0 (- *project-run-limit*
@@ -62,7 +70,7 @@
         (glib:timeout-add glib:+priority-default+ 100
                           (lambda ()
                             (setf (rnp-output-pending page) nil)
-                            (when (eq page *runs-page*) (refresh-run-output))
+                            (when (eq page *runs-page*) (update-run-output))
                             nil))))))
 
 (defun finish-project-run (run code &key stopped)
@@ -98,24 +106,72 @@
   (destructuring-bind (file row column) location
     (open-file-path file :then (lambda (view) (goto-line-column view (1- row) (1- column) :extend nil)))))
 
-(defun refresh-run-output ()
+(defun run-output-at-end-p (page)
+  (let ((adjustment (gtk:scrolled-window-get-vadjustment (rnp-output-scroller page))))
+    (>= (+ (gtk:adjustment-get-value adjustment) (gtk:adjustment-get-page-size adjustment))
+        (- (gtk:adjustment-get-upper adjustment) 4))))
+
+(defun scroll-run-output-to-end (page)
+  (let ((view (rnp-output page)))
+    (glib:idle-add glib:+priority-default-idle+
+                   (lambda ()
+                     (when (eq page *runs-page*)
+                       (gtk:text-view-scroll-to-mark view (rnp-end-mark page) 0d0 t 0d0 1d0))
+                     nil))))
+
+(defun update-run-output ()
+  "Show what the selected run printed since the view was filled. Only the new
+text is added (so a selection and the scroll position stay), and the view
+follows the end if it was there; under a filter, or after the truncation
+notice, the view is filled again."
   (let* ((page *runs-page*) (run (rnp-selected page))
-         (query (gtk:editable-get-text (rnp-search page))))
+         (output (and run (pr-output run))))
+    (if (and run (eq run (rnp-shown-run page))
+             (zerop (length (gtk:editable-get-text (rnp-search page))))
+             (equal "" (rnp-shown-query page))
+             (eq (pr-truncated run) (rnp-shown-truncated page))
+             (<= (rnp-shown-length page) (length output)))
+        (when (< (rnp-shown-length page) (length output))
+          (let ((at-end (run-output-at-end-p page))
+                (buffer (gtk:text-view-get-buffer (rnp-output page))))
+            (gtk:text-buffer-insert buffer (gtk:text-buffer-get-end-iter buffer)
+                                    (subseq output (rnp-shown-length page)) -1)
+            (setf (rnp-shown-length page) (length output))
+            (when at-end (scroll-run-output-to-end page))))
+        (refresh-run-output :locations nil))))
+
+(defun refresh-run-output (&key (locations t))
+  "Fill the output view with the selected run's output under the filter, and,
+with LOCATIONS, list the file:line places in it."
+  (let* ((page *runs-page*) (run (rnp-selected page))
+         (query (gtk:editable-get-text (rnp-search page)))
+         (at-end (or (not (eq run (rnp-shown-run page))) (run-output-at-end-p page))))
     (gtk:text-buffer-set-text (gtk:text-view-get-buffer (rnp-output page))
                              (if run (project-run-output-text run query) "") -1)
-    (gtk:list-box-remove-all (rnp-locations page))
-    (when run
-      (let ((seen nil) (count 0))
-        (dolist (line (split-lines (pr-output run)))
-          (when (and (< count 20) (search query line :test #'char-equal))
-            (let ((location (ignore-errors (project-run-location line (pr-root run)))))
-              (when (and location (ignore-errors (probe-file (first location))) (not (member location seen :test #'equal)))
-                (push location seen)
+    (setf (rnp-shown-run page) run
+          (rnp-shown-length page) (if run (length (pr-output run)) 0)
+          (rnp-shown-query page) query
+          (rnp-shown-truncated page) (and run (pr-truncated run)))
+    (when at-end (scroll-run-output-to-end page))
+    (when locations (refresh-run-locations page run query))))
+
+(defun refresh-run-locations (page run query)
+  "List up to 20 file:line places that RUN printed and that exist, each
+checked on disk once."
+  (gtk:list-box-remove-all (rnp-locations page))
+  (when run
+    (let ((seen '()) (count 0))
+      (dolist (line (split-lines (pr-output run)))
+        (when (and (< count 20) (search query line :test #'char-equal))
+          (let ((location (ignore-errors (project-run-location line (pr-root run)))))
+            (when (and location (not (member (first location) seen :test #'equal)))
+              (push (first location) seen)
+              (when (ignore-errors (probe-file (first location)))
                 (incf count)
                 (let ((button (make-instance 'gtk:button
-                                                        :child (label line :xalign 0.0 :ellipsize :end)
-                                                        :hexpand t :css-classes '("flat")
-                                                        :tooltip-text "Open this file location")))
+                                             :child (label line :xalign 0.0 :ellipsize :end)
+                                             :hexpand t :css-classes '("flat")
+                                             :tooltip-text "Open this file location")))
                   (gobject:connect button :clicked
                                    (lambda (b) (declare (ignore b)) (show-project-run-location location)))
                   (gtk:list-box-append (rnp-locations page) button))))))))))
@@ -171,7 +227,8 @@
   "Retain connection output while its runs are active; keep the original REPL too."
   (when connection
     (dolist (run *project-runs*)
-      (when (and (eq connection (pr-connection run)) (eq :running (pr-status run)))
+      (when (and (eq connection (pr-connection run)) (eq :running (pr-status run))
+                 (pr-capture-output run))
         (append-project-run-output run text :newline nil)))))
 
 (defun disconnect-project-runs (connection reason)
@@ -195,6 +252,9 @@
   (let* ((list (make-instance 'gtk:list-box :selection-mode :single))
          (output (make-instance 'gtk:text-view :editable nil :monospace t :wrap-mode :word-char
                                                :left-margin 8 :top-margin 4 :vexpand t))
+         (output-scroller (make-instance 'gtk:scrolled-window :vexpand t :child output))
+         (end-mark (let ((buffer (gtk:text-view-get-buffer output)))
+                     (gtk:text-buffer-create-mark buffer "cadre-runs-end" (gtk:text-buffer-get-end-iter buffer) nil)))
          (search (make-instance 'gtk:search-entry :placeholder-text "Filter output…" :hexpand t))
          (title (label "" :xalign 0.0 :wrap t :wrap-mode :word-char :selectable t :margin-start 8 :margin-end 8))
          (rerun (make-instance 'gtk:button :label "Rerun" :tooltip-text "Save files and rerun this activity in its original project"))
@@ -207,9 +267,10 @@
                        (gtk:box :spacing 4 rerun stop))
                      (gtk:scrolled-window :height-request 100 :child list)
                      title
-                     (gtk:scrolled-window :vexpand t :child output)
+                     output-scroller
                      (gtk:scrolled-window :max-content-height 80 :propagate-natural-height t :child locations)))))
-    (setf *runs-page* (make-runs-page :list list :output output :search search :title title
+    (setf *runs-page* (make-runs-page :list list :output output :output-scroller output-scroller
+                                     :end-mark end-mark :search search :title title
                                      :rerun rerun :stop stop :locations locations :selected (first *project-runs*)))
     (gobject:connect list :row-selected
                      (lambda (box row) (declare (ignore box))

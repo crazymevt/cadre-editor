@@ -127,6 +127,11 @@ database table): the view's text view stays out of sight."
 (defun widget-view-p (view)
   (and (buffer-local (view-buffer view) :tab-widget) t))
 
+(defun source-editor-view-p (view)
+  "Whether VIEW shows source, not a rendered preview: a Markdown tab switched
+to its preview keeps the source view's controllers, which then stand aside."
+  (not (buffer-local (view-buffer view) :preview-of)))
+
 (defun setup-source-editor-view (view)
   (unless (view-source-controllers-p view)
     (setup-note-tooltips view)
@@ -466,7 +471,7 @@ the scratch buffer, which saves itself."
       ;; Idle buffers can proceed synchronously; otherwise the waiter owns the
       ;; callback until the current writes finish.
       (funcall (guard (lambda ()
-                        (if (some (lambda (b) (buffer-local b :write-in-flight)) buffers)
+                        (if (some #'buffer-save-busy-p buffers)
                             (wait-for-buffer-writes buffers (guard #'prompt))
                             (prompt))))))))
 
@@ -503,7 +508,7 @@ repeated requests share the pending decision."
            (let* ((buffers (buffer-list))
                   (modified (remove-if-not #'buffer-needs-saving-p buffers)))
              (when (or modified
-                       (some (lambda (b) (buffer-local b :write-in-flight)) buffers))
+                       (some #'buffer-save-busy-p buffers))
                (confirm-close-buffers
                 win buffers
                 (lambda (proceed)

@@ -130,6 +130,20 @@
       (false (search "late output" (ui::project-run-output-text run)))
       (true (search "Connection lost" (ui::project-run-output-text run))))))
 
+(define-test gtk-app-runs-do-not-take-repl-output :parent runs
+  ;; A GTK app's output comes from its Lisp's stream; what the user
+  ;; evaluates in the REPL meanwhile isn't the app's.
+  (with-runs-fixture
+    (let* ((connection (list :connection))
+           (app (ui::begin-project-run #P"/tmp/" nil "GTK app" :connection connection :capture-output nil))
+           (tests (ui::begin-project-run #P"/tmp/" nil "REPL tests" :connection connection)))
+      (ui::capture-project-run-output connection "(+ 1 2)")
+      (is equal "" (ui::project-run-output-text app))
+      (is equal "(+ 1 2)" (ui::project-run-output-text tests))
+      ;; It still ends when the connection goes.
+      (ui::disconnect-project-runs connection "Connection lost")
+      (is eq :failed (ui::pr-status app)))))
+
 (define-test active-runs-are-not-evicted :parent runs
   (with-runs-fixture
     (let* ((ui::*project-run-limit* 1)

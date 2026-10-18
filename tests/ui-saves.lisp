@@ -567,3 +567,69 @@
              (funcall response "discard")
              (is equal '(nil) calls))
         (setf (symbol-function 'ui::choose-save-response) original-choose)))))
+
+;;; Saves wait for their preparation (format on save's external formatter),
+;;; one at a time and in order, and so do those waiting for the saves.
+
+(define-test prepared-saves-keep-their-order :parent saves
+  (with-save-fixture
+    (let* ((preparing '())
+           (ui::*save-preparer* (lambda (buffer then)
+                                  (declare (ignore buffer))
+                                  (setf preparing (append preparing (list then)))))
+           (waited nil))
+      (save)
+      (true (ui::buffer-save-busy-p buffer))
+      (false writes)
+      (c:buffer-insert buffer " new" 3)
+      (save)
+      ;; The second save waits for the first one's preparation.
+      (is = 1 (length preparing))
+      (ui::wait-for-buffer-writes (list buffer) (lambda () (setf waited t)))
+      (funcall (pop preparing))
+      (is = 1 (length writes))
+      (is equal "old new" (second (first writes)))
+      (is = 1 (length preparing))
+      ;; A preparation answers once, however often it's called.
+      (funcall (first preparing))
+      (funcall (pop preparing))
+      (false waited)
+      (complete-write (first writes))
+      (true waited)
+      (is equal '(t t) results)
+      (is equal "old new" disk)
+      (false (ui::buffer-save-busy-p buffer)))))
+
+(define-test failed-preparation-still-saves :parent saves
+  (with-save-fixture
+    (let ((ui::*save-preparer* (lambda (buffer then)
+                                 (declare (ignore buffer then))
+                                 (error "No formatter"))))
+      (save)
+      (complete-write (first writes))
+      (is equal '(t) results)
+      (false (ui::buffer-save-busy-p buffer)))))
+
+(defun run-formatter (command text &key (timeout 10))
+  (let ((buffer (c:make-buffer :name "format-test" :text (c:make-string-text text)))
+        (done (sb-thread:make-semaphore))
+        (result nil))
+    (ui::run-formatter-process buffer text command
+                               (lambda (formatted problem) (setf result (list formatted problem)))
+                               :deliver (lambda (function) (funcall function) (sb-thread:signal-semaphore done))
+                               :timeout timeout)
+    (true (sb-thread:wait-on-semaphore done :timeout 15))
+    result))
+
+(define-test external-formatter-process :parent saves
+  (let ((c::*buffers* nil) (c:*buffer-created-hook* nil))
+    (is equal '("HELLO λ" nil) (run-formatter '("tr" "a-z" "A-Z") "hello λ"))
+    (destructuring-bind (formatted problem) (run-formatter '("sh" "-c" "echo bad input >&2; exit 2") "x")
+      (false formatted)
+      (true (search "couldn't format it: bad input" problem)))
+    (destructuring-bind (formatted problem) (run-formatter '("sleep" "10") "x" :timeout 0.3)
+      (false formatted)
+      (true (search "took longer" problem)))
+    (destructuring-bind (formatted problem) (run-formatter '("cadre-no-such-formatter") "x")
+      (false formatted)
+      (true (search "Could not run" problem)))))

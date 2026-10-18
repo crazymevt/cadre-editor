@@ -205,6 +205,15 @@ GET https://x.test/
   (let ((request (c:make-http-request :url "https://x.test" :headers '(("X-API-Key" . "secret")))))
     (false (search "location" (c:curl-config request)))
     (false (search " -L" (c:http-request-curl-command request))))
+  ;; Standard headers can't carry a secret, so redirects are still followed.
+  (let ((request (c:make-http-request :url "https://x.test"
+                                      :headers '(("Content-Type" . "application/json") ("accept" . "*/*")))))
+    (true (search "location" (c:curl-config request)))
+    (true (search " -L" (c:http-request-curl-command request))))
+  (is equal '("X-API-Key" "Authorization")
+      (c:http-redirect-blocking-headers
+       (c:make-http-request :url "u" :headers '(("Accept" . "a") ("X-API-Key" . "s") ("Authorization" . "t")))))
+  (false (c:http-request-follows-redirects-p (c:make-http-request :url "u" :options '(:no-redirect t))))
   (true (search "location" (c:curl-config (c:make-http-request :url "https://x.test"))))
   (true (search " -L" (c:http-request-curl-command (c:make-http-request :url "https://x.test")))))
 
@@ -310,6 +319,10 @@ GET https://x.test/
                         (c:send-http-request (c:make-http-request
                                               :url (format nil "http://127.0.0.1:~d/redirect" port)
                                               :headers '(("X-API-Key" . "s3cret"))))))
+             (is = 201 (c:http-response-status
+                        (c:send-http-request (c:make-http-request
+                                              :url (format nil "http://127.0.0.1:~d/redirect" port)
+                                              :headers '(("Accept" . "application/json"))))))
              (is = 302 (c:http-response-status
                         (c:send-http-request (c:make-http-request :url (format nil "http://127.0.0.1:~d/redirect" port)
                                                                   :options '(:no-redirect t)))))

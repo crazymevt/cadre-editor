@@ -206,7 +206,7 @@ next run's new window would get them."
     (when (app-running-p) (editor-error "An app is already running"))
     (let ((run (begin-project-run
                 root (list :description (format nil "~a (GTK main thread)" entry)) entry
-                :connection connection :available (lambda () (not (app-running-p)))
+                :connection connection :capture-output nil :available (lambda () (not (app-running-p)))
                 :rerun (lambda () (launch-gtk-app root system entry))
                 :stop (lambda () (stop-gtk-app)))))
       (handler-case (send-to-first-thread (gtk-app-launch-form root system entry))
