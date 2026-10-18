@@ -204,7 +204,7 @@ an editor (a right click moves the cursor there first).
 | Find / find and replace in the file | `Ctrl+F` / `Ctrl+H` | `C-s` / `M-%` |
 | Find in project / replace in project | `Ctrl+Shift+F` / `Ctrl+Shift+H` | `C-c s` / `C-c S` |
 | Find the symbol at the cursor in the project | `Ctrl+K Ctrl+F` | `C-c C-x s` |
-| Rename symbol (everywhere in the project) | `F2` | `C-c r` |
+| Rename symbol (a local in its form, else in the project) | `F2` | `C-c r` |
 | Extract function / extract variable | `Ctrl+K E F` / `Ctrl+K E V` | `C-c C-x f` / `C-c C-x v` |
 
 The find bar and the Search page (the magnifier in the activity bar) have
@@ -216,10 +216,27 @@ explorer shows, using open buffers' unsaved text. Replacing in the project
 shows a check box on each match; open files change in their buffers (one
 undo each), other files on disk, after you confirm.
 
-**Rename symbol** finds the symbol in the project's Lisp files with the
-lexer, so strings, comments and longer names are left alone and `pkg:name`
-counts. Review the places in the Search page, change the name, then
-*Rename*. **Extract function** moves the selection into a new `defun`
+**Rename symbol** previews the places in the Search page; change the name,
+then *Rename*. If the symbol at the cursor is a local variable or function
+(bound by `let`, `let*`, a lambda list, `dolist`, `destructuring-bind`,
+`flet`, `labels`, `loop`, `handler-case` and the like), it renames that
+binding and the uses that refer to it, in its form: an inner binding of the
+same name shadows it, and a call `(name …)` is a function, not a variable of
+that name. `with-` macros are guessed to bind their first argument, and the
+page says so.
+
+Any other symbol is looked for in the project's Lisp files (not in strings
+or comments), and each occurrence is put in its package: its prefix
+(`pkg:name`), a `defpackage` clause that names it (`(:export #:name)`), or
+the `in-package` before it (`cl-user` if there is none). With a Lisp
+connected, the image says which symbol each package's name is, so a package
+that uses the renamed one counts and one with its own symbol of that name
+doesn't; without one, an occurrence read in the symbol's own package counts.
+Each place says what it is: the symbol, a `defpackage` clause, another
+symbol of the same name, a local binding, or one it can't tell. Only the
+symbol's places and its `defpackage` clauses start checked; check the others
+you mean to change. A place whose text changed after it was found is left
+alone. **Extract function** moves the selection into a new `defun`
 above the current form and calls it there; the variables it uses from
 around it (the defun's parameters, `let`, `flet`, `dolist`, `loop` and other
 bindings) become its parameters. **Extract variable** binds the selection

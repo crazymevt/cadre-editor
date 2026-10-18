@@ -8,17 +8,27 @@
 ;;;; Replace All changes the checked ones, in open buffers as one undo step
 ;;;; each, and in other files on disk.
 ;;;;
-;;;; Renaming a symbol uses the same page in symbol mode: occurrences come
-;;;; from the lexer, so strings and comments are left alone and pkg:name
-;;;; counts as name.
+;;;; Renaming a symbol uses the same page. A local variable or function (one
+;;;; bound around the cursor) is renamed in :lexical mode: the places in its
+;;;; form that refer to that binding (lisp/rename.lisp). Any other symbol is
+;;;; renamed in :symbol mode across the project's Lisp files: each
+;;;; occurrence of the name (strings and comments aside) is put in its
+;;;; package and resolved, by the connected Lisp or else guessed from the
+;;;; IN-PACKAGE forms, so the page can say which are the symbol, which are
+;;;; another symbol or a local binding of that name, and which it can't tell.
+;;;; Only the first kind start checked.
 
 (in-package #:cadre-ui)
 
 (defstruct (project-search (:conc-name ps-))
   widget entry replace-entry replace-revealer replace-toggle case-button word-button regex-button
   status results apply-button
-  (mode :text)                          ; :text, or :symbol for renaming
+  (mode :text)                          ; :text, :symbol or :lexical for renaming
   (symbol nil)
+  ;; :symbol mode: the package the renamed symbol is read in at the cursor.
+  (target-package nil)
+  ;; :lexical mode: the buffer, and a mark on the binding's use there.
+  (lexical-buffer nil) (lexical-mark nil)
   (results-data '())                    ; (path match-rows), match-rows: (line start end check)
   (generation 0))
 
@@ -115,6 +125,7 @@
                              collect (cons (namestring (or (probe-file (buffer-file buffer)) (buffer-file buffer)))
                                            (buffer-string buffer)))))
     (cond
+      ((eq mode :lexical) (show-lexical-rename ps))
       ((null project) (gtk:label-set-text (ps-status ps) "Open a folder to search it."))
       ((string= pattern "") (show-project-results ps '() 0) (gtk:label-set-text (ps-status ps) ""))
       (bad-regex (show-project-results ps '() 0) (gtk:label-set-text (ps-status ps) bad-regex))
@@ -130,7 +141,7 @@
                                  (read-text-file path)))
                        (matches (and text
                                      (if (eq mode :symbol)
-                                         (and (lisp-file-p path) (symbol-occurrences text pattern))
+                                         (and (lisp-file-p path) (ignore-errors (symbol-contexts text pattern)))
                                          (text-matches text pattern :case-sensitive case-sensitive
                                                                     :whole-word whole-word :regex regex)))))
                   (when matches
@@ -138,8 +149,140 @@
                     (push (list path (coerce (split-text-lines text) 'vector) matches) results)))))
             (deliver-to-gui (lambda ()
                               (when (= generation (ps-generation ps))
-                                (show-project-results ps (nreverse results) count))))))
+                                (if (eq mode :symbol)
+                                    (classify-symbol-results ps (nreverse results) count generation)
+                                    (show-project-results ps (nreverse results) count)))))))
         :name "project search")))))
+
+;;; Which occurrences are the symbol (rename.lisp classifies them)
+
+(defparameter *rename-kind-notes*
+  '((:export . "DEFPACKAGE clause") (:local . "local binding") (:other . "another symbol")
+    (:unknown . "can't tell") (:other-binding . "another binding"))
+  "What a match's kind says beside it, when its own note says nothing more.")
+
+(defun rename-checked-kind-p (kind)
+  "Whether a match of KIND starts checked: the symbol itself, or the binding."
+  (member kind '(nil :same :export :binding)))
+
+(defun symbol-name-for-lookup (name)
+  "NAME as the reader interns it: upper case, unless written with bars."
+  (if (find #\| name) (remove #\| name) (string-upcase name)))
+
+(defun symbol-homes-source (name packages)
+  "Source giving, for each of PACKAGES, the home package of the symbol NAME
+read there (the package itself if it would be interned there), or nil if
+there is no such package."
+  (format nil "(cl:let ((name ~a)) (cl:mapcar (cl:lambda (p) (cl:let ((pkg (cl:find-package p))) (cl:and pkg (cl:multiple-value-bind (s status) (cl:find-symbol name pkg) (cl:if status (cl:let ((home (cl:symbol-package s))) (cl:and home (cl:package-name home))) (cl:package-name pkg)))))) '~a))"
+          (cadre::lisp-string (symbol-name-for-lookup name))
+          (with-standard-io-syntax (prin1-to-string packages))))
+
+(defun parse-symbol-homes (reply packages)
+  "A table of package → home package from the image's REPLY, or nil."
+  (let ((homes (ignore-errors
+                (with-standard-io-syntax
+                  ;; Read as the image printed it, so NIL is nil; CL is locked,
+                  ;; so a reply that isn't strings and NIL can't intern into it.
+                  (let ((*read-eval* nil) (*package* (find-package :common-lisp)))
+                    (read-from-string (second reply)))))))
+    (when (and (listp homes) (= (length homes) (length packages)) (every (lambda (h) (or (null h) (stringp h))) homes))
+      (let ((table (make-hash-table :test 'equal)))
+        (loop for package in packages for home in homes do (setf (gethash package table) home))
+        table))))
+
+(defun classified-matches (contexts target-home resolve)
+  "CONTEXTS as matches (line start end kind note), columns in the line."
+  (loop for context in contexts
+        collect (multiple-value-bind (kind note) (classify-symbol-context context target-home resolve)
+                  (list (sc-line context) (sc-column context)
+                        (+ (sc-column context) (- (sc-end context) (sc-start context)))
+                        kind note))))
+
+(defun classify-symbol-results (ps results count generation)
+  "Show RESULTS, each file's symbol-contexts, with what each occurrence is:
+asking the connected Lisp which symbol each package's occurrences read as,
+or guessing from the packages' names without one."
+  (let* ((target (ps-target-package ps))
+         (packages (remove-duplicates (append (and target (list target))
+                                              (loop for (nil nil contexts) in results append (context-packages contexts)))
+                                      :test #'string=)))
+    (labels ((show (resolve how)
+               (when (= generation (ps-generation ps))
+                 (let ((target-home (and target (funcall resolve target))))
+                   (show-project-results ps (loop for (path lines contexts) in results
+                                                  collect (list path lines (classified-matches contexts target-home resolve)))
+                                         count)
+                   (show-rename-summary ps how))))
+             (guess ()
+               ;; Without the image: an occurrence read in the target's own
+               ;; package is the symbol; elsewhere it can't be told.
+               (show (lambda (package) (and target (string= package target) target)) :guessed)))
+      (if (and (connected-p) packages (ps-symbol ps))
+          (rex *connection* (swank-call "swank:eval-and-grab-output" (symbol-homes-source (ps-symbol ps) packages))
+               :package "COMMON-LISP-USER"
+               :on-ok (lambda (reply)
+                        (let ((table (parse-symbol-homes reply packages)))
+                          (if table
+                              ;; A package the image doesn't have (the project
+                              ;; isn't loaded) is guessed as without the image.
+                              (let ((target-home (or (and target (gethash target table)) target)))
+                                (show (lambda (package)
+                                        (or (gethash package table)
+                                            (and target (string= package target) target-home)))
+                                      :image))
+                              (guess))))
+               :on-abort (lambda (reason) (declare (ignore reason)) (guess)))
+          (guess)))))
+
+(defun show-rename-summary (ps how)
+  "Say how many of the matches are the symbol, and how they were told apart."
+  (let ((counts (make-hash-table)))
+    (loop for (nil rows) in (ps-results-data ps)
+          do (loop for row in rows do (incf (gethash (fifth row) counts 0))))
+    (let ((same (+ (gethash :same counts 0) (gethash :export counts 0) (gethash nil counts 0)))
+          (unknown (gethash :unknown counts 0))
+          (others (+ (gethash :other counts 0) (gethash :local counts 0))))
+      (gtk:label-set-text
+       (ps-status ps)
+       (format nil "~d place~:p of ~a~[~:;, ~:*~d it can't tell (unchecked: review them)~]~[~:;, ~:*~d other symbol~:p or local binding~:p (unchecked)~]. ~a"
+               same (ps-symbol ps) unknown others
+               (if (eq how :image)
+                   "Packages from the running Lisp."
+                   "Not connected: packages guessed from IN-PACKAGE forms."))))))
+
+;;; Renaming a local variable or function
+
+(defun offset-line-column (starts offset)
+  "OFFSET as (values line column), STARTS the text's line-starts vector."
+  (let ((line (1- (or (position-if (lambda (s) (> s offset)) starts) (length starts)))))
+    (values line (- offset (aref starts line)))))
+
+(defun show-lexical-rename (ps)
+  "Show the places of the local binding at the lexical mark: the ones that
+refer to it checked, others of the same name in its form unchecked."
+  (let* ((buffer (ps-lexical-buffer ps))
+         (gtk-buffer (and buffer (buffer-text buffer)))
+         (offset (and gtk-buffer (member buffer (buffer-list))
+                      (gtk:text-iter-get-offset (gtk:text-buffer-get-iter-at-mark gtk-buffer (ps-lexical-mark ps)))))
+         (text (and offset (buffer-string buffer))))
+    (multiple-value-bind (places others name certain) (and text (lexical-rename-places text offset))
+      (if (null places)
+          (progn (show-project-results ps '() 0)
+                 (gtk:label-set-text (ps-status ps) "No local binding there any more."))
+          (let ((starts (coerce (cadre::line-starts text) 'vector)))
+            (flet ((match (place kind note)
+                     (multiple-value-bind (line column) (offset-line-column starts (first place))
+                       (list line column (+ column (- (second place) (first place))) kind note))))
+              (setf (ps-symbol ps) name)
+              (show-project-results ps (list (list (buffer-file buffer) (coerce (split-text-lines text) 'vector)
+                                                   (sort (append (mapcar (lambda (p) (match p :binding nil)) places)
+                                                                 (mapcar (lambda (p) (match p :other-binding nil)) others))
+                                                         (lambda (a b) (or (< (first a) (first b))
+                                                                           (and (= (first a) (first b)) (< (second a) (second b))))))))
+                                    (+ (length places) (length others)))
+              (gtk:label-set-text (ps-status ps)
+                                  (format nil "Local ~a: ~d place~:p in its form~[~:;; ~:*~d other~:p of that name left unchecked~].~:[ (Its binding is guessed from a WITH- macro.)~;~]"
+                                          name (length places) (length others) certain))))))))
 
 (defun match-markup (line start end)
   (let* ((from (max 0 (- start 40)))
@@ -157,21 +300,33 @@
                 collect (let ((rows '())
                               (box (make-instance 'gtk:box :orientation :vertical)))
                           (dolist (m matches)
-                            (destructuring-bind (line start end) m
-                              (let* ((check (make-instance 'gtk:check-button :active t :visible replacing))
+                            ;; A rename's match has a KIND (rename.lisp) and a NOTE
+                            ;; saying why it isn't the symbol; only the symbol's start checked.
+                            (destructuring-bind (line start end &optional kind note) m
+                              (let* ((check (make-instance 'gtk:check-button :active (and (rename-checked-kind-p kind) t)
+                                                                             :visible replacing))
                                      (label (make-instance 'gtk:label :xalign 0.0 :ellipsize :end :hexpand t
                                                                       :use-markup t
                                                                       :label (match-markup (aref lines line) start end)))
                                      (number (make-instance 'gtk:label :label (princ-to-string (1+ line))
                                                                        :width-chars 4 :xalign 1.0
                                                                        :css-classes '("dim-label" "caption")))
+                                     (tag (let ((text (or note (cdr (assoc kind *rename-kind-notes*)))))
+                                            (and text (not (rename-checked-kind-p kind))
+                                                 (make-instance 'gtk:label :label text :xalign 1.0
+                                                                           :css-classes (if (eq kind :unknown)
+                                                                                            '("warning" "caption")
+                                                                                            '("dim-label" "caption"))))))
                                      (button (make-instance 'gtk:button :css-classes '("flat" "cadre-search-match")
-                                                                        :child (gtk:build (gtk:box :spacing 6 number label)))))
+                                                                        :tooltip-text (or note (cdr (assoc kind *rename-kind-notes*)))
+                                                                        :child (let ((row (gtk:build (gtk:box :spacing 6 number label))))
+                                                                                 (when tag (gtk:box-append row tag))
+                                                                                 row))))
                                 (let ((path path) (line line) (start start) (end end))
                                   (gobject:connect button :clicked
                                                    (lambda (b) (declare (ignore b)) (show-match path line start end))))
                                 (gtk:box-append box (gtk:build (gtk:box check button)))
-                                (push (list line start end check) rows))))
+                                (push (list line start end check kind) rows))))
                           (gtk:box-append (ps-results ps)
                                           (make-instance 'gtk:expander :expanded t :child box
                                                                        :label (format nil "~a  (~d)" (relative-name path)
@@ -217,17 +372,28 @@
   (let* ((ps *project-search*)
          (replacement (gtk:editable-get-text (ps-replace-entry ps)))
          (pattern (gtk:editable-get-text (ps-entry ps)))
-         (case-sensitive (or (eq (ps-mode ps) :symbol) (gtk:toggle-button-get-active (ps-case-button ps))))
+         (renaming (member (ps-mode ps) '(:symbol :lexical)))
+         (case-sensitive (or renaming (gtk:toggle-button-get-active (ps-case-button ps))))
          (regex (and (eq (ps-mode ps) :text) (gtk:toggle-button-get-active (ps-regex-button ps))))
-         (matches 0) (files 0))
+         (matches 0) (files 0) (skipped 0))
     (loop for (path rows) in (ps-results-data ps)
-          for checked = (checked-matches rows)
-          when checked
+          for found = (checked-matches rows)
+          when found
             do (let* ((buffer (find-file-buffer path))
                       (text (if buffer (buffer-string buffer) (read-text-file path))))
                  (when text
                    ;; Keep each match's case when matching ignored it.
                    (let* ((lines (coerce (split-text-lines text) 'vector))
+                          ;; A renamed place whose text changed since it was found is left alone.
+                          (checked (if renaming
+                                       (remove-if-not (lambda (m)
+                                                        (destructuring-bind (l s e) m
+                                                          (let ((ok (and (< l (length lines)) (<= e (length (aref lines l)))
+                                                                         (string-equal (ps-symbol ps) (aref lines l) :start2 s :end2 e))))
+                                                            (unless ok (incf skipped))
+                                                            ok)))
+                                                      found)
+                                       found))
                           (new (with-output-to-string (out)
                                  (let ((pieces (sort (copy-list checked)
                                                      (lambda (a b) (or (< (first a) (first b))
@@ -246,15 +412,16 @@
                                                          (setf pos e))
                                               (write-string line-text out :start pos))
                                             (when (< n (1- (length lines))) (terpri out)))))))
-                     (if buffer (replace-buffer-text buffer new) (write-text-file path new))
-                     (incf matches (length checked))
-                     (incf files)))))
-    (values matches files)))
+                     (when checked
+                       (if buffer (replace-buffer-text buffer new) (write-text-file path new))
+                       (incf matches (length checked))
+                       (incf files))))))
+    (values matches files skipped)))
 
 (defun confirm-project-replace ()
   (let* ((ps *project-search*)
          (count (loop for (nil rows) in (ps-results-data ps) sum (length (checked-matches rows))))
-         (renaming (eq (ps-mode ps) :symbol))
+         (renaming (member (ps-mode ps) '(:symbol :lexical)))
          (replacement (gtk:editable-get-text (ps-replace-entry ps))))
     (cond
       ((zerop count) (message "Nothing to replace"))
@@ -262,7 +429,7 @@
       (t
        (let ((dialog (adw:alert-dialog-new
                       (if renaming
-                          (format nil "Rename ~a to ~a?" (ps-symbol ps) replacement)
+                          (format nil "Rename ~:[~;the local ~]~a to ~a?" (eq (ps-mode ps) :lexical) (ps-symbol ps) replacement)
                           (format nil "Replace ~d match~:*~[es~;~:;es~] with “~a”?" count replacement))
                       (format nil "~d place~:p in ~d file~:p. Open files change in their buffers (undo works there); other files are written to disk."
                               count (count-if (lambda (r) (checked-matches (second r))) (ps-results-data ps))))))
@@ -273,8 +440,9 @@
          (gio:async (adw:alert-dialog-choose dialog (window-gtk-window *window*))
                     (lambda (response)
                       (when (string= response "replace")
-                        (multiple-value-bind (matches files) (apply-project-replace)
-                          (message "~:[Replaced~;Renamed~] ~d occurrence~:p in ~d file~:p" renaming matches files)
+                        (multiple-value-bind (matches files skipped) (apply-project-replace)
+                          (message "~:[Replaced~;Renamed~] ~d occurrence~:p in ~d file~:p~[~:;; ~:*~d place~:p changed since they were found, left alone~]"
+                                   renaming matches files skipped)
                           (when renaming
                             (setf (ps-symbol ps) replacement)
                             (gtk:editable-set-text (ps-entry ps) replacement))
@@ -308,7 +476,7 @@
   (show-sidebar-page *window* "search" :toggle nil)
   (let ((ps *project-search*))
     (setf (ps-mode ps) mode)
-    (gtk:button-set-label (ps-apply-button ps) (if (eq mode :symbol) "Rename" "Replace All"))
+    (gtk:button-set-label (ps-apply-button ps) (if (member mode '(:symbol :lexical)) "Rename" "Replace All"))
     (when text
       (gtk:editable-set-text (ps-entry ps) text))
     (show-replace-row replace)
@@ -327,20 +495,54 @@
   "Find and replace in every file in the project."
   (open-project-search :text (selection-or-symbol-text) :replace t))
 
+(defun cursor-symbol-package (view name)
+  "The package the symbol NAME at VIEW's cursor is read in: its prefix's, a
+DEFPACKAGE clause's, or the IN-PACKAGE before it. Nil outside Lisp."
+  (when (eq (buffer-major-mode (view-buffer view)) 'lisp-mode)
+    (let* ((point (point-offset view))
+           (context (find-if (lambda (c) (<= (sc-start c) point (sc-end c)))
+                             (ignore-errors (symbol-contexts (buffer-string (view-buffer view)) name)))))
+      (and context
+           (or (prefix-package (sc-prefix context))
+               (sc-clause-package context)
+               (sc-package context))))))
+
 (define-command find-symbol-in-project ()
-  "Find every use of the symbol at the cursor in the project's Lisp files (not in strings or comments)."
-  (let ((name (or (selection-or-symbol-text) (editor-error "No symbol at the cursor"))))
-    (setf (ps-symbol *project-search*) name)
-    (open-project-search :text name :mode :symbol)))
+  "Find every use of the symbol at the cursor in the project's Lisp files (not in strings or comments),
+saying which are that symbol and which another of the same name."
+  (let* ((name (or (selection-or-symbol-text) (editor-error "No symbol at the cursor")))
+         (view (selected-view *window*)))
+    (setf (ps-symbol *project-search*) (subseq name (symbol-name-part name))
+          (ps-target-package *project-search*) (and view (cursor-symbol-package view name)))
+    (open-project-search :text (ps-symbol *project-search*) :mode :symbol)))
 
 (define-command rename-symbol ()
-  "Rename the symbol at the cursor in every Lisp file of the project: review
-the places in the Search page, then Rename. In Racket, the binding at the
-cursor and its uses in the file (racket-rename-symbol)."
+  "Rename the symbol at the cursor: review the places in the Search page,
+then Rename. A local variable or function is renamed where it refers to that
+binding, in its form. Another symbol is renamed in every Lisp file of the
+project where an occurrence is that symbol (its package decides; others of
+the same name, and those it can't tell, start unchecked). In Racket, the
+binding at the cursor and its uses in the file (racket-rename-symbol)."
   (when (eq (buffer-major-mode (current-buffer)) 'racket-mode)
     (return-from rename-symbol (racket-rename-symbol)))
-  (let ((name (or (let ((view (selected-view *window*))) (and view (symbol-at-cursor view)))
-                  (editor-error "No symbol at the cursor"))))
-    (setf (ps-symbol *project-search*) (subseq name (symbol-name-part name)))
-    (gtk:editable-set-text (ps-replace-entry *project-search*) (ps-symbol *project-search*))
-    (open-project-search :text (ps-symbol *project-search*) :mode :symbol :replace t :focus-replace t)))
+  (let* ((view (selected-view *window*))
+         (name (or (and view (symbol-at-cursor view)) (editor-error "No symbol at the cursor")))
+         (ps *project-search*)
+         (buffer (view-buffer view)))
+    (if (and (eq (buffer-major-mode buffer) 'lisp-mode)
+             (lexical-rename-places (buffer-string buffer) (point-offset view)))
+        ;; A local binding: its form in this buffer.
+        (let ((gtk-buffer (buffer-text buffer)))
+          (unless (buffer-file buffer) (editor-error "Save the buffer first, to rename in it"))
+          (when (and (ps-lexical-buffer ps) (ps-lexical-mark ps) (member (ps-lexical-buffer ps) (buffer-list)))
+            (gtk:text-buffer-delete-mark (buffer-text (ps-lexical-buffer ps)) (ps-lexical-mark ps)))
+          (setf (ps-lexical-buffer ps) buffer
+                (ps-lexical-mark ps) (gtk:text-buffer-create-mark gtk-buffer nil (cursor-iter gtk-buffer) t)
+                (ps-symbol ps) name)
+          (gtk:editable-set-text (ps-replace-entry ps) name)
+          (open-project-search :text name :mode :lexical :replace t :focus-replace t))
+        (progn
+          (setf (ps-symbol ps) (subseq name (symbol-name-part name))
+                (ps-target-package ps) (cursor-symbol-package view name))
+          (gtk:editable-set-text (ps-replace-entry ps) (ps-symbol ps))
+          (open-project-search :text (ps-symbol ps) :mode :symbol :replace t :focus-replace t)))))

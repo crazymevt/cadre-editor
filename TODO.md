@@ -26,8 +26,8 @@ implemented work; a feature stays open until its remaining scope is covered.
 
 ## 4. More precise refactoring
 
-- [ ] Make rename aware of package identity and lexical binding scope.
-- [ ] Preview affected references, including ambiguous cases, before applying.
+- [x] Make rename aware of package identity and lexical binding scope.
+- [x] Preview affected references, including ambiguous cases, before applying.
 
 ## 5. Coverage and continuous testing
 

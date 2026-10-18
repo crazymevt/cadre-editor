@@ -1514,7 +1514,7 @@ d" 0 0)
   (call-command 'cadre-ui::rename-symbol))
 
 (then-when ((and (eq :symbol (cadre-ui::ps-mode cadre-ui::*project-search*))
-                 (search "result" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*)))))
+                 (search "place" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*)))))
   (let ((m6 (find "m6.lisp" (search-results) :key (lambda (r) (file-namestring (first r))) :test #'string=)))
     (check "renaming finds the symbol, not the word in strings and comments"
            (and m6 (= 1 (length (second m6)))) (and m6 (length (second m6)))))
@@ -1560,6 +1560,80 @@ d" 0 0)
   (setf (buffer-modified-p (find-buffer "m1.lisp")) nil))
 
 ;;; Completion as you type, and hints from the source
+
+;;; Rename: a local binding in its form; a symbol by its package across files.
+(section "rename")
+
+(then 50
+  (write-root-file "src/rn1.lisp" "(defpackage #:rn-a (:use #:cl) (:export #:total))
+(in-package #:rn-a)
+(defun total (items)
+  (let ((sum 0))
+    (dolist (i items sum) (incf sum i))))
+(defun twice (sum) (* 2 sum))
+")
+  (write-root-file "src/rn2.lisp" "(defpackage #:rn-b (:use #:cl))
+(in-package #:rn-b)
+(defun total (x) x)
+(defun use () (rn-a:total '(1 2)))
+"))
+
+(open-files "src/rn1.lisp" "src/rn2.lisp")
+
+(defun rename-rows ()
+  "(file line kind checked) of each Search page row."
+  (loop for (path rows) in (search-results)
+        append (loop for (line nil nil check kind) in rows
+                     collect (list (file-namestring path) line kind (gtk:check-button-get-active check)))))
+
+(then 300
+  (show-buffer-named "rn1.lisp")
+  (set-cursor 3 9)                      ; sum, in (let ((sum 0))
+  (call-command 'cadre-ui::rename-symbol))
+
+(then 300
+  (check "renaming a local variable previews its places in its form"
+         (and (eq :lexical (cadre-ui::ps-mode cadre-ui::*project-search*))
+              (equal '(("rn1.lisp" 3 :binding t) ("rn1.lisp" 4 :binding t) ("rn1.lisp" 4 :binding t))
+                     (rename-rows)))
+         (rename-rows))
+  (gtk:editable-set-text (cadre-ui::ps-replace-entry cadre-ui::*project-search*) "acc")
+  (cadre-ui::apply-project-replace)
+  (check "and renames only that binding"
+         (and (search "(let ((acc 0))" (buffer-string (find-buffer "rn1.lisp")))
+              (search "(dolist (i items acc) (incf acc i))" (buffer-string (find-buffer "rn1.lisp")))
+              (search "(defun twice (sum) (* 2 sum))" (buffer-string (find-buffer "rn1.lisp"))))
+         (buffer-string (find-buffer "rn1.lisp")))
+  (set-cursor 2 8)                      ; total, in (defun total
+  (call-command 'cadre-ui::rename-symbol))
+
+(then-when ((and (eq :symbol (cadre-ui::ps-mode cadre-ui::*project-search*))
+                 (search "place" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*))))
+            :timeout 20)
+  (let ((rows (rename-rows)))
+    (check "renaming a symbol checks its own places: the definition, the export and pkg:name"
+           (and (member '("rn1.lisp" 0 :export t) rows :test #'equal)
+                (member '("rn1.lisp" 2 :same t) rows :test #'equal)
+                (member '("rn2.lisp" 3 :same t) rows :test #'equal))
+           rows)
+    (check "and leaves another package's symbol of that name unchecked"
+           (let ((other (find-if (lambda (r) (and (equal (first r) "rn2.lisp") (= (second r) 2))) rows)))
+             (and other (member (third other) '(:unknown :other)) (not (fourth other))))
+           rows))
+  (when (cadre-ui::connected-p)
+    (check "with a Lisp connected, the packages come from it"
+           (search "from the running Lisp" (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*)))
+           (gtk:label-get-text (cadre-ui::ps-status cadre-ui::*project-search*))))
+  (screenshot "rename-preview")
+  (gtk:editable-set-text (cadre-ui::ps-replace-entry cadre-ui::*project-search*) "sum-of")
+  (cadre-ui::apply-project-replace)
+  (let ((rn1 (buffer-string (find-buffer "rn1.lisp"))) (rn2 (buffer-string (find-buffer "rn2.lisp"))))
+    (check "the rename changes the symbol's places only"
+           (and (search "(:export #:sum-of)" rn1) (search "(defun sum-of (items)" rn1)
+                (search "(rn-a:sum-of '(1 2))" rn2) (search "(defun total (x) x)" rn2))
+           (list rn1 rn2)))
+  (dolist (name '("rn1.lisp" "rn2.lisp")) (setf (buffer-modified-p (find-buffer name)) nil)))
+
 (section "completion")
 (open-files "src/m1.lisp")
 (defun arglist-markup () (gtk:label-get-label (cadre-ui::window-status-arglist *window*)))

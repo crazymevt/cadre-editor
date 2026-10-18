@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Rename knows packages and local bindings.** Renaming a local variable
+  or function (bound by `let`, a lambda list, `dolist`, `flet` and the like)
+  changes that binding and the uses that refer to it, in its form: not an
+  inner binding of the same name, nor a call to a function of that name.
+  Renaming any other symbol finds it across the project by package: its
+  prefix, `defpackage` clauses, or the `in-package` before it, resolved by
+  the connected Lisp when there is one. The Search page shows each place as
+  the symbol, a `defpackage` clause, another symbol of that name, a local
+  binding, or one it can't tell; only the symbol's own start checked.
+  Places that changed since they were found are left alone.
+
 - **Earlier assistant conversations.** Cadre keeps the conversations you
   have in the Assistant panel, Claude's and Codex's, as you go: messages,
   replies, tool calls, plans, approvals with your answers, and proposed
