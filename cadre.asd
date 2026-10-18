@@ -213,5 +213,6 @@
                (:file "ui-runs" :depends-on ("ui-assistant"))
                (:file "ui-history" :depends-on ("ui-assistant"))
                (:file "ui-conversations" :depends-on ("ui-assistant"))
+               (:file "ui-responsiveness" :depends-on ("ui-assistant"))
                (:file "ui-rename" :depends-on ("ui-saves")))
   :perform (test-op (op c) (uiop:symbol-call :parachute :test :cadre-ui-tests)))

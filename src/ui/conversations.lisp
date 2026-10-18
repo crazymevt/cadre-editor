@@ -328,6 +328,43 @@ an ordinary save doesn't parse the whole history."
       (:approval (show-past-approval (getf plist :title) (getf plist :detail) (getf plist :answer)))
       (:edit (show-past-edit entry)))))
 
+(defparameter *conversation-page-size* 50
+  "Maximum saved entries rendered at once; older entries load on demand.")
+
+(defun show-conversation-page (entries end container)
+  "Append the page ending at END to CONTAINER, with earlier entries on demand.
+ENTRIES is a vector in chronological order. Rendering uses isolated stream
+state and never records entries or scrolls away from the earlier page."
+  (let* ((start (max 0 (- end *conversation-page-size*)))
+         (*chat* (copy-chat *chat*))
+         (*replaying-conversation* t))
+    (setf (chat-messages *chat*) container
+          (chat-stream-box *chat*) nil
+          (chat-stream-label *chat*) nil
+          (chat-plan-box *chat*) nil
+          (chat-scroll-pending *chat*) t)
+    (when (plusp start)
+      (let ((button (make-instance 'gtk:button
+                                   :label (format nil "Show earlier entries (~d remaining)" start)))
+            (chat *chat*))
+        (gtk:box-append container button)
+        (gobject:connect button :clicked
+          (lambda (b)
+            (gtk:box-remove container b)
+            (let ((earlier (make-instance 'gtk:box :orientation :vertical :spacing 10))
+                  (*chat* chat))
+              (gtk:box-prepend container earlier)
+              (show-conversation-page entries start earlier))))))
+    (loop for i from start below end
+          do (handler-case (show-conversation-entry (aref entries i))
+               (error (e) (chat-note (format nil "(An entry couldn't be shown: ~a)" e)))))))
+
+(defun show-conversation-entries (entries)
+  "Show recent saved entries now; retain access to the complete transcript."
+  (let ((entries (coerce entries 'vector)))
+    (show-conversation-page entries (length entries) (chat-messages *chat*)))
+  (chat-scroll-to-end))
+
 (defun restore-conversation (record)
   "Show RECORD's transcript in the panel and make it its provider's current
 conversation, so the next message resumes it. What was allowed for it isn't
@@ -341,10 +378,7 @@ restored, and nothing in it runs again."
     ;; A fresh start for the provider: its process stops, its approvals go.
     (claude-new-chat)
     (clear-box (chat-messages *chat*))
-    (let ((*replaying-conversation* t))
-      (dolist (entry (getf record :entries))
-        (handler-case (show-conversation-entry entry)
-          (error (e) (chat-note (format nil "(An entry couldn't be shown: ~a)" e))))))
+    (show-conversation-entries (getf record :entries))
     (let* ((resume-id (if (eq provider :codex) (getf record :thread-id) (getf record :session-id)))
            (conversation (make-conversation :id (getf record :id) :provider provider
                                             :session-id (getf record :session-id) :thread-id (getf record :thread-id)

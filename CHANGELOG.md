@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **More responsive opening and conversation history.** Project discovery
+  stops at the open folder even when its path uses a different symlink spelling.
+  Hidden HTTP pages no longer scan a newly opened project; they catch up when
+  shown again. Automatic Lisp fold discovery runs on a private background
+  snapshot, one worker at a time, discards stale results and doesn't retry a
+  failure until the next edit.
+  Saved assistant transcripts initially show the latest 50 entries, with earlier
+  entries available on demand, and repeated scroll requests share one callback.
+
 - **Sturdier rename previews.** If a file's context can't be checked, the
   search still finishes and that file's rows say why, with their check
   boxes disabled until a refreshed preview can check them. Adding or

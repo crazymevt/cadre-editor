@@ -82,6 +82,45 @@ Typing and scrolling stayed within their 16 ms budgets. Quick Open's
 to `build/perf/latest.txt` by `make perf`. These results identify follow-up
 work; this pass does not claim all performance budgets are met.
 
+## Responsiveness follow-up — October 18, 2026
+
+A fresh pre-change run reproduced all three opening budget misses. Targeted
+function timings identified project discovery walking above the open folder
+when `/var` and `/private/var` named the same macOS directory, a hidden HTTP
+page scanning the new project's files, and gutter fold discovery lexing a whole
+Lisp file on the GTK thread.
+
+Project discovery now recognizes the canonical boundary. The HTTP page defers
+its scan until opened. Automatic Lisp fold discovery uses a private source
+snapshot on a worker and rejects results after edits, mode changes or buffer
+closure; explicit fold commands still calculate fresh ranges when requested.
+
+Restored conversations render the latest 50 entries with earlier pages available
+on demand, preserving the complete saved transcript. Scroll requests are
+coalesced. The performance probe now uses the same paged rendering path as
+restoration, with a 100 ms stall budget and a 300 ms first-paint budget.
+
+The final full `make perf` run, without another test running, met every budget:
+
+| Measurement | Fresh baseline | After fixes | Budget |
+| --- | --- | --- | --- |
+| Open a 10,000-line Lisp file | 368.3 ms | 230.2 ms | 300 ms |
+| Longest stall opening a 1 MB Lisp file | 122.4 ms | 28.4 ms | 100 ms |
+| Longest stall opening a 5,000-file project | 160.7 ms | 69.8 ms | 100 ms |
+| 500-message transcript through first paint | 204.0 ms | 38.1 ms | 300 ms |
+| Longest stall restoring 500 messages | 145.6 ms | 19.9 ms | 100 ms |
+
+The transcript comparison measures initial restoration; the new path creates
+only the latest page's widgets. Earlier entries remain accessible and load in
+chronological order. These are individual measurements on this macOS host,
+not cross-platform performance guarantees.
+
+Follow-up validation: `make test-ui` passed 665 checks. Focused
+`make smoke ONLY='conversations conversation-pages folding'` passed 109 checks,
+including Claude/Codex resume, complete chronological pagination and folding.
+Regressions cover symlinked project boundaries, coalesced scrolling, deferred
+gutter discovery and rejecting stale fold snapshots.
+
 ## Remaining release checks
 
 - Run Linux validation on Ubuntu 24.04 or newer; this host has no Linux
@@ -90,5 +129,5 @@ work; this pass does not claim all performance budgets are met.
 - Before publishing, choose the next version, move its entries out of
   Unreleased, and build on the supported release runners. Keep the changelog's
   Unreleased section above the latest release.
-- Investigate the confirmed file/project opening stalls and the transcript
-  rendering stall before treating responsiveness validation as complete.
+- Repeat responsiveness validation on Linux; the macOS follow-up above addresses
+  the measured opening and transcript stalls on this host.

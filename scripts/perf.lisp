@@ -400,22 +400,23 @@ and, if Cadre doesn't take it, as the text view would."
   (pause 300
     (lambda ()
       (reset-stalls)
-      (let ((start (now-ms)) (cadre-ui::*replaying-conversation* t))
-        (dotimes (n 250)
-          (cadre-ui::show-conversation-entry (list :user :text (format nil "Message ~d: explain this function." n)))
-          (cadre-ui::show-conversation-entry (list :assistant :text "This **function** transforms its input.
+      (let ((start (now-ms))
+            (entries (loop for n below 250
+                           append (list (list :user :text (format nil "Message ~d: explain this function." n))
+                                        (list :assistant :text "This **function** transforms its input.
 
 ```lisp
 (defun example (x) (+ x 1))
-```")))
-        (result "Create a 500-message assistant transcript" (- (now-ms) start) nil)
+```")))))
+        (cadre-ui::show-conversation-entries entries)
+        (result "Show recent entries from a 500-message transcript" (- (now-ms) start) 100)
         (after-next-paint (cadre-ui::window-gtk-window *window*)
           (lambda (frame-start end)
             (declare (ignore frame-start))
-            (result "500-message transcript through first paint" (- end start) nil)
+            (result "500-message transcript through first paint" (- end start) 300)
             (pause 1000
               (lambda ()
-                (result "Longest stall restoring 500 messages" *stall-max* nil)
+                (result "Longest stall restoring 500 messages" *stall-max* 100)
                 (funcall next)))))))))
 
 (setf *steps* (reverse *steps*))

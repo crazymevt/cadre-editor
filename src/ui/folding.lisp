@@ -59,20 +59,67 @@
 (defun fold-ranges (buffer &key fresh)
   "BUFFER's fold ranges: the ones worked out last, or, with FRESH, up to date."
   (when (or fresh (eq (buffer-local buffer :fold-ranges) :unknown) (null (buffer-local buffer :fold-ranges-by-line)))
-    (let ((ranges (compute-fold-ranges buffer))
-          (by-line (make-hash-table)))
-      (dolist (r ranges) (setf (gethash (first r) by-line) r))
-      (setf (buffer-local buffer :fold-ranges) ranges
-            (buffer-local buffer :fold-ranges-by-line) by-line)))
+    (cache-fold-ranges buffer (compute-fold-ranges buffer)))
   (buffer-local buffer :fold-ranges))
 
+(defun cache-fold-ranges (buffer ranges)
+  (let ((by-line (make-hash-table)))
+    (dolist (r ranges) (setf (gethash (first r) by-line) r))
+    (setf (buffer-local buffer :fold-ranges) ranges
+          (buffer-local buffer :fold-ranges-by-line) by-line)))
+
+(defun refresh-fold-ranges (buffer)
+  "Compute Lisp folds from a private snapshot without blocking GTK."
+  (let ((syntax (buffer-sexp-syntax buffer)))
+    (cond ((null syntax)
+           (fold-ranges buffer :fresh t)
+           (redraw-gutters buffer))
+          ;; One worker at a time: another starts from the latest text once
+          ;; this one finishes.
+          ((buffer-local buffer :fold-refresh-pending)
+           (setf (buffer-local buffer :fold-refresh-again) t))
+          (t
+           (let ((text (buffer-string buffer))
+                 (dialect (syntax-dialect syntax))
+                 (generation (buffer-local buffer :fold-generation 0)))
+             (setf (buffer-local buffer :fold-refresh-pending) t)
+             (sb-thread:make-thread
+              (lambda ()
+                (multiple-value-bind (ranges failure)
+                    (handler-case (lisp-fold-ranges (make-lisp-syntax (make-string-text text) :dialect dialect))
+                      (error (e) (values '() (princ-to-string e))))
+                  (glib:call-in-main-thread
+                   (lambda () (finish-fold-refresh buffer syntax generation ranges failure)))))
+              :name "cadre fold ranges"))))))
+
+(defun finish-fold-refresh (buffer syntax generation ranges failure)
+  "On the GTK thread, keep RANGES if BUFFER hasn't changed since they were
+worked out, then start the refresh that waited for them, if any. A FAILURE
+keeps no folds until the next edit, so drawing the gutter doesn't retry it."
+  (setf (buffer-local buffer :fold-refresh-pending) nil)
+  (when (member buffer (buffer-list))
+    (when (and (= generation (buffer-local buffer :fold-generation 0))
+               (eq syntax (buffer-sexp-syntax buffer)))
+      (cache-fold-ranges buffer ranges)
+      (redraw-gutters buffer)
+      (when failure (message "Could not update folds: ~a" failure)))
+    (when (buffer-local buffer :fold-refresh-again)
+      (setf (buffer-local buffer :fold-refresh-again) nil)
+      (refresh-fold-ranges buffer))))
+
 (defun fold-range-starting (buffer line)
-  (fold-ranges buffer)
-  (gethash line (buffer-local buffer :fold-ranges-by-line)))
+  ;; Drawing a gutter must not lex the entire file. Explicit fold commands
+  ;; still request fresh ranges synchronously.
+  (let ((by-line (buffer-local buffer :fold-ranges-by-line)))
+    (unless (or by-line (buffer-local buffer :fold-ranges-timer)
+                (buffer-local buffer :fold-refresh-pending))
+      (schedule-fold-ranges buffer))
+    (and by-line (gethash line by-line))))
 
 (defparameter *fold-ranges-delay* 400 "Milliseconds after an edit before fold ranges are worked out again.")
 
 (defun schedule-fold-ranges (buffer)
+  (setf (buffer-local buffer :fold-generation) (1+ (buffer-local buffer :fold-generation 0)))
   (let ((timer (buffer-local buffer :fold-ranges-timer)))
     (when timer (glib:source-remove timer)))
   (setf (buffer-local buffer :fold-ranges-timer)
@@ -80,8 +127,7 @@
                           (lambda ()
                             (setf (buffer-local buffer :fold-ranges-timer) nil)
                             (when (member buffer (buffer-list))
-                              (fold-ranges buffer :fresh t)
-                              (redraw-gutters buffer))
+                              (refresh-fold-ranges buffer))
                             nil))))
 
 ;;; Folding and unfolding

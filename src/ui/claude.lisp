@@ -77,6 +77,7 @@ of proposing every change for review. Open files reload when they change on disk
   provider-dropdown
   (plan-box nil)                        ; the checklist of Claude's current plan (TodoWrite)
   messages message-boxes scroller input send-button status model-dropdown stack composer
+  (scroll-pending nil)
   context-file context-problems context-debugger
   (stream-box nil)                      ; the box of the reply being streamed
   (stream-label nil)
@@ -441,12 +442,15 @@ chat or what is missing. THEN is called if Claude is ready."
   widget)
 
 (defun chat-scroll-to-end ()
-  (let ((scroller (chat-scroller *chat*)))
-    (glib:idle-add glib:+priority-default-idle+
+  (unless (chat-scroll-pending *chat*)
+    (let ((chat *chat*) (scroller (chat-scroller *chat*)))
+      (setf (chat-scroll-pending chat) t)
+      (glib:idle-add glib:+priority-default-idle+
                    (lambda ()
+                     (setf (chat-scroll-pending chat) nil)
                      (let ((adj (gtk:scrolled-window-get-vadjustment scroller)))
                        (gtk:adjustment-set-value adj (- (gtk:adjustment-get-upper adj) (gtk:adjustment-get-page-size adj))))
-                     nil))))
+                     nil)))))
 
 (defun show-claude-intro ()
   (chat-append (make-instance 'gtk:label :wrap t :xalign 0.0 :css-classes '("dim-label")

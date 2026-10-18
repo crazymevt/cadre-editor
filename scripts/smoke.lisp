@@ -988,6 +988,43 @@
                (last (chat-texts) 3))
          (last (chat-texts) 3)))
 
+;;; Long transcripts render a bounded page and reveal older entries in order.
+(section "conversation-pages")
+
+(defun page-probe-texts ()
+  (remove-if-not (lambda (text) (uiop:string-prefix-p "Page probe " text)) (chat-texts)))
+
+(defun earlier-conversation-button ()
+  (find-if (lambda (button)
+             (let ((label (gtk:button-get-label button)))
+               (and label (uiop:string-prefix-p "Show earlier entries" label))))
+           (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*)
+                         (lambda (w) (typep w 'gtk:button)))))
+
+(then 100
+  (cadre-ui::panel-show (cadre-ui::window-panel *window*) "claude")
+  (cadre-ui::claude-new-chat)
+  (cadre-ui::clear-box (cadre-ui::chat-messages cadre-ui::*chat*))
+  (cadre-ui::show-conversation-entries
+   (loop for n below 125 collect (list :user :text (format nil "Page probe ~d" n))))
+  (check "long transcripts initially render only the latest page"
+         (equal (loop for n from 75 below 125 collect (format nil "Page probe ~d" n)) (page-probe-texts)))
+  (check "transcript replay does not start or record a conversation"
+         (null (cadre-ui::current-conversation)))
+  (gobject:emit (earlier-conversation-button) :clicked))
+
+(then 150
+  (check "earlier entries load before the recent page"
+         (equal (loop for n from 25 below 125 collect (format nil "Page probe ~d" n)) (page-probe-texts)))
+  (gobject:emit (earlier-conversation-button) :clicked))
+
+(then 150
+  (check "all saved entries remain available in chronological order"
+         (equal (loop for n below 125 collect (format nil "Page probe ~d" n)) (page-probe-texts)))
+  (check "the earlier-entry button disappears at the start" (null (earlier-conversation-button)))
+  (check "loading earlier pages does not record their entries" (null (cadre-ui::current-conversation)))
+  (cadre-ui::claude-new-chat))
+
 ;;; Assistant controls: exercise real GTK signals and inspect what the peers receive.
 (section "assistant-controls" :needs ("claude" "codex"))
 

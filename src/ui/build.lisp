@@ -108,16 +108,21 @@ one you are working in."
 (defun find-project-root (file top open)
   "The nearest project folder above FILE, no higher than TOP; else OPEN. A
 file outside the open folder doesn't count: the folder opened wins."
-  (or (and file
-           (or (null top) (uiop:subpathp (uiop:ensure-absolute-pathname file) top)
-               (let ((real-file (probe-file file)) (real-top (probe-file top)))
-                 (and real-file real-top (uiop:subpathp real-file real-top))))
-             (loop for dir = (uiop:pathname-directory-pathname file) then (uiop:pathname-parent-directory-pathname dir)
+  (let ((real-top (and top (probe-file top))))
+    (or (and file
+             (or (null top) (uiop:subpathp (uiop:ensure-absolute-pathname file) top)
+                 (let ((real-file (probe-file file)))
+                   (and real-file real-top (uiop:subpathp real-file real-top))))
+             (loop for dir = (uiop:pathname-directory-pathname file)
+                     then (uiop:pathname-parent-directory-pathname dir)
                    repeat 30
                    when (ignore-errors (project-folder-p dir)) return dir
-                   until (or (and top (equal (namestring dir) (namestring top)))
+                   ;; macOS can name the same folder through /var and
+                   ;; /private/var. Stop at either spelling of the boundary.
+                   until (or (and top (or (equal (namestring dir) (namestring top))
+                                         (and real-top (equal (probe-file dir) real-top))))
                              (equal dir (uiop:pathname-parent-directory-pathname dir)))))
-      open))
+        open)))
 
 (defun project-root-or-error ()
   (or (current-project-root) (editor-error "Open a project first")))

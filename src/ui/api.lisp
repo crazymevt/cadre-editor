@@ -197,8 +197,16 @@ Cadre quits (or the folder changes). Never written anywhere.")
       (gtk:drop-down-set-selected *api-environment-dropdown*
                                   (let ((i (position *api-environment* names :test #'equal))) (if i (1+ i) 0))))))
 
+(defvar *api-page-stale* nil
+  "Whether the API page still lists a previous project's files, because the
+project changed while the page was hidden.")
+
+(defun refresh-api-page-if-stale ()
+  (when *api-page-stale* (refresh-api-page)))
+
 (defun refresh-api-page ()
   (when *api-list*
+    (setf *api-page-stale* nil)
     (refresh-api-environments)
     (gtk:list-box-remove-all *api-list*)
     (let ((files (api-http-files)))
@@ -264,7 +272,12 @@ Cadre quits (or the folder changes). Never written anywhere.")
 
 (defun api-project-changed ()
   (setf *api-captured* '())
-  (refresh-api-page))
+  ;; Don't walk an entire new project for HTTP files while its API page is
+  ;; hidden: showing the page again refreshes it.
+  (if (and *window* (gtk:widget-get-visible (window-sidebar *window*))
+           (equal "api" (sidebar-page *window*)))
+      (refresh-api-page)
+      (setf *api-page-stale* t)))
 
 (add-hook '*after-save-hook*
           (lambda (buffer)

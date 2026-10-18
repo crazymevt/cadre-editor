@@ -85,7 +85,10 @@ has a size, try again shortly."
   (dolist (toggle (window-sidebar-toggles win))
     (sync-toggle toggle visible))
   (loop for (name . toggle) in (window-activity-buttons win)
-        do (sync-toggle toggle (and visible (string= name (sidebar-page win))))))
+        do (sync-toggle toggle (and visible (string= name (sidebar-page win)))))
+  ;; The API page skips scanning a new project while hidden; catch up now.
+  (when (and visible (equal "api" (sidebar-page win)))
+    (refresh-api-page-if-stale)))
 
 (defun show-sidebar-page (win name &key (toggle t))
   "Show the sidebar's NAME page. With TOGGLE, if it is already showing, hide the sidebar."
@@ -94,9 +97,10 @@ has a size, try again shortly."
         (set-sidebar-visible win nil)
         (progn
           (gtk:stack-set-visible-child-name (window-sidebar-stack win) name)
+          ;; Before showing it, so the sidebar doesn't scan a stale API page twice.
+          (when (string= name "api") (refresh-api-page))
           (set-sidebar-visible win t)
           (when (string= name "systems") (refresh-systems))
           (when (string= name "databases") (refresh-databases-page))
-          (when (string= name "api") (refresh-api-page))
           (when (string= name "outline") (refresh-outline :force t))
           (when (string= name "git") (git-changed) (refresh-source-control))))))

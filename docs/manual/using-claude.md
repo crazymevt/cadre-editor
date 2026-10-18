@@ -87,7 +87,9 @@ changes and whether you accepted it. They are saved as you go, in
 The history button beside **New conversation** (or `M-x
 assistant-conversations`) lists them, the most recent first, by date,
 provider, project and first message; type to narrow the list. Choosing one
-shows its transcript and makes it the provider's conversation again: the next
+shows the latest 50 transcript entries; **Show earlier entries** loads the
+preceding page above them. The complete transcript remains saved. Choosing a
+conversation also makes it the provider's conversation again: the next
 message continues it, resuming Claude Code's session in the folder it ran in,
 or Codex's thread. Nothing in it runs again, and what you allowed for it
 (**Allow for This Conversation**) isn't allowed again until you say so.
