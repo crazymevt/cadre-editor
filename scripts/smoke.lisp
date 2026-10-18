@@ -4086,7 +4086,9 @@ and the number of items MODEL itself shows."
 (defun scratch-buffer () (find-if #'cadre-ui::scratch-buffer-p (buffer-list)))
 
 (then 100
-  (call-command 'cadre-ui::scratch))
+  (let ((button (gethash :scratch-button cadre-ui::*named-widgets*)))
+    (check "Scratch is available in the header" (and button (gtk:widget-get-visible button)))
+    (when button (gtk:widget-activate button))))
 
 (then-when ((scratch-buffer))
   (let* ((buffer (scratch-buffer))

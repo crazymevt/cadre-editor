@@ -294,6 +294,8 @@ it when the project has an :entry-point)."
                                                  (call-command 'toggle-sidebar)))
                 (gtk:box :child-type "end" :spacing 6
                   (run-button)
+                  (command-button "cadre-edit-symbolic" "Open the project's scratch buffer" 'scratch
+                                  :id :scratch-button :label "Scratch")
                   (command-button "cadre-save-symbolic" "Save" 'save-buffer)
                   (command-button "cadre-layout-horizontal-symbolic"
                                   "Switch between the panel below and beside the editor"

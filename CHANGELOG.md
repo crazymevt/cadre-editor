@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+- **Scratch button.** Open the project's persistent scratch buffer directly
+  from the header bar.
 
 - **CLOS browser.** Browse classes and generic functions in the connected
   Lisp by package and name, with inherited slots, method qualifiers and
@@ -15,6 +18,8 @@
   edits appear as inline diffs to accept or reject, and evaluation,
   compilation, loading and tests use Cadre's approval prompts. Stop cancels
   pending tool approvals, and conversations follow the open project folder.
+
+## Unreleased
 
 ## 1.1.1
 

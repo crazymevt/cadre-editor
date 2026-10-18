@@ -179,11 +179,12 @@ are hidden unless you tick Swank's threads.
 
 ## Scratch buffers
 
-**Scratch Buffer** (`Ctrl+K Shift+S`, `C-x M-s` in the Emacs keys, or the
-Lisp menu) opens `*scratch*`, a Lisp buffer
+The **Scratch** button in the header bar opens `*scratch*`, a Lisp buffer
 for trying things out. Each project has its own, kept between sessions but
 outside the project's folder (in `~/.config/cadre/scratch/`), so it never shows
 up in Git. It saves itself as you type and never asks to be saved.
+You can also use **Lisp → Scratch Buffer**, `Ctrl+K Shift+S`, or `C-x M-s`
+in the Emacs keys.
 
 ## The HyperSpec
 
