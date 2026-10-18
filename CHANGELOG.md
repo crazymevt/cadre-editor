@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Reliable database smoke checks.** Trigger Test Connection directly so
+  dialog animation timing cannot drop the simulated click.
+
+- **Smoke test failure recap.** Repeat failed check names and details at the
+  end of the smoke run, beside the totals, so failures stay easy to find.
+
+- **Assistant approval prompts.** Shared evaluation, compilation, loading,
+  test and save prompts now say “Assistant” so Codex requests are no longer
+  attributed to Claude.
+
 - **Reliable editor tabs.** Avoid adding an absent Markdown control to
   ordinary file tabs, which could interrupt tab creation and break tab
   selection, pin controls and Markdown preview switching.

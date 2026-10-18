@@ -22,10 +22,16 @@
 
 (defun finish ()
   (format t "~&--- Output panel ---~%~a~%---~%" (cadre-ui::panel-output-string (cadre-ui::window-panel *window*)))
-  (let ((failed (count nil *results* :key #'second)))
-    (format t "~&~%~d checks, ~d failed. Screenshots in ~a~%" (length *results*) failed *out*)
+  (let ((failures (reverse (remove-if #'second *results*))))
+    (when failures
+      (format t "~&~%Failed checks:~%")
+      (dolist (result failures)
+        (destructuring-bind (name ok detail) result
+          (declare (ignore ok))
+          (format t "  FAIL ~a~@[ — ~a~]~%" name detail))))
+    (format t "~&~%~d checks, ~d failed. Screenshots in ~a~%" (length *results*) (length failures) *out*)
     (uiop:delete-directory-tree *root* :validate t :if-does-not-exist :ignore)
-    (uiop:quit (if (zerop failed) 0 1))))
+    (uiop:quit (if (null failures) 0 1))))
 
 ;;; A throwaway project
 (ensure-directories-exist (merge-pathnames "src/" *root*))
@@ -1623,7 +1629,11 @@ d" 0 0)
       (let ((group (cadre-ui::view-group (first (cadre-ui::buffer-views *window* preview)))))
         (cadre-ui::close-view *window* (first (cadre-ui::buffer-views *window* preview)))
         (cadre-ui::restore-group *window* group (list :group :files (list state) :selected 0))
-        (check "and restores it" (and (preview-buffer) (cadre-ui::buffer-views *window* (preview-buffer)))))))
+        (check "and restores it" (and (preview-buffer) (cadre-ui::buffer-views *window* (preview-buffer))))))))
+
+;; Restoring the preview rebuilds the tabs; allow allocation and the deferred
+;; scroll-to-selected-tab callback to run before inspecting the adjustment.
+(then 150
   (let* ((strip (cadre-ui::group-strip (cadre-ui::view-group (current-view))))
          (tab (cdr (assoc (cadre-ui::view-page *window* (current-view)) (cadre-ui::strip-tabs strip))))
          (adjustment (gtk:scrolled-window-get-hadjustment (cadre-ui::strip-scroller strip))))
@@ -4795,7 +4805,7 @@ CREATE VIEW adults AS SELECT name, age FROM people WHERE age >= 18;")
     (check "and lets it save" (gtk:widget-get-sensitive (getf dialog :save)))
     (check "a connection is saved with the project when a folder is open"
            (adw:switch-row-get-active (getf dialog :in-project)))
-    (gtk:widget-activate (getf dialog :test))))
+    (gobject:emit (getf dialog :test) :clicked)))
 
 (then-when ((plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note)))) :timeout 5)
   (let ((dialog cadre-ui::*db-connection-dialog*))
@@ -5260,7 +5270,7 @@ INSERT INTO orders (item, qty) VALUES ('Apple', 3), ('banana', 12), ('Cherry', 7
       (gtk:editable-set-text (getf dialog :user) "cadre")
       (gtk:editable-set-text (getf dialog :password) "secret")
       (adw:switch-row-set-active (getf dialog :in-project) t)
-      (gtk:widget-activate (getf dialog :test)))))
+      (gobject:emit (getf dialog :test) :clicked))))
 
 (then-when ((or (null *pg-bin*) (plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note))))) :timeout 10)
   (when *pg-bin*
@@ -5358,7 +5368,7 @@ INSERT INTO shop.items (item, qty, added) VALUES ('Apple', 3, '2026-01-02'), ('b
       (gtk:editable-set-text (getf dialog :database) "shop")
       (gtk:editable-set-text (getf dialog :user) "cadre")
       (gtk:editable-set-text (getf dialog :password) "secret")
-      (gtk:widget-activate (getf dialog :test)))))
+      (gobject:emit (getf dialog :test) :clicked))))
 
 (then-when ((or (null *mdb-bin*) (plusp (length (gtk:label-get-text (getf cadre-ui::*db-connection-dialog* :note))))) :timeout 10)
   (when *mdb-bin*

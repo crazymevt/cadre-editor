@@ -158,7 +158,7 @@ that language's default (the REPL's)."
   "Tools the user allowed for this conversation.")
 
 (defun ask-approval (key title detail)
-  "Ask in the chat whether Claude may do something. KEY names what a \"for
+  "Ask in the chat whether the assistant may do something. KEY names what a \"for
 this session\" answer covers. Returns :once, :session or :deny."
   (if (on-main (gethash key *session-allowed*))
       :session
@@ -411,7 +411,7 @@ it for the session."
   (let* ((form (tool-argument args "form" :required t))
          (language (tool-language args))
          (package (tool-package args language)))
-    (require-approval "eval" "Claude wants to evaluate" form)
+    (require-approval "eval" "Assistant wants to evaluate" form)
     (if (eq language :common-lisp)
         (destructuring-bind (output value)
             (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source form)) :package package :timeout 300)
@@ -429,7 +429,7 @@ must be saved. The user approves this unless they allowed it for the session."
     (unless (probe-file path) (tool-error "No file ~a" path))
     (when (and buffer (on-main (buffer-modified-p buffer)))
       (tool-error "~a has unsaved changes; ask the user to save it." (file-namestring path)))
-    (require-approval "compile" "Claude wants to compile and load" (uiop:native-namestring path))
+    (require-approval "compile" "Assistant wants to compile and load" (uiop:native-namestring path))
     (let* ((language (tool-language args buffer))
            (result (if (eq language :common-lisp)
                        (swank-sync (swank-call "swank:compile-file-for-emacs" (uiop:native-namestring path) t)
@@ -488,7 +488,7 @@ any line inside the form. The user approves this unless they allowed compiling f
                           (t (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))))
                         (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
                         language)))))
-      (require-approval "compile" "Claude wants to compile" text)
+      (require-approval "compile" "Assistant wants to compile" text)
       (let ((result (if (eq language :common-lisp)
                         (swank-sync (swank-call "swank:compile-string-for-emacs" text (on-main (buffer-name buffer))
                                                 (list (list :position position) (list :line (1+ sl) 1))
@@ -510,7 +510,7 @@ they allowed loading for the session."
   (require-common-lisp (tool-language args) "load_system")
   (let ((system (tool-argument args "system" :required t))
         (directory (on-main (window-project *window*))))
-    (require-approval "load" "Claude wants to load the system" system)
+    (require-approval "load" "Assistant wants to load the system" system)
     (destructuring-bind (output value)
         (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source (load-system-form directory system)))
                     :timeout 900)
@@ -524,7 +524,7 @@ output. The user approves this unless they allowed running tests for the session
   (require-common-lisp (tool-language args) "run_tests")
   (let ((system (tool-argument args "system" :required t))
         (directory (on-main (window-project *window*))))
-    (require-approval "tests" "Claude wants to run the tests of" system)
+    (require-approval "tests" "Assistant wants to run the tests of" system)
     (destructuring-bind (output value)
         (swank-sync (swank-call "swank:eval-and-grab-output" (guarded-source (test-system-form directory system)))
                     :timeout 1800)
@@ -551,7 +551,7 @@ user approves this unless they allowed saving for the session."
     (if (not (on-main (buffer-modified-p buffer)))
         "It has no unsaved changes."
         (progn
-          (require-approval "save" "Claude wants to save" (on-main (buffer-name buffer)))
+          (require-approval "save" "Assistant wants to save" (on-main (buffer-name buffer)))
           (if (wait-for (lambda (done) (write-buffer buffer (buffer-file buffer) done)))
               (format nil "Saved ~a." (on-main (buffer-name buffer)))
               (tool-error "Saving failed"))))))
