@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 1.2.0
 
 - **Scratch button.** Open the project's persistent scratch buffer directly
@@ -18,8 +20,6 @@
   edits appear as inline diffs to accept or reject, and evaluation,
   compilation, loading and tests use Cadre's approval prompts. Stop cancels
   pending tool approvals, and conversations follow the open project folder.
-
-## Unreleased
 
 ## 1.1.1
 
