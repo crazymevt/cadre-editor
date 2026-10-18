@@ -2732,6 +2732,86 @@ d" 0 0)
               (null (cadre-ui::hist-commits cadre-ui::*history*))))
   (screenshot "39-new-project-open"))
 
+;;; Recent process runs, retained output and controls.
+(section "runs")
+(defvar *smoke-first-run* nil)
+(defvar *smoke-failed-run* nil)
+
+(then 50
+  (with-open-file (out (merge-pathnames "run-location.lisp" *root*) :direction :output :if-exists :supersede)
+    (format out "; diagnostic target~%(+ 1 2)~%"))
+  (cadre-ui::run-project-process *root*
+                               '(:program "/bin/sh" :arguments ("-c" "printf 'first output\\n'")
+                                 :description "successful fixture") :what "Smoke success")
+  (setf *smoke-first-run* (getf cadre-ui::*build* :run)))
+
+(then-when ((null cadre-ui::*build*) :timeout 10)
+  (check "a successful process is retained in Runs" (eq :passed (cadre-ui::pr-status *smoke-first-run*)))
+  (check "process runs open the Runs page" (equal "runs" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "the completed run has output and timing"
+         (and (search "first output" (cadre-ui::project-run-output-text *smoke-first-run*))
+              (cadre-ui::pr-end *smoke-first-run*)))
+  (cadre-ui::run-project-process *root*
+                               '(:program "/bin/sh" :arguments ("-c" "printf 'run-location.lisp:2:1: error fixture\\nother line\\n'; exit 7")
+                                 :description "failing fixture") :what "Smoke failure")
+  (setf *smoke-failed-run* (getf cadre-ui::*build* :run)))
+
+(then-when ((null cadre-ui::*build*) :timeout 10)
+  (check "Runs records a failure and its exit code"
+         (and (eq :failed (cadre-ui::pr-status *smoke-failed-run*)) (= 7 (cadre-ui::pr-exit-code *smoke-failed-run*))))
+  (check "the previous run keeps its own output"
+         (not (search "error fixture" (cadre-ui::project-run-output-text *smoke-first-run*))))
+  (let ((page cadre-ui::*runs-page*))
+    (let* ((holder (cdr (assoc "runs" (cadre-ui::panel-holders (cadre-ui::window-panel *window*)) :test #'string=)))
+           (minimum (gtk:widget-measure holder :horizontal -1)))
+      (check "Runs fits a narrow panel" (< minimum 320) minimum))
+    (check "completed runs offer Rerun and disable Stop"
+           (and (gtk:widget-get-sensitive (cadre-ui::rnp-rerun page))
+                (not (gtk:widget-get-sensitive (cadre-ui::rnp-stop page)))))
+    (check "diagnostics offer clickable file locations" (plusp (length (find-widgets (cadre-ui::rnp-locations page)
+                                                                                  (lambda (w) (typep w 'gtk:button))))))
+    (gobject:emit (first (find-widgets (cadre-ui::rnp-locations page) (lambda (w) (typep w 'gtk:button)))) :clicked)
+    (gtk:editable-set-text (cadre-ui::rnp-search page) "ERROR")))
+
+(then 400
+  (check "a diagnostic opens its file and line"
+         (and (equal (buffer-file (current-buffer)) (merge-pathnames "run-location.lisp" *root*))
+              (= 1 (first (cursor)))))
+  (let* ((page cadre-ui::*runs-page*)
+         (text (text-string (gtk:text-view-get-buffer (cadre-ui::rnp-output page)))))
+    (check "Runs filters output without changing retained logs"
+           (and (search "error fixture" text) (not (search "other line" text))
+                (search "other line" (cadre-ui::project-run-output-text *smoke-failed-run*))))
+    (gtk:editable-set-text (cadre-ui::rnp-search page) "")
+    (screenshot "runs-failure")
+    (gobject:emit (cadre-ui::rnp-rerun page) :clicked)))
+
+(then-when ((null cadre-ui::*build*) :timeout 10)
+  (check "Rerun creates a separate history entry with the original command"
+         (let ((run (first cadre-ui::*project-runs*)))
+           (and (not (eq run *smoke-failed-run*))
+                (equal (cadre-ui::pr-plan run) (cadre-ui::pr-plan *smoke-failed-run*))
+                (eq :failed (cadre-ui::pr-status run)))))
+  (cadre-ui::run-project-process *root* '(:program "/bin/sh" :arguments ("-c" "exec sleep 30")
+                                        :description "stoppable fixture") :what "Smoke stop"))
+
+(then 200
+  (check "Runs enables Stop while the selected process runs"
+         (gtk:widget-get-sensitive (cadre-ui::rnp-stop cadre-ui::*runs-page*)))
+  (gobject:emit (cadre-ui::rnp-stop cadre-ui::*runs-page*) :clicked))
+
+(then-when ((null cadre-ui::*build*) :timeout 10)
+  (check "stopping records Stopped rather than Failed"
+         (eq :stopped (cadre-ui::pr-status (first cadre-ui::*project-runs*))))
+  (handler-case
+      (cadre-ui::run-project-process *root* '(:program "/no-such-cadre-program" :arguments nil
+                                            :description "missing executable") :what "Smoke launch failure")
+    (editor-error () nil))
+  (check "a launch error is retained as a failed run"
+         (and (null cadre-ui::*build*)
+              (eq :failed (cadre-ui::pr-status (first cadre-ui::*project-runs*)))
+              (search "Could not run" (cadre-ui::project-run-output-text (first cadre-ui::*project-runs*))))))
+
 ;;; Build Project
 (section "build" :needs ("new-project"))
 
@@ -2747,7 +2827,7 @@ d" 0 0)
 (then-when ((equal (truename (cadre-ui::window-project *window*)) (truename (merge-pathnames "smoke-app/" *new-parent*))))
   (call-command 'cadre-ui::build-project)
   (check "Build Project starts the build" cadre-ui::*build*)
-  (check "and shows its output" (equal "output" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*)))))
+  (check "and shows its output" (equal "runs" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*)))))
 
 (then-when ((null cadre-ui::*build*) :timeout 240)
   (let ((program (merge-pathnames "smoke-app/bin/smoke-app" *new-parent*)))
@@ -2801,7 +2881,7 @@ d" 0 0)
 
 (then-when ((null cadre-ui::*build*) :timeout 120)
   (check "a failing test fails the run" (search "Test run failed" (status-text)) (status-text))
-  (check "and shows the Output page" (equal "output" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
+  (check "and shows the Runs page" (equal "runs" (cadre-ui::panel-visible-name (cadre-ui::window-panel *window*))))
   (screenshot "41-tests"))
 
 ;;; Run GTK App

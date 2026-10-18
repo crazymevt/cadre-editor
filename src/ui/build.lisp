@@ -4,8 +4,8 @@
 ;;;; core plans (project-build-plan: make build, or ASDF's make in a new
 ;;;; Lisp) in the project's folder. Run Tests in a New Lisp does the same
 ;;;; with project-test-plan (make test, or asdf:test-system in a new Lisp).
-;;;; Their output streams to the Output page; when one ends, the status bar
-;;;; says how it went. One at a time; Stop Build ends it.
+;;;; Their output streams to the Runs and Output pages; when one ends, the
+;;;; status bar says how it went. One at a time; Stop Build ends it.
 ;;;;
 ;;;; Run Tests runs asdf:test-system in the connected Lisp's REPL instead:
 ;;;; quicker, and a failing test's error opens the debugger.
@@ -24,36 +24,43 @@
          (what (getf build :what))
          (seconds (/ (- (get-internal-real-time) (getf build :start)) internal-time-units-per-second)))
     (setf *build* nil)
+    (finish-project-run (getf build :run) code :stopped (getf build :stopped))
     (when (getf build :on-end) (funcall (getf build :on-end) code))
-    (cond ((eql code 0)
-           (panel-log (window-panel *window*) (format nil "~a finished in ~,1f s" what seconds))
-           (funcall (getf build :on-success) seconds))
-          ((getf build :stopped)
+    (cond ((getf build :stopped)
            (panel-log (window-panel *window*) (format nil "~a stopped" what))
            (message "~a stopped" what))
+          ((eql code 0)
+           (panel-log (window-panel *window*) (format nil "~a finished in ~,1f s" what seconds))
+           (funcall (getf build :on-success) seconds))
           (t
            (panel-log (window-panel *window*) (format nil "~a failed (exit ~a)" what code))
-           (message "~a failed (exit ~a): see the Output page" what code)
-           (call-command 'show-output)))))
+           (message "~a failed (exit ~a): see the Runs page" what code)
+           (call-command 'show-runs)))))
 
 (defun run-project-process (root plan &key (what "Build") on-success on-line on-end)
   "Run PLAN (from project-build-plan or project-test-plan) in ROOT, with its
-output on the Output page. WHAT names it in messages; ON-SUCCESS is called
+output on the Runs and Output pages. WHAT names it in messages; ON-SUCCESS is called
 with the seconds taken if it exits 0. ON-LINE, if given, is called with each
 line of output too, and ON-END with the exit code when it ends."
+  (when *build* (editor-error "~a is already running (Stop Build ends it)" (getf *build* :what)))
   (panel-log (window-panel *window*)
              (format nil "~a in ~a: ~a" what (uiop:native-namestring root) (getf plan :description)))
-  (call-command 'show-output)
-  (let ((process (handler-case
+  (call-command 'show-runs)
+  (let* ((run (begin-project-run root plan what))
+         (process (handler-case
                      (sb-ext:run-program (getf plan :program) (getf plan :arguments)
                                          :search t :wait nil :directory (uiop:native-namestring root)
                                          :input nil :output :stream :error :output
                                          :external-format :utf-8)
-                   (error (e) (editor-error "Could not run ~a: ~a" (getf plan :program) e)))))
-    (setf *build* (list :process process :plan plan :root root :what what
+                   (error (e)
+                     (append-project-run-output run (format nil "Could not run ~a: ~a" (getf plan :program) e))
+                     (finish-project-run run nil)
+                     (editor-error "Could not run ~a: ~a" (getf plan :program) e)))))
+    (setf *build* (list :run run :process process :plan plan :root root :what what
                         :on-success (or on-success (lambda (seconds) (message "~a finished in ~,1f s" what seconds)))
                         :on-line on-line :on-end on-end
                         :start (get-internal-real-time)))
+    (when *runs-page* (refresh-runs-page))
     (message "~a: ~a…" what (getf plan :description))
     (sb-thread:make-thread
      (lambda ()
@@ -63,6 +70,7 @@ line of output too, and ON-END with the exit code when it ends."
                do (let ((line line))
                     (glib:call-in-main-thread (lambda ()
                                                 (build-log line)
+                                                (append-project-run-output run line)
                                                 (when on-line (funcall on-line line))))))
          (sb-ext:process-wait process)
          (let ((code (sb-ext:process-exit-code process)))

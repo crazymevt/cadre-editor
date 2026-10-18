@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Runs page.** Builds, tests in a new Lisp and other project processes now
+  have separate session history with status, exit code, duration and retained
+  output. Filter output, open file:line diagnostics, rerun in the original
+  project or stop the active process. The Output log still receives all output.
+
 - **Reliable database smoke checks.** Trigger Test Connection directly so
   dialog animation timing cannot drop the simulated click.
 

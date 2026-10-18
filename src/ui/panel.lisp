@@ -17,7 +17,7 @@
   (make-instance 'adw:status-page :icon-name icon :title title :description description
                                   :css-classes '("compact")))
 
-(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "profiler" "threads" "tests" "results")
+(defparameter *panel-pages-shown-when-used* '("debugger" "inspector" "references" "history" "trace" "profiler" "threads" "tests" "results" "runs")
   "Pages whose tab appears only once they have something to show, so a
 narrow panel (the vertical layout) has room for the others.")
 
@@ -39,7 +39,7 @@ narrow panel (the vertical layout) has room for the others.")
                                                    :propagate-natural-width t :hexpand t :child switcher)))
     (dolist (page '(("claude" "Assistant") ("repl" "REPL") ("terminal" "Terminal") ("problems" "Problems") ("debugger" "Debugger")
                     ("inspector" "Inspector") ("references" "References") ("history" "History")
-                    ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("tests" "Tests") ("results" "Results")))
+                    ("trace" "Trace") ("profiler" "Profiler") ("threads" "Threads") ("tests" "Tests") ("results" "Results") ("runs" "Runs")))
       (let ((holder (make-instance 'adw:bin :vexpand t)))
         (push (cons (first page) holder) (panel-holders panel))
         (gtk:stack-add-titled stack holder (first page) (second page))))

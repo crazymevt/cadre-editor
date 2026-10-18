@@ -60,7 +60,7 @@ the open project's program:
   one of its systems has a `:build-operation`, it runs `(asdf:make …)` in a new
   Lisp, because saving the image ends the Lisp that does it.
 - **First:** it saves the project's changed files.
-- **While it runs:** its output streams to the Output page.
+- **While it runs:** its output streams to the Runs and Output pages.
 - **When it ends:** the status bar names the program, its size and how long
   the build took.
 - `M-x stop-build` stops a build.
@@ -77,9 +77,32 @@ connected Lisp's REPL, after saving the project's files:
 **Run Tests in a New Lisp** (`Ctrl+; N`, `C-x p T`) runs `make test`, or
 `asdf:test-system` in a fresh Lisp:
 - **Why use it:** nothing left over in your session can make the tests pass.
-- **Results:** output goes to the Output page, and the status bar says whether
+- **Results:** output goes to the Runs and Output pages, and the status bar says whether
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
+
+## Recent process runs
+
+**Project › Runs** (or `M-x show-runs`) keeps builds, tests run in a new Lisp,
+and project commands such as `raco test` in one panel. It opens when a process
+starts. Select a run to see its project folder, command, status, duration,
+exit code on failure and separate output. **Filter output** matches text
+without case sensitivity; clearing it shows the retained output again.
+Conventional `file:line` and `file:line:column` diagnostics appear as buttons
+below the output; click one to open that file at its reported position.
+
+**Rerun** saves changed files in the run's original project and repeats its
+process command there, even if a different project is now open. It creates a
+new entry. It repeats the command only; it does not replay language-specific
+completion callbacks, such as restarting a REPL after fetching dependencies.
+**Stop** ends the selected active process, including its child processes.
+Only one project process runs at a time.
+
+History lasts for the current Cadre session, keeping the latest 30 runs and
+up to 262,144 characters of output per run. A notice appears when retained output reaches
+that limit; the Output page continues receiving all process output. REPL
+programs and Test Explorer runs still use their existing pages and are not
+recorded here yet.
 
 ## The Tests page
 

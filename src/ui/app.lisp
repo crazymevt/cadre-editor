@@ -60,6 +60,7 @@ command. Menus and buttons use it."
       (panel-set-page-child panel "profiler" (make-profiler-widget))
       (panel-set-page-child panel "threads" (make-threads-widget))
       (panel-set-page-child panel "tests" (make-tests-widget))
+      (panel-set-page-child panel "runs" (make-runs-widget))
       (panel-set-page-child panel "claude" (make-claude-widget))
       (panel-set-title panel "claude" "Assistant")
       (panel-set-page-child panel "terminal" (make-terminal-widget))
