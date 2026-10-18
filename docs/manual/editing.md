@@ -237,8 +237,12 @@ doesn't; without one, an occurrence read in the symbol's own package counts.
 Each place says what it is: the symbol, a `defpackage` clause, another
 symbol of the same name, a local binding, or one it can't tell. Only the
 symbol's places and its `defpackage` clauses start checked; check the others
-you mean to change. A place whose text changed after it was found is left
-alone. **Extract function** moves the selection into a new `defun`
+you mean to change. A match is left alone if its enclosing form or package
+context changes after preview, or its file disappears or becomes unreadable.
+Edits to unrelated definitions do not block unchanged matches. Moved matches
+need a new preview. The preview refreshes on the old name so you can review
+skipped places and rename again.
+**Extract function** moves the selection into a new `defun`
 above the current form and calls it there; the variables it uses from
 around it (the defun's parameters, `let`, `flet`, `dolist`, `loop` and other
 bindings) become its parameters. **Extract variable** binds the selection

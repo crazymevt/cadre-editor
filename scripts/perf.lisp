@@ -393,6 +393,31 @@ and, if Cadre doesn't take it, as the text view would."
                                                     (result "Longest stall opening the folder" *stall-max* 100)
                                                     (funcall next)))))))))
 
+;;; Restoring a long assistant transcript, without starting an assistant.
+
+(step* (next)
+  (cadre-ui::panel-show (cadre-ui::window-panel *window*) "claude")
+  (pause 300
+    (lambda ()
+      (reset-stalls)
+      (let ((start (now-ms)) (cadre-ui::*replaying-conversation* t))
+        (dotimes (n 250)
+          (cadre-ui::show-conversation-entry (list :user :text (format nil "Message ~d: explain this function." n)))
+          (cadre-ui::show-conversation-entry (list :assistant :text "This **function** transforms its input.
+
+```lisp
+(defun example (x) (+ x 1))
+```")))
+        (result "Create a 500-message assistant transcript" (- (now-ms) start) nil)
+        (after-next-paint (cadre-ui::window-gtk-window *window*)
+          (lambda (frame-start end)
+            (declare (ignore frame-start))
+            (result "500-message transcript through first paint" (- end start) nil)
+            (pause 1000
+              (lambda ()
+                (result "Longest stall restoring 500 messages" *stall-max* nil)
+                (funcall next)))))))))
+
 (setf *steps* (reverse *steps*))
 
 ;;; Reporting

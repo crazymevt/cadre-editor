@@ -118,8 +118,7 @@ none, ask for a name."
    (lambda (name package)
      (if (not (language-connection language))
          ;; No Lisp to ask: search the project's source for the symbol instead.
-         (progn (setf (ps-symbol *project-search*) name)
-                (open-project-search :text name :mode :symbol)
+         (progn (open-project-search :text name :mode :symbol :symbol name :target-package package)
                 (message "No Lisp running: showing where ~a appears in the project's files" name))
      (with-connection (connection :language language)
        (apply #'request #'backend-xref connection kinds name

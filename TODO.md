@@ -3,6 +3,10 @@
 Priorities from the October 18, 2026 IDE review. Checked subtasks describe
 implemented work; a feature stays open until its remaining scope is covered.
 
+Items 5–7 are deferred. The current focus is stabilization, responsiveness,
+discoverability and release validation of the implemented features.
+See [the stabilization review](docs/STABILIZATION.md) for findings and checks.
+
 ## 1. Runs page
 
 - [x] Bring builds, tests and program runs together in a Runs panel.

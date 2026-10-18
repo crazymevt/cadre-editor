@@ -30,6 +30,7 @@
   ;; :lexical mode: the buffer, and a mark on the binding's use there.
   (lexical-buffer nil) (lexical-mark nil)
   (results-data '())                    ; (path match-rows), match-rows: (line start end check)
+  (rename-contexts (make-hash-table :test 'equal)) ; Per-place context fingerprints.
   (generation 0))
 
 (defvar *project-search* nil)
@@ -146,7 +147,14 @@
                                                                     :whole-word whole-word :regex regex)))))
                   (when matches
                     (incf count (length matches))
-                    (push (list path (coerce (split-text-lines text) 'vector) matches) results)))))
+                    (push (list path (coerce (split-text-lines text) 'vector) matches
+                                (when (eq mode :symbol)
+                                  (rename-contexts text
+                                                   (mapcar (lambda (context)
+                                                             (list (sc-line context) (sc-column context)
+                                                                   (+ (sc-column context) (- (sc-end context) (sc-start context)))))
+                                                           matches))))
+                          results)))))
             (deliver-to-gui (lambda ()
                               (when (= generation (ps-generation ps))
                                 (if (eq mode :symbol)
@@ -209,8 +217,8 @@ or guessing from the packages' names without one."
     (labels ((show (resolve how)
                (when (= generation (ps-generation ps))
                  (let ((target-home (and target (funcall resolve target))))
-                   (show-project-results ps (loop for (path lines contexts) in results
-                                                  collect (list path lines (classified-matches contexts target-home resolve)))
+                   (show-project-results ps (loop for (path lines contexts fingerprints) in results
+                                                  collect (list path lines (classified-matches contexts target-home resolve) fingerprints))
                                          count)
                    (show-rename-summary ps how))))
              (guess ()
@@ -294,6 +302,13 @@ refer to it checked, others of the same name in its form unchecked."
 
 (defun show-project-results (ps results count)
   (clear-box (ps-results ps))
+  (clrhash (ps-rename-contexts ps))
+  (when (member (ps-mode ps) '(:symbol :lexical))
+    (dolist (result results)
+      (setf (gethash (first result) (ps-rename-contexts ps))
+            (or (fourth result)
+                (rename-contexts (format nil "~{~a~^~%~}" (coerce (second result) 'list))
+                                 (mapcar (lambda (match) (subseq match 0 3)) (third result)))))))
   (let ((replacing (gtk:revealer-get-reveal-child (ps-replace-revealer ps))))
     (setf (ps-results-data ps)
           (loop for (path lines matches) in results
@@ -367,6 +382,49 @@ refer to it checked, others of the same name in its form unchecked."
   (with-open-file (out path :direction :output :if-exists :supersede :external-format :utf-8)
     (write-string text out)))
 
+(defun rename-contexts (text matches)
+  "Map each (line start end) to its enclosing form and package context.
+Only fingerprints are retained. Unrelated top-level forms may change, but
+changed forms, reader prefixes, package declarations and moved places need
+another preview. Malformed or missing context is never accepted."
+  (let ((contexts (make-hash-table :test 'equal)))
+    (when text
+      (let* ((tree (cadre::read-form-tree text))
+             (starts (coerce (cadre::line-starts text) 'vector))
+             (packages (cadre::in-package-positions tree))
+             (pending (sort (loop for match in matches
+                                  when (< (first match) (length starts))
+                                    collect (cons (+ (aref starts (first match)) (second match)) match))
+                            #'< :key #'car))
+             (declarations
+               (loop for node in tree
+                     for head = (first (cadre::child-list node))
+                     when (and head (member (cadre::atom-name head) cadre::*defpackage-heads* :test #'equal))
+                       collect (coerce (sb-md5:md5sum-string text :start (cadre::node-start node)
+                                                                :end (cadre::node-end node)) 'list))))
+        (loop with prefix-start = nil
+              for node in tree for ordinal from 0
+              for start = (cadre::node-start node)
+              for end = (cadre::node-end node)
+              do (if (and (eq (cadre::node-kind node) :atom)
+                          (member (cadre::node-text node) '("'" "`" "#'" "," ",@") :test #'equal))
+                     (unless prefix-start (setf prefix-start start))
+                     (let ((fingerprint
+                             (list ordinal
+                                   (coerce (sb-md5:md5sum-string text :start (or prefix-start start) :end end) 'list)
+                                   (or (cdr (find-if (lambda (p) (< (car p) start)) packages :from-end t))
+                                       "COMMON-LISP-USER")
+                                   declarations)))
+                       (loop while (and pending (< (caar pending) end))
+                             for place = (pop pending)
+                             for offset = (car place)
+                             for match = (cdr place)
+                             when (and (<= start offset)
+                                       (<= (+ offset (- (third match) (second match))) end))
+                               do (setf (gethash match contexts) (cons (- offset start) fingerprint)))
+                       (setf prefix-start nil))))))
+    contexts))
+
 (defun apply-project-replace ()
   "Replace the checked matches. Returns the number of matches and files changed."
   (let* ((ps *project-search*)
@@ -380,20 +438,21 @@ refer to it checked, others of the same name in its form unchecked."
           for found = (checked-matches rows)
           when found
             do (let* ((buffer (find-file-buffer path))
-                      (text (if buffer (buffer-string buffer) (read-text-file path))))
-                 (when text
+                      (text (if buffer (buffer-string buffer) (read-text-file path)))
+                      (current (and renaming (rename-contexts text found)))
+                      (preview (gethash path (ps-rename-contexts ps)))
+                      (checked (if renaming
+                                   (remove-if-not
+                                    (lambda (match)
+                                      (let ((context (gethash match current)))
+                                        (if (and context preview (equal context (gethash match preview)))
+                                            t
+                                            (progn (incf skipped) nil))))
+                                    found)
+                                   found)))
+                 (when (and text checked)
                    ;; Keep each match's case when matching ignored it.
                    (let* ((lines (coerce (split-text-lines text) 'vector))
-                          ;; A renamed place whose text changed since it was found is left alone.
-                          (checked (if renaming
-                                       (remove-if-not (lambda (m)
-                                                        (destructuring-bind (l s e) m
-                                                          (let ((ok (and (< l (length lines)) (<= e (length (aref lines l)))
-                                                                         (string-equal (ps-symbol ps) (aref lines l) :start2 s :end2 e))))
-                                                            (unless ok (incf skipped))
-                                                            ok)))
-                                                      found)
-                                       found))
                           (new (with-output-to-string (out)
                                  (let ((pieces (sort (copy-list checked)
                                                      (lambda (a b) (or (< (first a) (first b))
@@ -440,13 +499,18 @@ refer to it checked, others of the same name in its form unchecked."
          (gio:async (adw:alert-dialog-choose dialog (window-gtk-window *window*))
                     (lambda (response)
                       (when (string= response "replace")
-                        (multiple-value-bind (matches files skipped) (apply-project-replace)
-                          (message "~:[Replaced~;Renamed~] ~d occurrence~:p in ~d file~:p~[~:;; ~:*~d place~:p changed since they were found, left alone~]"
-                                   renaming matches files skipped)
-                          (when renaming
-                            (setf (ps-symbol ps) replacement)
-                            (gtk:editable-set-text (ps-entry ps) replacement))
-                          (run-project-search))))))))))
+                        (finish-project-replace ps renaming replacement)))))))))
+
+(defun finish-project-replace (ps renaming replacement)
+  "Apply the checked replacements, say what changed and refresh the results."
+  (multiple-value-bind (matches files skipped) (apply-project-replace)
+    (message "~:[Replaced~;Renamed~] ~d occurrence~:p in ~d file~:p~[~:;; ~:*~d place~:p left alone because their context changed or could not be read; review the preview and rename again~]"
+             renaming matches files skipped)
+    ;; The preview keeps the old name until every checked place is renamed.
+    (when (and renaming (zerop skipped))
+      (setf (ps-symbol ps) replacement)
+      (gtk:editable-set-text (ps-entry ps) replacement))
+    (run-project-search)))
 
 ;;; Commands
 
@@ -472,10 +536,13 @@ refer to it checked, others of the same name in its form unchecked."
                (end (loop for i from point while (and (< i (length text)) (symbol-constituent-p (char text i))) finally (return i))))
           (and (< start end) (subseq text start end))))))
 
-(defun open-project-search (&key text (mode :text) replace focus-replace)
+(defun open-project-search (&key text (mode :text) symbol target-package replace focus-replace)
+  "Show search results with optional SYMBOL and TARGET-PACKAGE context."
   (show-sidebar-page *window* "search" :toggle nil)
   (let ((ps *project-search*))
     (setf (ps-mode ps) mode)
+    (when symbol (setf (ps-symbol ps) symbol
+                       (ps-target-package ps) target-package))
     (gtk:button-set-label (ps-apply-button ps) (if (member mode '(:symbol :lexical)) "Rename" "Replace All"))
     (when text
       (gtk:editable-set-text (ps-entry ps) text))

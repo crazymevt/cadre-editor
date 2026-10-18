@@ -3193,6 +3193,24 @@ d" 0 0)
               (concatenate 'string marker ":~a"))
       "(let ((app cl-user::*cadre-run-gtk-application*)) (and app (gtk:application-get-active-window app) (gtk:window-get-title (gtk:application-get-active-window app))))"))
 
+(defvar *gtk-title-probed-at* 0)
+
+(defun probe-gtk-title (marker)
+  (setf *gtk-title-probed-at* (get-internal-real-time))
+  (cadre-ui::repl-eval (gtk-title-form marker)))
+
+(defun gtk-title-seen-p (marker)
+  ;; :running means the launch was sent, before GTK creates its window.
+  ;; An early probe can run while the old main context is being drained,
+  ;; so probe again, at most once a second.
+  (or (search (concatenate 'string marker ":smoke-gtk") (repl-output-text))
+      (progn
+        (when (and (cadre-ui::gtk-app-running-p)
+                   (not (cadre-ui::repl-busy cadre-ui::*repl*))
+                   (> (get-internal-real-time) (+ *gtk-title-probed-at* internal-time-units-per-second)))
+          (probe-gtk-title marker))
+        nil)))
+
 (then 3000
   (cadre-ui::repl-eval (gtk-title-form)))
 
@@ -3250,9 +3268,9 @@ d" 0 0)
   (check "and becomes a stop button" (equal "Stop the app" (gtk:widget-get-tooltip-text (run-button))))
   ;; Match the user's red close button: closing the last window should end the
   ;; application, and the Run button should start a fresh application instance.
-  (cadre-ui::repl-eval (gtk-title-form "run-app-first")))
+  (probe-gtk-title "run-app-first"))
 
-(then-when ((search "run-app-first:smoke-gtk" (repl-output-text)) :timeout 30)
+(then-when ((gtk-title-seen-p "run-app-first") :timeout 30)
   (if (search "run-app-first:smoke-gtk" (repl-output-text))
       (progn
         (setf *run-app-window-seen* t)
@@ -3278,9 +3296,9 @@ d" 0 0)
 (then-when ((cadre-ui::gtk-app-running-p) :timeout 30)
   (when *run-app-window-seen*
     (check "▶ starts the GTK app again after its window closes" (cadre-ui::gtk-app-running-p))
-    (cadre-ui::repl-eval (gtk-title-form "run-app-restart"))))
+    (probe-gtk-title "run-app-restart")))
 
-(then-when ((search "run-app-restart:smoke-gtk" (repl-output-text)) :timeout 30)
+(then-when ((gtk-title-seen-p "run-app-restart") :timeout 30)
   (if (search "run-app-restart:smoke-gtk" (repl-output-text))
       (progn
         (check "the restarted GTK app opens a fresh window" t)

@@ -34,6 +34,10 @@ how Cadre looks, and commit the pictures with the change.
   Open's file list (300 ms).
 - **Stalls:** throughout, it watches for the main loop being busy, which is
   where deferred work like highlighting shows up. No stall may pass 100 ms.
+- **Assistant history:** render 500 messages (250 user/reply pairs, with
+  Markdown and code blocks), reporting creation, first paint and the longest
+  stall. These are exploratory measurements without a pass/fail budget yet;
+  they use isolated state and do not start an assistant.
 
 It exits 1 if a budget is missed. `CADRE_PERF_PROFILE=1 make perf` also prints
 SBCL's statistical profile.

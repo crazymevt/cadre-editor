@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Rename rejects changed context.** Matches whose enclosing form or package
+  context changed after preview are skipped, while edits to unrelated
+  definitions do not block unchanged matches. Compact fingerprints keep
+  previews from retaining whole files. The preview stays on the old name so the
+  skipped places can be checked and renamed again. Files that disappear
+  or become unreadable also count as skipped, keeping the old name in
+  the preview when their replacements could not be applied.
+
+- **Reference search package context.** Finding references without a Lisp
+  connection uses the requested symbol's package rather than a previous
+  rename's package. GTK smoke checks also rate-limit the initial title probe
+  and its retries together.
+
+- **Finding recent features.** The README and manual index now point to
+  Runs history, local history and recovery, and saved assistant conversations.
+  The README identifies the current 1.2.0 release and the unreleased changes.
+
 - **Rename knows packages and local bindings.** Renaming a local variable
   or function (bound by `let`, a lambda list, `dolist`, `flet` and the like)
   changes that binding and the uses that refer to it, in its form: not an
