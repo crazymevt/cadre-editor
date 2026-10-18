@@ -21,19 +21,35 @@
 
 (defun child-list (node) (and node (eq (node-kind node) :list) (node-children node)))
 
-(defun lambda-list-site-nodes (node)
-  "The symbol nodes a lambda list (a :list node) binds: x, (x default),
-((x class)) in DEFMETHOD, ((:key x) default)."
-  (loop for element in (child-list node)
-        append (cond ((symbol-node-p element)
-                      (unless (char= (char (node-text element) 0) #\&) (list element)))
-                     ((eq (node-kind element) :list)
-                      (let ((first (first (node-children element))))
-                        (cond ((null first) nil)
-                              ((symbol-node-p first) (list first))
-                              ((eq (node-kind first) :list)
-                               (let ((v (second (node-children first))))
-                                 (and v (symbol-node-p v) (list v))))))))))
+(defun lambda-list-groups (node scope &key destructuring)
+  "Binding groups for the lambda list NODE whose body is SCOPE (a list of
+nodes): each parameter is seen by the body and by the default values of the
+parameters after it (&optional (b a): a is seen there), its supplied-p
+variable likewise. With DESTRUCTURING (DEFMACRO, DESTRUCTURING-BIND), a
+required parameter written as a list is a pattern of variables; otherwise
+it is (var specializer), as in DEFMETHOD."
+  (let ((elements (child-list node)) (optional nil) (groups '()))
+    (loop for (element . later) on elements
+          for defaults = (loop for e in later
+                               when (eq (node-kind e) :list) append (rest (child-list e)))
+          do (cond
+               ((and (symbol-node-p element) (char= (char (node-text element) 0) #\&))
+                (setf optional t))
+               ((symbol-node-p element)
+                (push (list (list element) (append defaults scope) t :variable) groups))
+               ((eq (node-kind element) :list)
+                (let* ((parts (child-list element))
+                       (first (first parts))
+                       (sites (cond ((and (not optional) destructuring) (destructuring-site-nodes element))
+                                    ((null first) nil)
+                                    ((symbol-node-p first) (list first))
+                                    ((eq (node-kind first) :list)
+                                     (let ((v (second (child-list first)))) (and v (symbol-node-p v) (list v))))))
+                       (supplied (and optional (third parts) (symbol-node-p (third parts)) (list (third parts)))))
+                  (when (or sites supplied)
+                    (push (list (append sites supplied) (append defaults scope) t :variable) groups))))))
+    ;; Later parameters first, so they shadow earlier ones.
+    groups))
 
 (defun binding-site-node (element)
   "The variable a LET-style binding ELEMENT binds: x or (x value)."
@@ -61,12 +77,13 @@ macro), and NAMESPACE :function for local functions' names, else :variable."
              (and sites (list (list sites scope certain namespace)))))
       (cond
         ((null head) nil)
-        ((string= head "lambda") (group (lambda-list-site-nodes (second children)) (cddr children)))
-        ((member head '("defun" "defmacro" "define-compiler-macro") :test #'string=)
-         (group (lambda-list-site-nodes (third children)) (cdddr children)))
+        ((string= head "lambda") (lambda-list-groups (second children) (cddr children)))
+        ((string= head "defun") (lambda-list-groups (third children) (cdddr children)))
+        ((member head '("defmacro" "define-compiler-macro") :test #'string=)
+         (lambda-list-groups (third children) (cdddr children) :destructuring t))
         ((string= head "defmethod")
          (let ((lambda-list (find :list (cddr children) :key #'node-kind)))
-           (group (lambda-list-site-nodes lambda-list) (rest (member lambda-list children)))))
+           (lambda-list-groups lambda-list (rest (member lambda-list children)))))
         ((member head '("let" "symbol-macrolet") :test #'string=)
          (group (remove nil (mapcar #'binding-site-node (child-list (second children)))) (cddr children)))
         ((member head '("let*" "do*") :test #'string=)
@@ -90,7 +107,9 @@ macro), and NAMESPACE :function for local functions' names, else :variable."
                   (append (loop for b in bindings
                                 when (eq (node-kind b) :list) append (cddr (node-children b)))
                           (cddr children)))))
-        ((member head '("destructuring-bind" "multiple-value-bind") :test #'string=)
+        ((string= head "destructuring-bind")
+         (lambda-list-groups (second children) (cdddr children) :destructuring t))
+        ((string= head "multiple-value-bind")
          (group (destructuring-site-nodes (second children)) (cdddr children)))
         ((member head '("dolist" "dotimes" "do-symbols" "do-external-symbols" "do-all-symbols") :test #'string=)
          (let ((spec (second children)))
@@ -109,13 +128,12 @@ macro), and NAMESPACE :function for local functions' names, else :variable."
             ;; Each one's parameters, in its body.
             (loop for d in definitions
                   for parts = (child-list d)
-                  for sites = (lambda-list-site-nodes (second parts))
-                  when sites collect (list sites (cddr parts) t :variable)))))
+                  append (lambda-list-groups (second parts) (cddr parts)
+                                             :destructuring (string= head "macrolet"))))))
         ((member head '("handler-case" "restart-case") :test #'string=)
          (loop for clause in (cddr children)
                for parts = (child-list clause)
-               for sites = (lambda-list-site-nodes (second parts))
-               when sites collect (list sites (cddr parts) t :variable)))
+               append (lambda-list-groups (second parts) (cddr parts))))
         ((string= head "loop")
          (group (loop for (keyword var) on (rest children)
                       when (and (member (atom-name keyword) '("for" "as" "with") :test #'equal) var)
@@ -134,15 +152,56 @@ macro), and NAMESPACE :function for local functions' names, else :variable."
 (defun unqualified-symbol-p (node)
   (and (symbol-node-p node) (not (find #\: (node-text node)))))
 
+(defparameter *case-heads* '("case" "ecase" "ccase" "typecase" "etypecase" "ctypecase")
+  "Forms whose clauses start with keys or types, which aren't evaluated.")
+
+(defun list-head (node) (let ((first (first (child-list node)))) (and first (atom-name first))))
+
+(defun element-before (parent child)
+  "The element of PARENT just before CHILD, or nil."
+  (loop for (a b) on (child-list parent) when (eq b child) return a))
+
+(defun prefix-atom-p (node text)
+  (and node (eq (node-kind node) :atom) (string= (node-text node) text)))
+
+(defun data-position-p (chain node)
+  "Whether NODE, inside the lists of CHAIN (outermost first), is data rather
+than code: quoted ('x, '(x), (quote x)), in a backquote but not unquoted
+(`(x ,y): x), or a CASE clause's keys."
+  (let ((quoted nil) (backquoted nil))
+    (loop for (parent child) on (append chain (list node))
+          for grandparent = nil then previous
+          for previous = parent
+          while child
+          do (let ((before (element-before parent child)))
+               (cond ((prefix-atom-p before "'") (setf quoted t))
+                     ((prefix-atom-p before "`") (setf backquoted t))
+                     ((and backquoted (or (prefix-atom-p before ",") (prefix-atom-p before ",@")))
+                      (setf backquoted nil quoted nil)))
+               (when (and (equal (list-head parent) "quote") (not (eq child (first (child-list parent)))))
+                 (setf quoted t))
+               ;; (case x (key …)): the key, or keys, at the head of a clause.
+               (when (and grandparent (member (list-head grandparent) *case-heads* :test #'equal)
+                          (member parent (cddr (child-list grandparent)))
+                          (eq child (first (child-list parent))))
+                 (setf quoted t))))
+    (or quoted backquoted)))
+
 (defun reference-namespace (chain node)
   "Whether NODE, with CHAIN the lists around it (outermost first), names a
-function (first in a list, or after #') or a variable."
-  (let ((siblings (child-list (car (last chain)))))
-    (if (or (eq node (first siblings))
-            (let ((before (loop for (a b) on siblings when (eq b node) return a)))
-              (and before (eq (node-kind before) :atom) (string= (node-text before) "#'"))))
-        :function
-        :variable)))
+function (first in a list, or after #') or a variable. The first element of
+a COND clause, or of DO's end clause, is a test: a variable."
+  (let* ((parent (car (last chain)))
+         (grandparent (car (last chain 2)))
+         (siblings (child-list parent)))
+    (cond ((prefix-atom-p (element-before parent node) "#'") :function)
+          ((not (eq node (first siblings))) :variable)
+          ((and grandparent (not (eq grandparent parent))
+                (or (and (equal (list-head grandparent) "cond") (member parent (rest (child-list grandparent))))
+                    (and (member (list-head grandparent) '("do" "do*") :test #'equal)
+                         (eq parent (third (child-list grandparent))))))
+           :variable)
+          (t :function))))
 
 (defun lexical-binding (tree node)
   "The site binding NODE (an unqualified symbol node in TREE, a list of
@@ -154,6 +213,9 @@ variables."
     (let* ((name (atom-name node))
            (chain (enclosing-nodes tree (node-start node) (node-end node)))
            (namespace (reference-namespace chain node)))
+      ;; Quoted symbols are data: renaming a variable leaves them alone.
+      (when (data-position-p chain node)
+        (return-from lexical-binding nil))
       (dolist (form (reverse chain))
         (dolist (group (binding-groups form))
           (destructuring-bind (sites scope certain group-namespace) group
@@ -231,6 +293,33 @@ from; otherwise the package being defined)."
                             (and (second parts) (designator-text-name (node-text (second parts))))
                             (designator-text-name (node-text (second children)))))))))))))
 
+(defparameter *symbol-naming-clauses* '(":export" ":shadow" ":intern" ":import-from" ":shadowing-import-from")
+  "DEFPACKAGE clauses that name symbols; the others name packages or say other things.")
+
+(defun package-name-position-p (tree node)
+  "Whether NODE names a package, not a symbol: what IN-PACKAGE or DEFPACKAGE
+is given, an :import-from clause's package, or anything in a DEFPACKAGE
+clause that doesn't name symbols (:use, :nicknames, :local-nicknames…)."
+  (let ((top (find-if (lambda (n) (node-within-p node n)) tree)))
+    (when (and top (eq (node-kind top) :list))
+      (let* ((children (node-children top))
+             (head (and (first children) (atom-name (first children)))))
+        (cond ((null head) nil)
+              ((string= "in-package" (symbol-base-name (node-text (first children))))
+               (eq node (second children)))
+              ((member head *defpackage-heads* :test #'string=)
+               (or (eq node (second children))
+                   (let* ((clause (find-if (lambda (c) (and (eq (node-kind c) :list) (node-within-p node c)))
+                                           (cddr children)))
+                          (parts (child-list clause))
+                          (keyword (and (first parts) (eq (node-kind (first parts)) :atom)
+                                        (string-downcase (node-text (first parts))))))
+                     (and clause
+                          (or (not (member keyword *symbol-naming-clauses* :test #'equal))
+                              (and (member keyword '(":import-from" ":shadowing-import-from") :test #'equal)
+                                   (eq node (second parts))))))))
+              (t nil))))))
+
 (defun in-package-positions (tree)
   "(start . package-name) of each top-level IN-PACKAGE in TREE, in order."
   (loop for node in tree
@@ -270,6 +359,7 @@ clause if it is in one."
           ;; A keyword is a symbol of its own, except as a DEFPACKAGE
           ;; clause's way of naming one.
           when (and (string-equal base token :start2 offset)
+                    (not (package-name-position-p tree node))
                     (or (string/= (subseq token 0 offset) ":") (defpackage-clause tree node)))
             collect (let* ((start (+ (node-start node) offset))
                            (line (1- (or (position-if (lambda (s) (> s start)) starts) (length starts)))))

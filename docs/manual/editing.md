@@ -222,7 +222,9 @@ then *Rename*. If the symbol at the cursor is a local variable or function
 `flet`, `labels`, `loop`, `handler-case` and the like), it renames that
 binding and the uses that refer to it, in its form: an inner binding of the
 same name shadows it, and a call `(name …)` is a function, not a variable of
-that name. `with-` macros are guessed to bind their first argument, and the
+that name (a `cond` clause's test is a variable). A parameter is renamed in
+later parameters' defaults too (`&optional (b a)`), and quoted symbols
+(`'name`, `'(name)`, `` `(name ,x) ``) and `case` keys are data, left alone. `with-` macros are guessed to bind their first argument, and the
 page says so.
 
 Any other symbol is looked for in the project's Lisp files (not in strings

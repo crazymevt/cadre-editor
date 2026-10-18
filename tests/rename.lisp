@@ -85,3 +85,42 @@
         (mapcar (lambda (c) (c::classify-symbol-context c "COMMON-LISP-USER"
                                                         (lambda (p) (and (string= p "COMMON-LISP-USER") p))))
                 contexts))))
+
+(defun renamed-and-left (text marker)
+  "The texts of the places renaming the local at MARKER changes, and of those it leaves."
+  (multiple-value-bind (places others) (c::lexical-rename-places text (1+ (search marker text)))
+    (flet ((texts (list) (mapcar (lambda (p) (list (first p) (subseq text (max 0 (- (first p) 1)) (second p)))) list)))
+      (list (texts places) (texts others)))))
+
+(define-test rename-leaves-quoted-data :parent cadre-tests
+  ;; 'x, '(x) and `(x …) are data; ,x in a backquote is the variable.
+  (is equal '(((7 "(x") (22 " x") (34 ",x")) ((20 "'x") (26 "(x") (31 "(x")))
+      (renamed-and-left "(let ((x 1)) (list 'x x '(x) `(x ,x)))" "(x 1"))
+  (is equal '(((7 "(x") (29 " x")) ((20 " x")))
+      (renamed-and-left "(let ((x 1)) (quote x) (list x))" "(x 1")))
+
+(define-test rename-sees-tests-and-keys :parent cadre-tests
+  ;; A COND clause starts with a test, which uses the variable.
+  (is equal '(((7 "(x") (20 "(x") (34 " x")) ())
+      (renamed-and-left "(let ((x 1)) (cond (x 'yes) ((not x) 'no)))" "(x 1"))
+  ;; A CASE clause starts with keys, which are data.
+  (is equal '(((7 "(x") (24 " x")) ((22 "(x")))
+      (renamed-and-left "(let ((x 1)) (case y (x x)))" "(x 1"))
+  ;; DO's end clause starts with a test too.
+  (is equal '((6 "(done") (20 "(done")) (first (renamed-and-left "(do ((done nil t)) (done 'ok))" "(done nil"))))
+
+(define-test rename-sees-lambda-list-defaults :parent cadre-tests
+  (let ((text "(defun f (a &optional (b a b-p) &key (c (+ a b))) (list a b c b-p))"))
+    ;; A parameter is seen by later parameters' defaults.
+    (is equal '((10 "(a") (25 " a") (43 " a") (56 " a")) (first (renamed-and-left text "(a &")))
+    (is equal '((23 "(b") (45 " b") (58 " b")) (first (renamed-and-left text "(b a")))
+    ;; A supplied-p variable is a binding of its own.
+    (is equal '((27 " b-p") (62 " b-p")) (first (renamed-and-left text "b-p)")))))
+
+(define-test rename-skips-package-names :parent cadre-tests
+  ;; A package named like the symbol isn't an occurrence of it: not in
+  ;; IN-PACKAGE, DEFPACKAGE's name, :use, or :import-from's package.
+  (is equal '((":export" "#:"))
+      (mapcar (lambda (c) (list (c::sc-clause c) (c::sc-prefix c)))
+              (c::symbol-contexts "(defpackage total (:use #:cl #:total) (:import-from #:total #:x) (:export #:total))
+(in-package total)" "total"))))
