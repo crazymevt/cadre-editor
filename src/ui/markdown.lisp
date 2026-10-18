@@ -442,23 +442,66 @@ proportional text, with links that open when clicked."
     (gtk:text-view-set-right-margin text-view 24)
     (gtk:text-view-set-top-margin text-view 12)
     (gtk:widget-add-css-class text-view "cadre-markdown-preview")
-    (let ((click (gtk:gesture-click-new)))
-      (gtk:gesture-single-set-button click 1)
-      (gobject:connect click :released
-                       (lambda (gesture n x y)
-                         (declare (ignore gesture n))
-                         (let* ((offset (preview-offset-at view x y))
-                                (link (and offset (link-at preview offset))))
-                           (when link (open-link preview (third link))))))
-      (gtk:widget-add-controller text-view click))
-    (let ((motion (gtk:event-controller-motion-new)))
-      (gobject:connect motion :motion
-                       (lambda (controller x y)
-                         (declare (ignore controller))
-                         (let ((offset (preview-offset-at view x y)))
-                           (gtk:widget-set-cursor-from-name text-view
-                                                            (if (and offset (link-at preview offset)) "pointer" "text")))))
-      (gtk:widget-add-controller text-view motion))))
+    (when (view-gutter view) (gtk:widget-set-visible (view-gutter view) nil))
+    (unless (view-preview-controllers-p view)
+      (let ((click (gtk:gesture-click-new)))
+        (gtk:gesture-single-set-button click 1)
+        (gobject:connect click :released
+                         (lambda (gesture n x y)
+                           (declare (ignore gesture n))
+                           (when (buffer-local (view-buffer view) :preview-of)
+                             (let* ((offset (preview-offset-at view x y))
+                                    (link (and offset (link-at (view-buffer view) offset))))
+                               (when link (open-link (view-buffer view) (third link)))))))
+        (gtk:widget-add-controller text-view click))
+      (let ((motion (gtk:event-controller-motion-new)))
+        (gobject:connect motion :motion
+                         (lambda (controller x y)
+                           (declare (ignore controller))
+                           (let* ((preview (view-buffer view))
+                                  (active (buffer-local preview :preview-of))
+                                  (offset (and active (preview-offset-at view x y))))
+                             (gtk:widget-set-cursor-from-name text-view
+                                                              (if (and offset (link-at preview offset)) "pointer" "text")))))
+        (gtk:widget-add-controller text-view motion))
+      (setf (view-preview-controllers-p view) t))))
+
+(defun setup-markdown-source-view (view)
+  "Restore VIEW's editable Markdown source presentation after previewing."
+  (ensure-editor-view-gutter view)
+  (setup-source-editor-view view)
+  (attach-syntax (view-buffer view))
+  (schedule-highlight (view-buffer view))
+  (let ((text-view (view-text-view view)))
+    (gtk:text-view-set-editable text-view t)
+    (gtk:text-view-set-cursor-visible text-view t)
+    (gtk:text-view-set-monospace text-view t)
+    (gtk:text-view-set-wrap-mode text-view (if *word-wrap* :word-char :none))
+    (gtk:text-view-set-left-margin text-view 8)
+    (gtk:text-view-set-right-margin text-view 20)
+    (gtk:text-view-set-top-margin text-view 4)
+    (gtk:text-view-set-bottom-margin text-view 200)
+    (gtk:widget-remove-css-class text-view "cadre-markdown-preview")
+    (when (view-gutter view) (gtk:widget-set-visible (view-gutter view) t))))
+
+(defun replace-markdown-view-buffer (win view buffer)
+  "Show BUFFER in VIEW's existing tab, updating its title and presentation."
+  (bind-editor-view-buffer view buffer)
+  (if (buffer-local buffer :preview-of)
+      (setup-preview-view view)
+      (setup-markdown-source-view view))
+  (unless (buffer-local buffer :tab-title-handler)
+    (setf (buffer-local buffer :tab-title-handler)
+          (gobject:connect (buffer-text buffer) :modified-changed
+                           (lambda (b) (declare (ignore b)) (update-tab-titles win buffer)))))
+  (let ((page (view-page win view)))
+    (adw:tab-page-set-title page (tab-title buffer))
+    (adw:tab-page-set-tooltip page (if (buffer-file buffer)
+                                       (uiop:native-namestring (buffer-file buffer))
+                                       (buffer-name buffer))))
+  (refresh-tab-strip win (group-strip (view-group view)))
+  (update-status win)
+  (focus-view view))
 
 ;;; Opening the preview
 
@@ -472,6 +515,25 @@ proportional text, with links that open when clicked."
                              (when (member preview (buffer-list)) (schedule-preview preview)))))
     (render-preview preview)
     preview))
+
+(defun toggle-markdown-view (win view)
+  "Switch VIEW between its Markdown source and rendered preview."
+  (let* ((buffer (view-buffer view))
+         (source (or (buffer-local buffer :preview-of)
+                     (and (markdown-buffer-p buffer) buffer))))
+    (unless source (editor-error "The active tab is not Markdown."))
+    (if (eq source buffer)
+        (let* ((existing (buffer-local source :preview))
+               (preview (if (and existing (member existing (buffer-list)))
+                            existing
+                            (make-preview-buffer source))))
+          (replace-markdown-view-buffer win view preview))
+        (replace-markdown-view-buffer win view source))))
+
+(define-command markdown-toggle-view ()
+  "Switch the active Markdown tab between its source and rendered preview."
+  (let ((view (or (selected-view *window*) (editor-error "No Markdown tab is open."))))
+    (toggle-markdown-view *window* view)))
 
 (defun forget-preview (buffer)
   "When a preview or its source is killed, unhook them from each other."

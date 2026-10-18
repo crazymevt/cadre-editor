@@ -6,9 +6,12 @@
 (in-package #:cadre-ui)
 
 (defclass editor-view ()
-  ((buffer :initarg :buffer :reader view-buffer)
+  ((buffer :initarg :buffer :accessor view-buffer)
    (text-view :reader view-text-view)
-   (gutter :reader view-gutter)
+   (gutter :initform nil :reader view-gutter)
+   (buffer-handlers :initform nil :accessor view-buffer-handlers)
+   (preview-controllers-p :initform nil :accessor view-preview-controllers-p)
+   (source-controllers-p :initform nil :accessor view-source-controllers-p)
    (widget :reader view-widget :documentation "The scrolled window holding the text view.")
    (gutter-digits :initform 0 :accessor view-gutter-digits)
    (group :initform nil :accessor view-group :documentation "The editor group whose tab holds this view.")
@@ -50,22 +53,42 @@ nil, there are no line numbers."
                                                (declare (ignore height))
                                                (draw-line-numbers view area cr width)))
       (update-gutter-width view))
-    (let ((gtk-buffer (buffer-text buffer)))
-      (gobject:connect gtk-buffer :changed
-                       (lambda (b) (declare (ignore b))
-                         (when gutter
-                           (update-gutter-width view)
-                           (gtk:widget-queue-draw gutter))))
-      (gobject:connect gtk-buffer "notify::cursor-position"
-                       (lambda (b pspec) (declare (ignore b pspec))
-                         (when gutter (gtk:widget-queue-draw gutter))
-                         (when (view-on-cursor-moved view)
-                           (funcall (view-on-cursor-moved view) view)))))
-    (when gutter
-      (gobject:connect (gtk:scrolled-window-get-vadjustment scrolled) :value-changed
+    (bind-editor-view-buffer view buffer)
+    (gobject:connect (gtk:scrolled-window-get-vadjustment scrolled) :value-changed
                        (lambda (adjustment) (declare (ignore adjustment))
-                         (gtk:widget-queue-draw gutter))))
+                         (when (view-gutter view)
+                           (gtk:widget-queue-draw (view-gutter view)))))
     view))
+
+(defun bind-editor-view-buffer (view buffer)
+  "Move VIEW's buffer notifications together with its displayed buffer."
+  (dolist (handler (view-buffer-handlers view))
+    (gobject:disconnect (view-gtk-buffer view) handler))
+  (setf (view-buffer-handlers view) nil
+        (view-buffer view) buffer)
+  (gtk:text-view-set-buffer (view-text-view view) (buffer-text buffer))
+  (setf (view-buffer-handlers view)
+        (list
+         (gobject:connect (buffer-text buffer) :changed
+                          (lambda (b) (declare (ignore b))
+                            (when (view-gutter view)
+                              (update-gutter-width view)
+                              (gtk:widget-queue-draw (view-gutter view)))))
+         (gobject:connect (buffer-text buffer) "notify::cursor-position"
+                          (lambda (b pspec) (declare (ignore b pspec))
+                            (when (view-gutter view) (gtk:widget-queue-draw (view-gutter view)))
+                            (when (view-on-cursor-moved view)
+                              (funcall (view-on-cursor-moved view) view)))))))
+
+(defun ensure-editor-view-gutter (view)
+  (unless (view-gutter view)
+    (let ((gutter (make-instance 'gtk:drawing-area :css-classes '("cadre-gutter"))))
+      (setf (slot-value view 'gutter) gutter)
+      (gtk:text-view-set-gutter (view-text-view view) :left gutter)
+      (gtk:drawing-area-set-draw-func gutter
+        (lambda (area cr width height)
+          (declare (ignore height)) (draw-line-numbers view area cr width)))))
+  (update-gutter-width view))
 
 (defun view-cursor-line-column (view)
   "The cursor's line and column in VIEW, both counted from 1."

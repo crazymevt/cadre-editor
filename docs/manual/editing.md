@@ -164,7 +164,10 @@ tables; fenced `lisp` code as Lisp). `Ctrl+K V` (`C-c C-c p` in Emacs), or
 Open Preview in the file's tab menu (right-click the tab), opens a live
 preview beside the file: it redraws as you type, scrolls along with
 the source, and its links open (web links in your browser, `#anchors` and
-other files in Cadre). To read a file without editing it, right-click it in
+other files in Cadre). Each Markdown tab has an inline Preview or Source
+button, which switches that tab between the source and preview in place.
+Right-click a preview tab and choose Show Source to return to editing. To read
+a file without editing it, right-click it in
 the explorer and choose Open Preview.
 
 In a Markdown file, `Return` continues a list or quote and

@@ -1406,6 +1406,15 @@ d" 0 0)
 (section "markdown")
 (defun preview-buffer () (find-buffer "Preview guide.md"))
 (defun preview-text () (buffer-string (preview-buffer)))
+(defun tab-markdown-switch (view)
+  (let* ((page (cadre-ui::view-page *window* view))
+         (strip (cadre-ui::group-strip (cadre-ui::view-group view)))
+         (tab (cdr (assoc page (cadre-ui::strip-tabs strip)))))
+    (find-if (lambda (widget) (and (typep widget 'gtk:button)
+                                   (member (gtk:widget-get-tooltip-text widget)
+                                           '("Preview Markdown" "Show Markdown source")
+                                           :test #'equal)))
+             (find-widgets tab (lambda (widget) (typep widget 'gtk:button))))))
 
 (then 100
   (open-file-path (merge-pathnames "guide.md" *root*)))
@@ -1436,6 +1445,17 @@ d" 0 0)
            (and preview (not (eq (cadre-ui::view-group (first (cadre-ui::buffer-views *window* preview)))
                                  (cadre-ui::view-group (current-view))))))
     (check "the source keeps the focus" (string= "guide.md" (buffer-name (current-buffer))))
+    (let* ((source-view (current-view))
+           (page (cadre-ui::view-page *window* source-view))
+           (button (tab-markdown-switch source-view)))
+      (check "the selected Markdown tab has a Preview button" (gtk:widget-get-visible button))
+      (gobject:emit button :clicked)
+      (check "Preview switches the selected tab to the rendered view"
+             (cadre-ui::buffer-local (cadre-ui::view-buffer (current-view)) :preview-of))
+      (check "Preview replaces the current tab" (eq page (cadre-ui::view-page *window* (current-view))))
+      (gobject:emit (tab-markdown-switch (current-view)) :clicked)
+      (check "Source switches back to the Markdown file"
+             (eq (find-buffer "guide.md") (current-buffer))))
     (check "other tabs' menus don't"
            (not (find "Open Preview" (menu-entries (cadre-ui::tab-menu-model
                                                     (cadre-ui::view-page *window* (first (cadre-ui::buffer-views *window* preview)))))
@@ -1511,6 +1531,41 @@ d" 0 0)
          (and (preview-buffer) (cadre-ui::buffer-views *window* (preview-buffer))
               (null (cadre-ui::buffer-views *window* (find-buffer "guide.md")))))
   (check "showing the file" (search "Guide" (preview-text)))
+  (let* ((view (current-view))
+         (page (cadre-ui::view-page *window* view)))
+    (gobject:emit (tab-markdown-switch view) :clicked)
+    (check "an Explorer preview becomes a full source editor in the same tab"
+           (and (eq page (cadre-ui::view-page *window* view))
+                (cadre-ui::view-gutter view)
+                (gtk:widget-get-visible (cadre-ui::view-gutter view))
+                (cadre-ui::view-source-controllers-p view)
+                (gtk:text-view-get-editable (cadre-ui::view-text-view view))))
+    (let ((callback (cadre-ui::view-on-cursor-moved view)) (moves 0))
+      (unwind-protect
+           (progn
+             (setf (cadre-ui::view-on-cursor-moved view)
+                   (lambda (v) (incf moves) (when callback (funcall callback v))))
+             (set-cursor 0 2)
+             (check "cursor callbacks follow the source buffer" (plusp moves)))
+        (setf (cadre-ui::view-on-cursor-moved view) callback)))
+    (insert-at-cursor " unsaved")
+    (let ((source (current-buffer)))
+      (gobject:emit (tab-markdown-switch view) :clicked)
+      (let ((confirm (symbol-function 'cadre-ui::confirm-close-buffers)) (asked nil))
+        (unwind-protect
+             (progn
+               (setf (symbol-function 'cadre-ui::confirm-close-buffers)
+                     (lambda (win buffers continuation)
+                       (declare (ignore win))
+                       (setf asked buffers)
+                       (funcall continuation nil)))
+               (call-command 'close-tab)
+               (check "closing Preview asks about its unsaved source"
+                      (and (equal asked (list source)) (buffer-modified-p source)))
+               (check "cancel keeps the preview tab open"
+                      (eq page (cadre-ui::view-page *window* view))))
+          (setf (symbol-function 'cadre-ui::confirm-close-buffers) confirm)))
+      (setf (buffer-modified-p source) nil)))
   (call-command 'close-tab))
 
 (then 300

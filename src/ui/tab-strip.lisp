@@ -67,6 +67,8 @@
 
 (defun make-tab (win strip page selected)
   (let* ((group (strip-group strip))
+         (view (page-view win page))
+         (buffer (and view (view-buffer view)))
          (title (adw:tab-page-get-title page))
          ;; Short names are never shortened (the strip scrolls instead);
          ;; long ones may be, down to 20 characters.
@@ -74,6 +76,24 @@
                                           :width-chars (min (length title) 20)
                                           :max-width-chars 32 :single-line-mode t))
          (pinned (adw:tab-page-get-pinned page))
+         (preview-source (and buffer (buffer-local buffer :preview-of)))
+         (markdown-p (or preview-source (and buffer (markdown-buffer-p buffer))))
+         (markdown-button
+           (when markdown-p
+             (let* ((preview-p (and preview-source t))
+                    (button (make-instance 'gtk:button
+                                           :tooltip-text (if preview-p "Show Markdown source" "Preview Markdown")
+                                           :css-classes '("flat" "cadre-tab-markdown"))))
+               (gtk:button-set-child button
+                                     (make-instance 'adw:button-content
+                                                    :icon-name (if preview-p "cadre-edit-symbolic" "view-reveal-symbolic")
+                                                    :label (if preview-p "Source" "Preview")))
+               (gobject:connect button :clicked
+                                (lambda (b) (declare (ignore b))
+                                  (select-tab win group page)
+                                  (let ((view (page-view win page)))
+                                    (when view (toggle-markdown-view win view)))))
+               button)))
          (close (if pinned
                     (make-instance 'gtk:button :icon-name "cadre-pin-symbolic" :valign :center
                                                :css-classes '("flat" "cadre-tab-close" "cadre-tab-pin")
@@ -83,7 +103,7 @@
          (tab (gtk:build (gtk:box :spacing 2 :css-classes (append '("cadre-tab")
                                                                   (and selected '("selected"))
                                                                   (and pinned '("pinned")))
-                           label close))))
+                           label markdown-button close))))
     (gtk:widget-set-tooltip-text tab (adw:tab-page-get-tooltip page))
     (setf (gethash tab *tab-widgets*) (cons group page))
     (gobject:connect close :clicked (lambda (b) (declare (ignore b))
@@ -122,6 +142,7 @@
                 collect (let ((tab (make-tab win strip page (eq page selected))))
                           (gtk:box-append box tab)
                           (cons page tab))))
+    (update-tab-selection strip)
     (scroll-to-selected-tab strip)))
 
 (defun update-tab-selection (strip)
@@ -129,7 +150,8 @@
     (loop for (page . tab) in (strip-tabs strip)
           do (if (eq page selected)
                  (gtk:widget-add-css-class tab "selected")
-                 (gtk:widget-remove-css-class tab "selected")))))
+                 (gtk:widget-remove-css-class tab "selected")))
+    nil))
 
 (defun scroll-to-selected-tab (strip)
   ;; After a short wait, so new tabs have their sizes.
@@ -201,11 +223,17 @@
   "The menu for PAGE's tab (Open Preview too, for a Markdown file)."
   (let* ((menu (gio:menu-new))
          (view (and page (page-view *window* page)))
-         (markdown (and view (eq (buffer-major-mode (view-buffer view)) 'markdown-mode))))
+         (buffer (and view (view-buffer view)))
+         (markdown (and buffer (eq (buffer-major-mode buffer) 'markdown-mode)))
+         (preview (and buffer (buffer-local buffer :preview-of))))
     (when markdown
       (let ((preview (gio:menu-new)))
         (command-item preview "Open Preview" 'markdown-preview)
         (gio:menu-append-section menu nil preview)))
+    (when preview
+      (let ((source (gio:menu-new)))
+        (command-item source "Show Source" 'markdown-toggle-view)
+        (gio:menu-append-section menu nil source)))
     (let ((tab (gio:menu-new)))
       (command-item tab (if (and page (adw:tab-page-get-pinned page)) "Unpin" "Pin") 'toggle-pin-tab)
       (command-item tab "Close" 'close-tab)
