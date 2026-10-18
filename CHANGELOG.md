@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Markdown source and preview in one tab.** Each Markdown tab now has a
+  Preview / Source button to switch views in place. Switching back restores
+  the full editor, including line numbers and cursor updates. Closing a
+  preview asks about unsaved changes in its source file.
+
 ## 1.2.0
 
 - **Scratch button.** Open the project's persistent scratch buffer directly
