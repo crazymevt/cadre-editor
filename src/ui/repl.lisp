@@ -170,9 +170,9 @@ comment, read as DIALECT."
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-input-mark *repl*) (gtk:text-buffer-get-end-iter gtk-buffer))))
 
-(defun repl-eval (string &key on-done)
-  "Evaluate STRING in the REPL, as if typed. ON-DONE is called once it
-returns or is aborted."
+(defun repl-eval (string &key on-done on-abort)
+  "Evaluate STRING in the REPL. ON-DONE runs after return; on abort,
+ON-ABORT receives the reason when supplied, otherwise ON-DONE runs."
   (when (repl-evaluator *repl*)
     (return-from repl-eval (funcall (repl-evaluator *repl*) string)))
   (with-connection (connection)
@@ -189,7 +189,8 @@ returns or is aborted."
                      (repl-fresh-line)
                      (repl-insert (format nil "; Evaluation aborted~@[: ~a~]~%" reason) "cadre-repl-note")
                      (repl-show-prompt)
-                     (when on-done (funcall on-done))))))
+                     (if on-abort (funcall on-abort reason)
+                         (when on-done (funcall on-done)))))))
 
 ;;; Following the code's package: evaluating or compiling code from a file
 ;;; switches the REPL to that code's package, so what was just defined can be

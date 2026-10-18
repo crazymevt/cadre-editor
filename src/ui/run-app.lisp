@@ -52,49 +52,75 @@ opened or one of its files was saved (finding it reads source files).")
   (and root (or (project-app root) (language-project-app root))))
 
 (defun language-app-finished (&optional format &rest args)
+  (when *language-app*
+    (let ((run (getf *language-app* :run)))
+      (when run
+        (when format (append-project-run-output run (apply #'format nil format args)))
+        (finish-project-run run (if (getf *language-app* :failed) nil 0)))))
   (setf *language-app* nil)
   (update-run-button)
+  (when *runs-page* (refresh-runs-page))
   (when format (apply #'message format args)))
+
+(defmacro language-app-callback (arguments &body body)
+  (let ((app (gensym "APP")))
+    `(let ((,app *language-app*))
+       (lambda ,arguments
+         (when (eq ,app *language-app*) (locally ,@body))))))
 
 (defun run-language-app (root app)
   "Run APP, a Racket or Clojure program, in its language's REPL tab."
   (save-project-then
    root
    (lambda ()
+     (when (app-running-p) (editor-error "An app is already running"))
      (let ((language (getf app :language))
            (title (getf app :title))
            (file (uiop:native-namestring (getf app :file))))
        (with-connection (connection :language language)
+         (when (app-running-p) (editor-error "An app is already running"))
          (show-language-repl language :focus t)
          (language-repl-note language (format nil "; Running ~a (input it reads is typed here, then RET)~%" title))
-         (setf *language-app* app)
+         (setf *language-app* (copy-list app))
+         (let ((run (begin-project-run
+                     root (list :description (format nil "~a (REPL)" title)) title
+                     :connection connection :available (lambda () (not (app-running-p)))
+                     :rerun (lambda () (run-language-app root app))
+                     :stop (lambda () (when (eq connection (getf *language-app* :connection))
+                                        (stop-app))))))
+           (setf (getf *language-app* :run) run
+                 (getf *language-app* :connection) connection))
          (update-run-button)
-         (flet ((stopped (reason) (language-app-finished "~a stopped~@[: ~a~]" title reason)))
-           (ecase language
-             (:racket
-              (request #'backend-compile-file connection file
-                       :on-ok (lambda (result)
-                                (multiple-value-bind (notes successp) (parse-compilation-result result)
-                                  (show-notes notes :replace-files (list file))
-                                  (if successp
-                                      (language-app-finished "~a finished" title)
-                                      (language-app-finished "~a failed: see the Problems page" title))))
-                       :on-abort #'stopped))
-             (:clojure
-              ;; Loading compiles: an error is a note in Problems, at its
-              ;; line, and -main isn't called.
-              (request #'backend-compile-file connection file
-                       :on-ok (lambda (result)
-                                (multiple-value-bind (notes successp) (parse-compilation-result result)
-                                  (show-notes notes :replace-files (list file))
-                                  (if (not successp)
-                                      (language-app-finished "~a didn't load: see the Problems page" (file-namestring file))
-                                      (request #'backend-eval connection (format nil "(~a/-main)" (getf app :namespace))
-                                               :package (getf app :namespace)
-                                               :on-ok (lambda (value)
-                                                        (language-app-finished "~a returned ~a" title (result-text value)))
-                                               :on-abort #'stopped))))
-                       :on-abort #'stopped)))))))))
+         (let ((active *language-app*))
+           (flet ((stopped (reason) (when (eq active *language-app*) (setf (getf *language-app* :failed) t)
+                                    (language-app-finished "~a stopped~@[: ~a~]" title reason))))
+             (ecase language
+               (:racket
+                (request #'backend-compile-file connection file
+                         :on-ok (language-app-callback (result)
+                                  (multiple-value-bind (notes successp) (parse-compilation-result result)
+                                    (show-notes notes :replace-files (list file))
+                                    (if successp
+                                        (language-app-finished "~a finished" title)
+                                        (progn (setf (getf *language-app* :failed) t)
+                                               (language-app-finished "~a failed: see the Problems page" title)))))
+                         :on-abort #'stopped))
+               (:clojure
+                ;; Loading compiles: an error is a note in Problems, at its
+                ;; line, and -main isn't called.
+                (request #'backend-compile-file connection file
+                         :on-ok (language-app-callback (result)
+                                  (multiple-value-bind (notes successp) (parse-compilation-result result)
+                                    (show-notes notes :replace-files (list file))
+                                    (if (not successp)
+                                        (progn (setf (getf *language-app* :failed) t)
+                                               (language-app-finished "~a didn't load: see the Problems page" (file-namestring file)))
+                                        (request #'backend-eval connection (format nil "(~a/-main)" (getf app :namespace))
+                                                 :package (getf app :namespace)
+                                                 :on-ok (language-app-callback (value)
+                                                          (language-app-finished "~a returned ~a" title (result-text value)))
+                                                 :on-abort #'stopped))))
+                         :on-abort #'stopped))))))))))
 
 (defun console-app-form (root system entry)
   "Source that loads SYSTEM, notes the thread it runs on (so Stop App can
@@ -103,9 +129,12 @@ abort it), and calls ENTRY."
                      (cadre::lisp-string system) (cadre::lisp-string system) (cadre::lisp-string entry))
              root))
 
-(defun console-app-ended ()
+(defun console-app-ended (&optional failed)
+  (when (getf *console-app* :run)
+    (finish-project-run (getf *console-app* :run) (if failed nil 0)))
   (setf *console-app* nil)
-  (update-run-button))
+  (update-run-button)
+  (when *runs-page* (refresh-runs-page)))
 
 (defun console-app-returned ()
   "The entry point returned: the app ended, unless it started a raylib game."
@@ -131,22 +160,37 @@ doesn't, the app has ended."
                                             (watch-raylib-game app))))
                              :on-abort (lambda (reason)
                                          (declare (ignore reason))
-                                         (when (eq app *console-app*) (console-app-ended)))))
+                                         (when (eq app *console-app*) (console-app-ended t)))))
                       nil)))
 
 (defun run-console-app (root system entry &key raylib)
   (with-connection (connection)
-    (declare (ignore connection))
+    (when (app-running-p) (editor-error "An app is already running"))
     (when (repl-busy *repl*) (editor-error "The REPL is busy"))
     (show-repl-page :focus t)
     (repl-fresh-line)
     (repl-insert (format nil "; Running ~a (input it reads is typed here, then RET)~%" entry) "cadre-repl-note")
     (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
                                (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
-    (setf *console-app* (list :system system :entry entry :raylib raylib))
+    (setf *console-app*
+          (list :system system :entry entry :raylib raylib
+                :run (begin-project-run
+                      root (list :description (format nil "~a (REPL)" entry)) entry
+                      :connection connection :available (lambda () (and (not (app-running-p))
+                                                                        (not (repl-busy *repl*))))
+                      :rerun (lambda () (run-console-app root system entry :raylib raylib))
+                      :stop (lambda () (stop-app)))))
     (add-app-tabs)
     (update-run-button)
-    (repl-eval (console-app-form root system entry) :on-done #'console-app-returned)))
+    (let ((active *console-app*))
+      (handler-case
+          (repl-eval (console-app-form root system entry)
+                     :on-done (lambda () (when (eq active *console-app*) (console-app-returned)))
+                     :on-abort (lambda (reason)
+                                 (when (eq active *console-app*)
+                                   (append-project-run-output (getf active :run) (format nil "Aborted: ~a" reason))
+                                   (console-app-ended t))))
+        (error (e) (console-app-ended t) (error e))))))
 
 (define-command run-app ()
   "Run the project's program, the :entry-point in its .asd, after saving the
@@ -171,6 +215,8 @@ any other in the REPL, which takes the input it reads."
 
 (define-command stop-app ()
   "Stop the program started with Run App."
+  (let ((run (or (getf *language-app* :run) (getf *console-app* :run))))
+    (when run (setf (pr-stop-requested run) t)))
   (cond ((gtk-app-running-p) (stop-gtk-app))
         (*language-app*
          (let ((connection (language-connection (getf *language-app* :language))))

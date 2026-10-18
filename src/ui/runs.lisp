@@ -6,7 +6,7 @@
   title root plan (started (get-universal-time))
   (start (get-internal-real-time)) end exit-code (status :running)
   (output (make-array 0 :element-type 'character :adjustable t :fill-pointer 0))
-  (truncated nil))
+  (truncated nil) rerun stop available connection (stop-requested nil))
 
 (defvar *project-runs* nil "Recent project processes, newest first; this session only.")
 (defparameter *project-run-limit* 30)
@@ -23,29 +23,38 @@
 
 (defun project-run-status-text (run)
   (case (pr-status run)
-    (:running "Running") (:passed "Finished") (:stopped "Stopped")
+    (:running (if (pr-stop-requested run) "Stopping" "Running")) (:passed "Finished") (:stopped "Stopped")
     (otherwise (format nil "Failed~@[ (exit ~a)~]" (pr-exit-code run)))))
 
-(defun begin-project-run (root plan title)
-  (let ((run (make-project-run :root root :plan (copy-tree plan) :title title)))
+(defun begin-project-run (root plan title &key rerun stop available connection)
+  (let ((run (make-project-run :root root :plan (copy-tree plan) :title title :rerun rerun :stop stop
+                               :available available :connection connection)))
     (push run *project-runs*)
-    (when (> (length *project-runs*) *project-run-limit*)
-      (setf *project-runs* (subseq *project-runs* 0 *project-run-limit*)))
+    ;; Never evict an active run: it still owns output and cancellation.
+    (let ((remaining (max 0 (- *project-run-limit*
+                               (count :running *project-runs* :key #'pr-status)))))
+      (setf *project-runs*
+            (remove-if-not (lambda (item)
+                             (if (eq (pr-status item) :running) t
+                                 (when (plusp remaining) (decf remaining) t)))
+                           *project-runs*)))
     (when *runs-page*
       (setf (rnp-selected *runs-page*) run)
       (refresh-runs-page))
     run))
 
-(defun append-project-run-output (run line)
-  "Bound retained output; the Output page still receives every line."
+(defun append-project-run-output (run line &key (newline t))
+  "Bound retained output; its original Output or REPL page keeps receiving it."
   (unless (pr-truncated run)
     (let* ((output (pr-output run))
            (remaining (max 0 (- *project-run-output-limit* (length output))))
            (count (min remaining (length line))))
       (loop for i below count do (vector-push-extend (char line i) output))
-      (if (> remaining (length line))
-          (vector-push-extend #\Newline output)
-          (setf (pr-truncated run) t))))
+      (when newline
+        (if (> remaining (length line))
+            (vector-push-extend #\Newline output)
+            (setf (pr-truncated run) t)))
+      (when (> (length line) remaining) (setf (pr-truncated run) t))))
   (when (and *runs-page* (eq run (rnp-selected *runs-page*)))
     (let ((page *runs-page*))
       (unless (rnp-output-pending page)
@@ -60,7 +69,7 @@
   (when (eq (pr-status run) :running)
     (setf (pr-end run) (get-internal-real-time)
           (pr-exit-code run) code
-          (pr-status run) (cond (stopped :stopped) ((eql code 0) :passed) (t :failed))))
+          (pr-status run) (cond ((or stopped (pr-stop-requested run)) :stopped) ((eql code 0) :passed) (t :failed))))
   (when *runs-page* (refresh-runs-page))
   run)
 
@@ -73,7 +82,7 @@
                          (when (search query line :test #'char-equal)
                            (write-line line out)))))
                  (if (pr-truncated run)
-                     (format nil "~%[Retained output limit reached; full output is on the Output page.]~%")
+                     (format nil "~%[Retained output limit reached; full output remains in its original Output or REPL page.]~%")
                      ""))))
 
 (defun project-run-location (line root)
@@ -81,8 +90,9 @@
   (cl-ppcre:register-groups-bind (file row column)
       ("^\\s*(.+?):([0-9]+)(?::([0-9]+))?(?::|\\s|$)" line)
     (let ((row (parse-integer row)) (column (if column (parse-integer column) 1)))
-      (when (and (plusp row) (plusp column))
-        (list (merge-pathnames file root) row column)))))
+      (let ((path (ignore-errors (merge-pathnames file root))))
+        (when (and path (not (wild-pathname-p path)) (plusp row) (plusp column))
+          (list path row column))))))
 
 (defun show-project-run-location (location)
   (destructuring-bind (file row column) location
@@ -99,7 +109,7 @@
         (dolist (line (split-lines (pr-output run)))
           (when (and (< count 20) (search query line :test #'char-equal))
             (let ((location (ignore-errors (project-run-location line (pr-root run)))))
-              (when (and location (probe-file (first location)) (not (member location seen :test #'equal)))
+              (when (and location (ignore-errors (probe-file (first location))) (not (member location seen :test #'equal)))
                 (push location seen)
                 (incf count)
                 (let ((button (make-instance 'gtk:button
@@ -117,9 +127,9 @@
                         (if run (format nil "~a · ~a · ~,1f s~%~a~%~a"
                                         (pr-title run) (project-run-status-text run) (project-run-seconds run)
                                         (uiop:native-namestring (pr-root run)) (getf (pr-plan run) :description))
-                            "Build or run tests in a new Lisp to record a run."))
-    (gtk:widget-set-sensitive (rnp-rerun page) (and run (not (eq (pr-status run) :running)) (null *build*)))
-    (gtk:widget-set-sensitive (rnp-stop page) (and run (eq run (getf *build* :run))))
+                            "Build, run tests, or start an app to record a run."))
+    (gtk:widget-set-sensitive (rnp-rerun page) (project-run-rerunnable-p run))
+    (gtk:widget-set-sensitive (rnp-stop page) (project-run-stoppable-p run))
     (refresh-run-output)))
 
 (defun refresh-runs-page ()
@@ -141,13 +151,45 @@
            (select-project-run (rnp-selected page)))
       (setf (rnp-filling page) nil))))
 
+(defun project-run-rerunnable-p (run)
+  (and run (not (eq (pr-status run) :running))
+       (if (pr-available run) (funcall (pr-available run)) (null *build*))))
+
+(defun project-run-stoppable-p (run)
+  (and run (eq (pr-status run) :running) (not (pr-stop-requested run))
+       (or (pr-stop run) (eq run (getf *build* :run)))))
+
+(defun stop-project-run (run)
+  (unless (project-run-stoppable-p run) (editor-error "This run cannot be stopped"))
+  (setf (pr-stop-requested run) t)
+  (handler-case
+      (if (pr-stop run) (funcall (pr-stop run)) (call-command 'stop-build))
+    (error (e) (setf (pr-stop-requested run) nil) (error e)))
+  (when *runs-page* (refresh-runs-page)))
+
+(defun capture-project-run-output (connection text)
+  "Retain connection output while its runs are active; keep the original REPL too."
+  (when connection
+    (dolist (run *project-runs*)
+      (when (and (eq connection (pr-connection run)) (eq :running (pr-status run)))
+        (append-project-run-output run text :newline nil)))))
+
+(defun disconnect-project-runs (connection reason)
+  (dolist (run *project-runs*)
+    (when (and connection (eq connection (pr-connection run)) (eq :running (pr-status run)))
+      (append-project-run-output run (format nil "Disconnected: ~a" reason))
+      (finish-project-run run nil))))
+
 (defun rerun-project-run (run)
   (unless run (editor-error "Select a run first"))
-  (when *build* (editor-error "~a is already running" (getf *build* :what)))
-  (when (eq (pr-status run) :running) (editor-error "This run is still running"))
+  (unless (project-run-rerunnable-p run) (editor-error "This runner is busy"))
   (let ((root (pr-root run)) (plan (copy-tree (pr-plan run))) (title (pr-title run)))
     (unless (uiop:directory-exists-p root) (editor-error "The run's project folder no longer exists"))
-    (save-project-then root (lambda () (run-project-process root plan :what title)))))
+    (save-project-then root
+                       (lambda ()
+                         (unless (project-run-rerunnable-p run) (editor-error "This runner is busy"))
+                         (if (pr-rerun run) (funcall (pr-rerun run))
+                             (run-project-process root plan :what title))))))
 
 (defun make-runs-widget ()
   (let* ((list (make-instance 'gtk:list-box :selection-mode :single))
@@ -155,7 +197,7 @@
                                                :left-margin 8 :top-margin 4 :vexpand t))
          (search (make-instance 'gtk:search-entry :placeholder-text "Filter output…" :hexpand t))
          (title (label "" :xalign 0.0 :wrap t :wrap-mode :word-char :selectable t :margin-start 8 :margin-end 8))
-         (rerun (make-instance 'gtk:button :label "Rerun" :tooltip-text "Save files and rerun this process in its original project"))
+         (rerun (make-instance 'gtk:button :label "Rerun" :tooltip-text "Save files and rerun this activity in its original project"))
          (stop (make-instance 'gtk:button :label "Stop"))
          (locations (make-instance 'gtk:list-box :selection-mode :none))
          (widget (gtk:build
@@ -178,7 +220,10 @@
                      (lambda (b) (declare (ignore b))
                        (handler-case (rerun-project-run (rnp-selected *runs-page*))
                          (editor-error (e) (message "~a" (editor-error-message e))))))
-    (gobject:connect stop :clicked (lambda (b) (declare (ignore b)) (call-command 'stop-build)))
+    (gobject:connect stop :clicked
+                     (lambda (b) (declare (ignore b))
+                       (handler-case (stop-project-run (rnp-selected *runs-page*))
+                         (editor-error (e) (message "~a" (editor-error-message e))))))
     (refresh-runs-page)
     widget))
 

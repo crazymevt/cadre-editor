@@ -81,28 +81,33 @@ connected Lisp's REPL, after saving the project's files:
   the tests passed. A new project's `make test` exits 1 when a test fails;
   plain `asdf:test-system` doesn't say whether tests failed.
 
-## Recent process runs
+## Recent runs
 
-**Project › Runs** (or `M-x show-runs`) keeps builds, tests run in a new Lisp,
-and project commands such as `raco test` in one panel. It opens when a process
-starts. Select a run to see its project folder, command, status, duration,
-exit code on failure and separate output. **Filter output** matches text
-without case sensitivity; clearing it shows the retained output again.
-Conventional `file:line` and `file:line:column` diagnostics appear as buttons
-below the output; click one to open that file at its reported position.
+**Project › Runs** (or `M-x show-runs`) keeps builds, Test Explorer selections,
+REPL test runs, and console, GTK, Racket and Clojure app runs in one panel.
+Process runs open it automatically; apps and Test Explorer keep their usual
+pages so input and individual test results remain available. Select a run to
+see its project folder, command, status, duration and retained output.
+**Filter output** matches text without case sensitivity. Conventional
+`file:line` and `file:line:column` diagnostics appear as buttons below the
+output; click one to open that file at its reported position.
 
-**Rerun** saves changed files in the run's original project and repeats its
-process command there, even if a different project is now open. It creates a
-new entry. It repeats the command only; it does not replay language-specific
-completion callbacks, such as restarting a REPL after fetching dependencies.
-**Stop** ends the selected active process, including its child processes.
-Only one project process runs at a time.
+**Rerun** saves changed files in the original project and creates a new run.
+Test Explorer selections are found again in the current source; removed tests
+are not replayed. Apps use their original entry point. Process commands repeat
+without replaying completion callbacks such as restarting a REPL after fetching
+dependencies. **Stop** targets the selected activity: it terminates a process,
+interrupts REPL tests or console/language apps, or quits a GTK app. Runs sharing
+a REPL also share its interrupt behavior. Builds still run one process at a time;
+the rerun button is unavailable while the relevant runner is busy.
 
-History lasts for the current Cadre session, keeping the latest 30 runs and
-up to 262,144 characters of output per run. A notice appears when retained output reaches
-that limit; the Output page continues receiving all process output. REPL
-programs and Test Explorer runs still use their existing pages and are not
-recorded here yet.
+History lasts for the current session, keeping the latest 30 runs (active runs
+are never evicted) and up to 262,144 characters per run. Full output continues
+in the original Output or REPL page. REPL output is captured from the run's
+connection while it is active, so unrelated evaluations on that same connection
+can also appear. Test Explorer adds a per-test result and failure summary.
+A normally returning `asdf:test-system` run is marked finished; unlike Test
+Explorer, ASDF does not reliably report test assertion failures.
 
 ## The Tests page
 

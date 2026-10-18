@@ -177,6 +177,7 @@ as messages, and an abort without :on-abort says so."
         (editor-error (e) (message "~a" (editor-error-message e)))))))
 
 (defun session-closed (connection reason)
+  (disconnect-project-runs connection reason)
   (when (eq connection *connection*)
     (setf *connection* nil)
     (repl-disconnected reason)
@@ -184,7 +185,7 @@ as messages, and an abort without :on-abort says so."
     (traces-disconnected)
     (profiler-disconnected)
     (threads-disconnected)
-    (tests-disconnected)
+    (tests-disconnected connection)
     (gtk-app-disconnected)
     (image-changed)
     (refresh-systems)
@@ -206,6 +207,7 @@ as messages, and an abort without :on-abort says so."
     (case kind
       (:write-string (destructuring-bind (string &optional target thread) args
                        (declare (ignore thread))
+                       (capture-project-run-output connection string)
                        (repl-output string target)))
       (:presentation-start (presentation-start (first args)))
       (:presentation-end (presentation-end (first args)))

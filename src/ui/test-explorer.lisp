@@ -16,7 +16,7 @@
 (defstruct (tests-page (:conc-name tsp-))
   widget list title root
   (tests '())                           ; source-tests, with FILE set
-  (running nil))
+  (running nil) run selected-tests connection process)
 
 (defvar *tests-page* nil)
 (defvar *test-rows* (make-hash-table :test 'eq) "Test row → source-test.")
@@ -55,6 +55,7 @@
 
 (defun scan-project-tests (page &optional (root (current-project-root)))
   "Read the tests in ROOT's Lisp files, keeping the results of those seen before."
+  (when (tsp-running page) (return-from scan-project-tests))
   (let ((old (tsp-tests page))
         (tests '()))
     (when root
@@ -177,7 +178,7 @@ fetches what they need), so the tests and the code are current."
                        systems)
                root)))
 
-(defun ensure-test-runner (connection then)
+(defun ensure-test-runner (connection then &optional on-abort)
   (if (eq *test-runner-connection* connection)
       (funcall then)
       (rex connection (swank-call "swank:interactive-eval-region" +test-runner-helper+ 3 120)
@@ -185,7 +186,8 @@ fetches what they need), so the tests and the code are current."
            :on-ok (lambda (reply)
                     (declare (ignore reply))
                     (setf *test-runner-connection* connection)
-                    (funcall then)))))
+                    (funcall then))
+           :on-abort on-abort)))
 
 (defun lisp-test-p (test) (member (source-test-framework test) '(:parachute :fiveam)))
 
@@ -196,13 +198,58 @@ fetches what they need), so the tests and the code are current."
       (setf (source-test-status test) :failed
             (source-test-messages test) (list message)))))
 
-(defun finish-test-run (page)
-  (setf (tsp-running page) nil)
-  (dolist (test (tsp-tests page))
-    (when (eq (source-test-status test) :running) (setf (source-test-status test) nil)))
-  (fill-tests-list page)
-  (let ((failed (count :failed (tsp-tests page) :key #'source-test-status)))
-    (message (if (plusp failed) "~d test~:p failed" "Tests passed") failed)))
+(defmacro test-run-callback (page arguments &body body)
+  "Ignore asynchronous replies from a stopped or replaced test run."
+  (let ((token (gensym "RUN")) (holder (gensym "PAGE")))
+    `(let* ((,holder ,page) (,token (tsp-run ,holder)))
+       (lambda ,arguments
+         (when (and (eq ,token (tsp-run ,holder)) (tsp-running ,holder))
+           (locally ,@body))))))
+
+(defmacro with-test-run-connection ((connection page &key (language :common-lisp)) &body body)
+  (let ((token (gensym "RUN")) (holder (gensym "PAGE")))
+    `(let* ((,holder ,page) (,token (tsp-run ,holder)))
+       (with-connection (,connection :language ,language)
+         (when (and (eq ,token (tsp-run ,holder)) (tsp-running ,holder))
+           (locally ,@body))))))
+
+(defun test-run-connection (page connection)
+  (setf (tsp-connection page) connection
+        (pr-connection (tsp-run page)) connection))
+
+(defun finish-test-run (page &key stopped)
+  (when (tsp-running page)
+    (let* ((run (tsp-run page)) (tests (tsp-selected-tests page))
+           (failed (count :failed tests :key #'source-test-status)))
+      (dolist (test tests)
+        (append-project-run-output
+         run (format nil "~a:~d: ~a ~a~{~%  ~a~}"
+                     (source-test-file test) (1+ (source-test-line test))
+                     (source-test-status test) (source-test-name test) (source-test-messages test)))
+        (when (eq (source-test-status test) :running) (setf (source-test-status test) nil)))
+      (setf (tsp-running page) nil (tsp-connection page) nil (tsp-process page) nil)
+      (finish-project-run run (if (zerop failed) 0 1) :stopped stopped)
+      (fill-tests-list page)
+      (message (cond (stopped "Tests stopped") ((plusp failed) "~d test~:p failed") (t "Tests passed")) failed))))
+
+(defun stop-explorer-test-run (page run)
+  (when (and (tsp-running page) (eq run (tsp-run page)))
+    (let ((connection (tsp-connection page)))
+      (when (tsp-process page) (sb-ext:process-kill (tsp-process page) 15))
+      (finish-test-run page :stopped t)
+      (when connection (backend-interrupt connection)))))
+
+(defun source-test-run-key (test)
+  (list (source-test-file test) (source-test-framework test)
+        (source-test-package test) (source-test-name test)))
+
+(defun rerun-explorer-tests (root keys)
+  (when (tsp-running *tests-page*) (editor-error "Tests are already running"))
+  (scan-project-tests *tests-page* root)
+  (let ((tests (remove-if-not (lambda (test) (member (source-test-run-key test) keys :test #'equal))
+                              (tsp-tests *tests-page*))))
+    (unless tests (editor-error "The original tests are no longer present"))
+    (run-tests-of tests)))
 
 ;;; Common Lisp: parachute and FiveAM, in the connected Lisp
 
@@ -213,7 +260,7 @@ results as they come; then call THEN."
       (funcall then)
       (destructuring-bind ((framework package &rest names) &rest more) groups
         (rex connection (list (remote-symbol "cadre-test-runner:run") framework package (list 'quote names))
-             :on-ok (lambda (reply)
+             :on-ok (test-run-callback page (reply)
                       (let* ((results (parse-test-results reply))
                              (updated (apply-test-results (tsp-tests page) results package)))
                         ;; A test that got no result (its package isn't loaded, say)
@@ -228,22 +275,27 @@ results as they come; then call THEN."
                                        "No result: is the test's system loaded?")))
                       (fill-tests-list page)
                       (run-test-groups page connection more then))
-             :on-abort (lambda (reason)
+             :on-abort (test-run-callback page (reason)
+                         (no-result (tsp-selected-tests page) (or reason "Tests aborted"))
                          (message "Running the tests was abandoned~@[: ~a~]" reason)
                          (funcall then))))))
 
 (defun run-lisp-tests (page root tests then)
   (if (null tests)
       (funcall then)
-      (with-connection (connection)
+      (with-test-run-connection (connection page)
+        (test-run-connection page connection)
         (rex connection (swank-call "swank:interactive-eval" (test-systems-form root) 3 120)
              :package "COMMON-LISP-USER"
-             :on-ok (lambda (reply)
+             :on-ok (test-run-callback page (reply)
                       (declare (ignore reply))
                       (ensure-test-runner connection
-                                          (lambda ()
-                                            (run-test-groups page connection (test-run-groups (test-roots tests)) then))))
-             :on-abort (lambda (reason)
+                                          (test-run-callback page ()
+                                            (run-test-groups page connection (test-run-groups (test-roots tests)) then))
+                                          (test-run-callback page (reason)
+                                            (no-result tests (or reason "Test runner did not load"))
+                                            (funcall then))))
+             :on-abort (test-run-callback page (reason)
                          (message "Loading the project failed~@[: ~a~]; see the REPL and Problems" reason)
                          (no-result tests "The project didn't load: see the REPL and Problems")
                          (funcall then))))))
@@ -253,102 +305,132 @@ results as they come; then call THEN."
 (defun run-clojure-tests (page tests then)
   (if (null tests)
       (funcall then)
-      (with-connection (connection :language :clojure)
-        (unless (nrepl-op-p connection "test-var-query")
-          (no-result tests "Running tests needs cider-nrepl in the Clojure REPL")
-          (funcall then)
-          (return-from run-clojure-tests))
-        ;; LOAD-CLOJURE-FILES (projects.lisp) puts load errors on the Problems page.
-        (load-clojure-files
-         connection (remove-duplicates (mapcar #'uiop:native-namestring (mapcar #'source-test-file tests)) :test #'equal)
-         (lambda (failed)
-           (dolist (test tests)
-             (when (member (uiop:native-namestring (source-test-file test)) failed :test #'equal)
-               (setf (source-test-status test) :failed
-                     (source-test-messages test) (list "The file didn't load: see the Problems page"))))
-           (nrepl-test-vars connection
-                            (mapcar (lambda (test) (format nil "~a/~a" (source-test-package test) (source-test-name test)))
-                                    tests)
-                            :on-done (lambda (results)
-                                       (loop for (ns var status messages) in results
-                                             for test = (find-if (lambda (test) (and (equal (source-test-package test) ns)
-                                                                                     (equal (source-test-name test) var)))
-                                                                 tests)
-                                             when test
-                                               do (setf (source-test-status test) status
-                                                        (source-test-messages test) messages))
-                                       (no-result tests)
-                                       (fill-tests-list page)
-                                       (funcall then))
-                            :on-abort (lambda (reason)
-                                        (no-result tests (format nil "The tests didn't run: ~a" reason))
-                                        (funcall then))))))))
+      (with-test-run-connection (connection page :language :clojure)
+        (test-run-connection page connection)
+        (if (not (nrepl-op-p connection "test-var-query"))
+            (progn
+              (no-result tests "Running tests needs cider-nrepl in the Clojure REPL")
+              (funcall then))
+            (let ((run (tsp-run page)))
+              (load-clojure-files
+               connection (remove-duplicates (mapcar #'uiop:native-namestring (mapcar #'source-test-file tests)) :test #'equal)
+               (test-run-callback page (failed)
+                 (dolist (test tests)
+                   (when (member (uiop:native-namestring (source-test-file test)) failed :test #'equal)
+                     (setf (source-test-status test) :failed
+                           (source-test-messages test) (list "The file didn't load: see the Problems page"))))
+                 (nrepl-test-vars
+                  connection
+                  (mapcar (lambda (test) (format nil "~a/~a" (source-test-package test) (source-test-name test))) tests)
+                  :on-done
+                  (test-run-callback page (results)
+                    (loop for (ns var status messages) in results
+                          for test = (find-if (lambda (test) (and (equal (source-test-package test) ns)
+                                                                  (equal (source-test-name test) var))) tests)
+                          when (and test (not (member (uiop:native-namestring (source-test-file test)) failed :test #'equal)))
+                            do (setf (source-test-status test) status (source-test-messages test) messages))
+                    (no-result tests)
+                    (fill-tests-list page)
+                    (funcall then))
+                  :on-abort (test-run-callback page (reason)
+                              (no-result tests (format nil "The tests didn't run: ~a" reason))
+                              (funcall then))))
+               :continue-p (lambda () (and (eq run (tsp-run page)) (tsp-running page)))))))))
 
 ;;; Racket: raco test, a file at a time
 
 (defun run-racket-files (page files then)
   (if (null files)
       (funcall then)
-      (let ((file (first files)))
+      (let* ((file (first files))
+             (run (tsp-run page))
+             (process (handler-case
+                          (sb-ext:run-program *raco-command* (list "test" (uiop:native-namestring file))
+                                              :search t :wait nil :input nil :output :stream :error :output
+                                              :directory (uiop:pathname-directory-pathname file)
+                                              :external-format :utf-8)
+                        (error (e)
+                          (no-result (tsp-selected-tests page) (princ-to-string e))
+                          (funcall then)
+                          (return-from run-racket-files)))))
+        (setf (tsp-process page) process (tsp-connection page) nil (pr-connection run) nil)
         (sb-thread:make-thread
          (lambda ()
-           (multiple-value-bind (output error-output code)
-               (ignore-errors
-                (uiop:run-program (list *raco-command* "test" (uiop:native-namestring file))
-                                  :output :string :error-output :output :ignore-error-status t
-                                  :directory (uiop:pathname-directory-pathname file)))
-             (declare (ignore error-output))
+           (let ((output (with-output-to-string (out)
+                           (loop for line = (read-line (sb-ext:process-output process) nil)
+                                 while line do (write-line line out)
+                                   (let ((line line))
+                                     (deliver-to-gui
+                                      (lambda ()
+                                        (when (and (eq run (tsp-run page)) (tsp-running page))
+                                          (append-project-run-output run line)))))))))
+             (sb-ext:process-wait process)
              (deliver-to-gui
-              (lambda ()
-                (let ((tests (remove-if-not (lambda (test) (and (eq (source-test-framework test) :rackunit)
-                                                                (equal (source-test-file test) file)))
-                                            (tsp-tests page))))
-                  (apply-raco-results tests (parse-raco-test-output (or output "")) (or code 1)
-                                      (or output (format nil "~a didn't run" *raco-command*))))
-                (fill-tests-list page)
-                (run-racket-files page (rest files) then)))))
+              (test-run-callback page ()
+                (when (eq run (tsp-run page))
+                  (setf (tsp-process page) nil)
+                  (let ((tests (remove-if-not (lambda (test) (and (eq (source-test-framework test) :rackunit)
+                                                                                (equal (source-test-file test) file)))
+                                              (tsp-tests page))))
+                    (apply-raco-results tests (parse-raco-test-output output)
+                                        (or (sb-ext:process-exit-code process) 1) output))
+                  (fill-tests-list page)
+                  (run-racket-files page (rest files) then))))))
          :name "raco test"))))
 
 (defun run-racket-tests (page tests then)
   (run-racket-files page (remove-duplicates (mapcar #'source-test-file tests) :test #'equal) then))
 
+(defun selected-test-p (test selected all)
+  (or (member test selected)
+      (and (eq (source-test-framework test) :rackunit)
+           (some (lambda (other) (equal (source-test-file other) (source-test-file test))) selected))
+      (loop with seen = nil
+            for current = test then parent
+            for parent = (find-if (lambda (other)
+                                    (and (equal (source-test-parent current) (source-test-key other))
+                                         (equal (source-test-package current) (source-test-package other))
+                                         (equal (source-test-file current) (source-test-file other)))) all)
+            while (and parent (not (member parent seen)))
+            thereis (member parent selected)
+            do (push parent seen))))
+
 (defun run-tests-of (tests)
-  "Save, then run TESTS (their children too): Common Lisp ones in the Lisp
-\(loading the project first), Clojure ones through nREPL, Racket ones with
-raco test, a file at a time."
-  (let ((page *tests-page*))
-    (cond ((tsp-running page) (message "Tests are running already"))
-          ((null tests) (message "No tests to run"))
-          (t
-           (let ((root (or (tsp-root page) (project-root-or-error))))
-             (show-tests-page)
-             (setf (tsp-running page) t)
-             (dolist (test tests) (setf (source-test-status test) :running))
-             ;; A Racket file runs all its tests.
-             (dolist (test (tsp-tests page))
-               (when (and (eq (source-test-framework test) :rackunit)
-                          (find-if (lambda (o) (and (eq (source-test-framework o) :rackunit)
-                                                    (equal (source-test-file o) (source-test-file test))))
-                                   tests))
-                 (setf (source-test-status test) :running)))
-             (fill-tests-list page)
-             (flet ((of (framework-p) (remove-if-not framework-p tests)))
-               (save-project-then
-                root
-                (lambda ()
-                  (handler-case
-                      (run-lisp-tests
-                       page root (of #'lisp-test-p)
-                       (lambda ()
-                         (run-clojure-tests
-                          page (of (lambda (test) (eq (source-test-framework test) :clojure)))
-                          (lambda ()
-                            (run-racket-tests
-                             page (of (lambda (test) (eq (source-test-framework test) :rackunit)))
-                             (lambda () (finish-test-run page)))))))
-                    (error (e)
-                      (finish-test-run page)
-                      (message "~a" e)))))))))))
+  "Save, then run the selection, recording results in Tests and Runs."
+  (let* ((page *tests-page*) (root (or (tsp-root page) (project-root-or-error))))
+    (when (tsp-running page) (editor-error "Tests are running already"))
+    (unless tests (return-from run-tests-of (message "No tests to run")))
+    (save-project-then
+     root
+     (lambda ()
+       (when (tsp-running page) (editor-error "Tests are running already"))
+       (let* ((selected (remove-if-not (lambda (test) (selected-test-p test tests (tsp-tests page)))
+                                      (tsp-tests page)))
+              (keys (mapcar #'source-test-run-key tests))
+              (run (begin-project-run root '(:description "Test Explorer selection") "Tests"
+                                      :available (lambda () (not (tsp-running page)))
+                                      :rerun (lambda () (rerun-explorer-tests root keys)))))
+         (setf (tsp-run page) run (tsp-selected-tests page) selected (tsp-running page) t
+               (pr-stop run) (lambda () (stop-explorer-test-run page run)))
+         ;; Showing Tests can rescan for the current editor project. Lock this
+         ;; selection first so a run from another project keeps its own tests.
+         (show-tests-page)
+         (dolist (test selected) (setf (source-test-status test) :running (source-test-messages test) nil))
+         (fill-tests-list page)
+         (flet ((of (framework-p) (remove-if-not framework-p tests)))
+           (handler-case
+               (run-lisp-tests
+                page root (of #'lisp-test-p)
+                (test-run-callback page ()
+                  (run-clojure-tests
+                   page (of (lambda (test) (eq (source-test-framework test) :clojure)))
+                   (test-run-callback page ()
+                     (run-racket-tests page (of (lambda (test) (eq (source-test-framework test) :rackunit)))
+                                       (test-run-callback page () (finish-test-run page)))))))
+             (error (e)
+               (no-result selected (princ-to-string e))
+               (finish-test-run page)
+               (message "~a" e)))))))))
 
 (defun show-tests-page ()
   (panel-show (window-panel *window*) "tests")
@@ -360,11 +442,12 @@ raco test, a file at a time."
     (unless (and (tsp-root *tests-page*) root (equal (namestring root) (namestring (tsp-root *tests-page*))))
       (scan-project-tests *tests-page* root))))
 
-(defun tests-disconnected ()
+(defun tests-disconnected (&optional (connection *connection*))
   (setf *test-runner-connection* nil)
-  (when (and *tests-page* (tsp-running *tests-page*))
-    (setf (tsp-running *tests-page*) nil)
-    (fill-tests-list *tests-page*)))
+  (when (and *tests-page* (tsp-running *tests-page*)
+             (eq connection (tsp-connection *tests-page*)))
+    (no-result (tsp-selected-tests *tests-page*) "Test connection disconnected")
+    (finish-test-run *tests-page*)))
 
 (defun test-project (root otherwise)
   "Run ROOT's tests on the Tests page; if it has none Cadre finds,

@@ -61,7 +61,7 @@ its subdirectories), the main system of each file first."
   (asdf-form (format nil "(funcall (find-symbol \"TEST-SYSTEM\" \"ASDF\") ~a)" (cadre::lisp-string system))
              directory))
 
-(defun run-in-repl (note form &key on-done)
+(defun run-in-repl (note form &key on-done on-abort)
   "Show NOTE in the REPL and evaluate FORM (source) there, as if typed; then
 call ON-DONE."
   (show-repl-page)
@@ -72,7 +72,7 @@ call ON-DONE."
              (repl-insert (format nil "; ~a~%" note) "cadre-repl-note")
              (gtk:text-buffer-move-mark (repl-gtk-buffer) (repl-output-mark *repl*)
                                         (gtk:text-buffer-get-end-iter (repl-gtk-buffer)))
-             (repl-eval form :on-done on-done)))))
+             (repl-eval form :on-done on-done :on-abort on-abort)))))
 
 (defun load-system-in-repl (directory system)
   "Load SYSTEM, compiling it first so its notes reach the Problems page, then
@@ -286,8 +286,7 @@ that one, and its ▶."
                    :on-clicked (lambda (b) (declare (ignore b))
                                  (test-project directory
                                                (lambda ()
-                                                 (run-in-repl (format nil "Testing system ~a" name)
-                                                              (test-system-form directory name))))))
+                                                 (save-project-then directory (lambda () (run-repl-test-system directory name)))))))
        (gtk:button :label "Libraries" :tooltip-text "What the system depends on, and adding a library from Quicklisp"
                    :on-clicked (lambda (b) (declare (ignore b)) (show-libraries directory name))))))
   (if (connected-p)

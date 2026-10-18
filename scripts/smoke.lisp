@@ -3047,6 +3047,8 @@ d" 0 0)
   (call-command 'cadre-ui::run-app))
 
 (then-when ((cadre-ui::gtk-app-running-p) :timeout 30)
+  (check "GTK apps have an active Runs entry"
+         (eq :running (cadre-ui::pr-status (getf cadre-ui::*gtk-app* :run))))
   (check "▶ runs a gtk4 app as Run GTK App does" (cadre-ui::gtk-app-running-p))
   (check "and becomes a stop button" (equal "Stop the app" (gtk:widget-get-tooltip-text (run-button))))
   ;; Match the user's red close button: closing the last window should end the
@@ -3091,6 +3093,8 @@ d" 0 0)
         (when (cadre-ui::gtk-app-running-p) (call-command 'cadre-ui::stop-app)))))
 
 (then-when ((not (cadre-ui::gtk-app-running-p)) :timeout 30)
+  (check "stopping the GTK app marks its Runs entry stopped"
+         (eq :stopped (cadre-ui::pr-status (getf cadre-ui::*gtk-app* :run))))
   (check "Stop App quits the restarted GTK app" (not (cadre-ui::gtk-app-running-p)))
   (cadre-ui::make-new-project *new-parent* "smoke-cli" :kind :application :tests :parachute :license nil))
 
@@ -3105,6 +3109,10 @@ d" 0 0)
   (call-command 'cadre-ui::repl-return))
 
 (then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (check "console app output and successful completion are retained in Runs"
+         (let ((run (first cadre-ui::*project-runs*)))
+           (and (eq :passed (cadre-ui::pr-status run))
+                (search "Hello, Pat!" (cadre-ui::project-run-output-text run)))))
   (check "RET sends the line, and the app's output follows" (search "Hello, Pat!" (repl-text)) (repl-text))
   (check "▶ is back" (equal "Run smoke-cli:main (in the REPL)" (gtk:widget-get-tooltip-text (run-button)))
          (gtk:widget-get-tooltip-text (run-button)))
@@ -3114,6 +3122,8 @@ d" 0 0)
   (call-command 'cadre-ui::stop-app))
 
 (then-when ((null cadre-ui::*console-app*) :timeout 30)
+  (check "stopping a console app marks its Runs entry stopped"
+         (eq :stopped (cadre-ui::pr-status (first cadre-ui::*project-runs*))))
   (check "Stop App aborts a console app waiting for input" (null cadre-ui::*console-app*))
   (check "and the REPL takes forms again" (not (cadre-ui::repl-busy cadre-ui::*repl*))))
 
@@ -3947,6 +3957,10 @@ and the number of items MODEL itself shows."
 (then-when ((or (not *have-racket*) (null cadre-ui::*language-app*)) :timeout 30)
   (when *have-racket*
     (let ((text (buffer-string (cadre-ui::repl-buffer (cadre-ui::language-repl :racket)))))
+      (check "Racket app output and completion are retained in Runs"
+             (let ((run (first cadre-ui::*project-runs*)))
+               (and (eq :passed (cadre-ui::pr-status run))
+                    (search "Hello, Pat!" (cadre-ui::project-run-output-text run)))))
       (check "and the program ends, with ▶ back"
              (and (search "Hello, Pat!" text) (search "finished" (status-text)))
              (status-text)))))
@@ -4045,6 +4059,22 @@ and the number of items MODEL itself shows."
            (and (search "proj ran" (buffer-string (cadre-ui::repl-buffer (cadre-ui::language-repl :clojure))))
                 (search "proj.core/-main returned :done" (status-text)))
            (status-text))
+    (check "Clojure app output and completion are retained in Runs"
+           (let ((run (first cadre-ui::*project-runs*)))
+             (and (eq :passed (cadre-ui::pr-status run))
+                  (search "proj ran" (cadre-ui::project-run-output-text run)))))
+    (write-root-file "clj-proj/test/proj/core_test.clj"
+                     (format nil "(ns proj.core-test (:require [clojure.test :refer [deftest is]]))~%(deftest works (is (= 2 (+ 1 1))))~%"))
+    (cadre-ui::scan-project-tests cadre-ui::*tests-page* (merge-pathnames "clj-proj/" *root*))
+    (cadre-ui::run-tests-of (cadre-ui::tsp-tests cadre-ui::*tests-page*))))
+
+(then-when ((or (not *have-clojure*) (not (cadre-ui::tsp-running cadre-ui::*tests-page*))) :timeout 60)
+  (when *have-clojure*
+    (check "Clojure Test Explorer results are retained in Runs"
+           (let ((run (cadre-ui::tsp-run cadre-ui::*tests-page*)))
+             (and (eq :passed (cadre-ui::pr-status run))
+                  (search "works" (cadre-ui::project-run-output-text run))))
+           (cadre-ui::project-run-output-text (cadre-ui::tsp-run cadre-ui::*tests-page*)))
     ;; A test file that refers to a function that isn't there.
     (write-root-file "clj-proj/test/proj/core_test.clj"
                      (format nil "(ns proj.core-test~%  (:require [clojure.test :refer [deftest is]]~%            [proj.core :refer [no-such-fn]]))~%(deftest t (is (no-such-fn)))~%"))
@@ -4056,6 +4086,10 @@ and the number of items MODEL itself shows."
            (and (search "1 namespace didn't load" (status-text))
                 (find-if (lambda (s) (search "no-such-fn" (compiler-note-message (cadre-ui::sn-note s)))) cadre-ui::*notes*))
            (status-text))
+    (check "Clojure project test load failures are retained in Runs"
+           (let ((run cadre-ui::*clojure-project-test-run*))
+             (and run (eq :failed (cadre-ui::pr-status run))
+                  (search "didn't load" (cadre-ui::project-run-output-text run)))))
     (call-command 'cadre-ui::clojure-disconnect))
   (cadre-ui::set-window-project *window* *root*))
 
@@ -4754,6 +4788,11 @@ and the number of items MODEL itself shows."
   (check "Run All shows each test's result"
          (equal '(:passed :failed :passed :passed) (mapcar #'source-test-status (cadre-ui::tsp-tests (tests-page))))
          (mapcar #'source-test-status (cadre-ui::tsp-tests (tests-page))))
+  (let ((run (cadre-ui::tsp-run (tests-page))))
+    (check "Test Explorer records its failing selection in Runs"
+           (and (eq :failed (cadre-ui::pr-status run))
+                (search "broken" (cadre-ui::project-run-output-text run))
+                (search "evaluated to" (cadre-ui::project-run-output-text run)))))
   (check "with what failed" (search "evaluated to" (or (first (source-test-messages (explorer-test "broken"))) ""))
          (source-test-messages (explorer-test "broken")))
   (check "and the tab counts the failures" (equal "Tests (1 ✗)" (panel-page-title "tests")) (panel-page-title "tests")))
@@ -4769,6 +4808,8 @@ and the number of items MODEL itself shows."
   (check "Run Failed saves and runs the fixed test again, loading the change"
          (eq :passed (source-test-status (explorer-test "broken")))
          (source-test-messages (explorer-test "broken")))
+  (check "Run Failed records only its new successful selection"
+         (eq :passed (cadre-ui::pr-status (cadre-ui::tsp-run (tests-page)))))
   (let ((row (loop for row being the hash-keys of cadre-ui::*test-rows* using (hash-value test)
                    when (equal "broken" (source-test-name test)) return row)))
     (when row (gtk:widget-activate row))))
@@ -4776,6 +4817,54 @@ and the number of items MODEL itself shows."
 (then-when ((find-buffer "tests.lisp") :timeout 10)
   (check "clicking a test goes to it" (= 6 (cadre-ui::cursor-line-column (current-view)))
          (cadre-ui::cursor-line-column (current-view))))
+
+(section "runs-backends" :needs ("runs"))
+(defvar *racket-explorer-run* nil)
+(defvar *racket-explorer-process* nil)
+(connect-lisp)
+(then 100
+  (write-root-file "repl-run/smoke-repl-run.asd"
+                   "(defsystem \"smoke-repl-run\" :perform (test-op (op system) (format t \"repl-run-output-marker~%\")))")
+  (cadre-ui::run-repl-test-system (merge-pathnames "repl-run/" *root*) "smoke-repl-run"))
+(then-when ((not (cadre-ui::repl-busy cadre-ui::*repl*)) :timeout 60)
+  (let ((run (first cadre-ui::*project-runs*)))
+    (check "REPL test-system runs retain completion and output"
+           (and (eq :passed (cadre-ui::pr-status run))
+                (search "repl-run-output-marker" (cadre-ui::project-run-output-text run)))))
+  (when *have-racket*
+    (write-root-file "racket-explorer/main.rkt"
+                     (format nil "#lang racket~%(require rackunit)~%(test-case \"works\" (check-equal? 2 2))~%(test-case \"broken\" (check-equal? 2 3))~%"))
+    (cadre-ui::scan-project-tests cadre-ui::*tests-page* (merge-pathnames "racket-explorer/" *root*))
+    (cadre-ui::run-tests-of (cadre-ui::tsp-tests cadre-ui::*tests-page*))))
+(then-when ((or (not *have-racket*) (not (cadre-ui::tsp-running cadre-ui::*tests-page*))) :timeout 60)
+  (when *have-racket*
+    (setf *racket-explorer-run* (cadre-ui::tsp-run cadre-ui::*tests-page*))
+    (check "Racket Test Explorer failures are retained in Runs"
+           (and (eq :failed (cadre-ui::pr-status *racket-explorer-run*))
+                (search "broken" (cadre-ui::project-run-output-text *racket-explorer-run*)))
+           (list (cadre-ui::pr-status *racket-explorer-run*)
+                 (cadre-ui::project-run-output-text *racket-explorer-run*)))
+    (write-root-file "racket-explorer/main.rkt"
+                     (format nil "#lang racket~%(require rackunit)~%(test-case \"works\" (check-equal? 2 2))~%(test-case \"broken\" (check-equal? 2 2))~%"))
+    (cadre-ui::rerun-project-run *racket-explorer-run*)))
+(then-when ((or (not *have-racket*) (not (cadre-ui::tsp-running cadre-ui::*tests-page*))) :timeout 60)
+  (when *have-racket*
+    (let ((run (cadre-ui::tsp-run cadre-ui::*tests-page*)))
+      (check "Rerun finds the original Racket test selection in current source"
+             (and (not (eq run *racket-explorer-run*)) (eq :passed (cadre-ui::pr-status run)))))
+    (write-root-file "racket-explorer/main.rkt"
+                     (format nil "#lang racket~%(require rackunit)~%(test-case \"wait\" (sleep 30) (check-true #t))~%"))
+    (cadre-ui::scan-project-tests cadre-ui::*tests-page* (merge-pathnames "racket-explorer/" *root*))
+    (cadre-ui::run-tests-of (cadre-ui::tsp-tests cadre-ui::*tests-page*))))
+(then-when ((or (not *have-racket*) (cadre-ui::tsp-process cadre-ui::*tests-page*)) :timeout 10)
+  (when *have-racket*
+    (setf *racket-explorer-process* (cadre-ui::tsp-process cadre-ui::*tests-page*))
+    (cadre-ui::stop-project-run (cadre-ui::tsp-run cadre-ui::*tests-page*))))
+(then-when ((or (not *have-racket*) (not (sb-ext:process-alive-p *racket-explorer-process*))) :timeout 10)
+  (when *have-racket*
+    (check "Stop terminates a Racket test process and retains stopped status"
+           (and (not (cadre-ui::tsp-running cadre-ui::*tests-page*))
+                (eq :stopped (cadre-ui::pr-status (cadre-ui::tsp-run cadre-ui::*tests-page*)))))))
 
 ;;; Expanding macros in place
 (section "macrostep")

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **More activities in Runs.** Record Test Explorer selections, REPL tests,
+  and console, GTK, Racket and Clojure apps with retained output and status.
+  Rerun in the original project or stop the selected activity; test selections
+  include per-test failures, and stopped or disconnected runs retain their state.
+
 - **macOS troubleshooting.** Document the window-dragging session issue and
   the confirmed sign-out/sign-in recovery in the README.
 

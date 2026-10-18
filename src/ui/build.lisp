@@ -201,6 +201,24 @@ fetched: asdf:test-system only finds what is already installed."
                        systems (cadre::lisp-string system))
                root)))
 
+(defun run-repl-test-system (root system)
+  (with-connection (connection)
+    (when (repl-busy *repl*) (editor-error "The REPL is busy"))
+    (let* ((title (format nil "Testing system ~a" system))
+           (run (begin-project-run
+                 root (list :description (format nil "asdf:test-system ~a (REPL)" system)) title
+                 :connection connection
+                 :available (lambda () (and (connected-p) (not (repl-busy *repl*))))
+                 :rerun (lambda () (run-repl-test-system root system))
+                 :stop (lambda () (backend-interrupt connection)))))
+      (handler-case
+          (run-in-repl title (run-tests-form root system)
+                       :on-done (lambda () (finish-project-run run 0))
+                       :on-abort (lambda (reason)
+                                   (append-project-run-output run (format nil "Aborted: ~a" reason))
+                                   (finish-project-run run nil)))
+        (error (e) (finish-project-run run nil) (error e))))))
+
 (define-command run-tests ()
   "Run the project's tests: parachute and FiveAM tests on the Tests page,
 others with asdf:test-system in the REPL. Saves the project's files first."
@@ -213,8 +231,7 @@ others with asdf:test-system in the REPL. Saves the project's files first."
         (lambda (system)
           (save-project-then root
                              (lambda ()
-                               (run-in-repl (format nil "Testing system ~a" system)
-                                            (run-tests-form root system))))))))))
+                               (run-repl-test-system root system)))))))))
 
 (define-command run-tests-in-new-lisp ()
   "Run the project's tests in a fresh Lisp (make test, or asdf:test-system),

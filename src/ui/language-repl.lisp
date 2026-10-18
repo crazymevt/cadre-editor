@@ -129,7 +129,8 @@ prompt (another module's or namespace's, perhaps), keeping what is typed there."
   "Show EVENT (Swank-shaped) from LANGUAGE's CONNECTION."
   (let ((*repl* (language-repl language)))
     (case (first event)
-      (:write-string (repl-output (second event) (third event)))
+      (:write-string (capture-project-run-output connection (second event))
+                      (repl-output (second event) (third event)))
       (:post-mortem (destructuring-bind (text type frames) (rest event)
                       (debugger-post-mortem connection text type frames)))
       (:read-string
@@ -142,6 +143,10 @@ prompt (another module's or namespace's, perhaps), keeping what is typed there."
        (language-repl-note language (format nil "; In ~a~%" (third event)))
        (update-connection-status))
       (:disconnected
+       (disconnect-project-runs connection (second event))
+       (tests-disconnected connection)
+       (when (eq connection (getf *language-app* :connection))
+         (language-app-finished "Program disconnected"))
        (when (eq (gethash language *connections*) connection)
          (remhash language *connections*))
        (repl-disconnected (second event))

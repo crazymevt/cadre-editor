@@ -31,6 +31,7 @@
           (original-new (symbol-function application-new))
           (application-run (find-symbol \"APPLICATION-RUN\" \"GIO\"))
           (original-run (symbol-function application-run)))
+     (let ((cadre-success nil))
      (unwind-protect
           (progn
             (setf (symbol-function application-new)
@@ -101,7 +102,8 @@
                           (invoke-debugger condition))))))
             (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\")))
               (when drain (ignore-errors (funcall drain))))
-            (funcall (read-from-string ~a)))
+            (funcall (read-from-string ~a))
+            (setf cadre-success t))
        (setf (symbol-function application-new) original-new)
        (setf (symbol-function application-run) original-run)
        (let ((application-var (find-symbol \"*CADRE-RUN-GTK-APPLICATION*\" \"CL-USER\")))
@@ -110,8 +112,8 @@
          (when clear (ignore-errors (funcall clear nil))))
        (let ((drain (find-symbol \"ITERATE-MAIN-CONTEXT\" \"GTK4.RUNTIME\")))
          (when drain (loop repeat 15 do (ignore-errors (funcall drain)) (sleep 0.02))))
-       (format t \"~~&~a~~%\")
-       (finish-output))))")
+       (format t \"~~&~a ~~a~~%\" (if cadre-success :ok :failed))
+       (finish-output)))))")
 
 (defun gtk-app-running-p () (and *gtk-app* (getf *gtk-app* :running)))
 
@@ -164,8 +166,11 @@ next run's new window would get them."
 
 (defun gtk-app-output (line)
   "See each line the started Lisp prints: notice when the GTK app ends."
+  (when (gtk-app-running-p)
+    (append-project-run-output (getf *gtk-app* :run) line))
   (when (and (gtk-app-running-p) (search *gtk-app-ended-marker* line))
     (setf (getf *gtk-app* :running) nil)
+    (finish-project-run (getf *gtk-app* :run) (if (search "FAILED" line) nil 0))
     (update-connection-status)
     ;; Its Lisp handles no window events until the next run, so it mustn't
     ;; stay the front app (macOS would show it busy, and keep its clicks for
@@ -198,9 +203,15 @@ next run's new window would get them."
 
 (defun launch-gtk-app (root system entry)
   (with-connection (connection)
-    (declare (ignore connection))
-    (send-to-first-thread (gtk-app-launch-form root system entry))
-    (setf *gtk-app* (list :system system :entry entry :root root :running t :gtk-thread t))
+    (when (app-running-p) (editor-error "An app is already running"))
+    (let ((run (begin-project-run
+                root (list :description (format nil "~a (GTK main thread)" entry)) entry
+                :connection connection :available (lambda () (not (app-running-p)))
+                :rerun (lambda () (launch-gtk-app root system entry))
+                :stop (lambda () (stop-gtk-app)))))
+      (handler-case (send-to-first-thread (gtk-app-launch-form root system entry))
+        (error (e) (finish-project-run run nil) (error e)))
+      (setf *gtk-app* (list :system system :entry entry :root root :running t :gtk-thread t :run run)))
     (add-app-tabs)
     (update-connection-status)
     (message "Starting ~a on the main thread; the REPL evaluates on the GTK thread while it runs" entry)))
@@ -230,6 +241,7 @@ debugger."
 (define-command stop-gtk-app ()
   "Quit the GTK app started with Run GTK App (the Lisp keeps running)."
   (unless (gtk-app-running-p) (editor-error "No GTK app is running"))
+  (setf (pr-stop-requested (getf *gtk-app* :run)) t)
   (with-connection (connection)
     (rex connection
          (swank-call "swank:interactive-eval"
