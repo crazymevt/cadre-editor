@@ -63,10 +63,14 @@ opened or one of its files was saved (finding it reads source files).")
   (when format (apply #'message format args)))
 
 (defmacro language-app-callback (arguments &body body)
-  (let ((app (gensym "APP")))
+  (let ((app (gensym "APP"))
+        ;; Declarations about ARGUMENTS belong to the lambda.
+        (declarations (loop while (and (consp (first body)) (eq (car (first body)) 'declare))
+                            collect (pop body))))
     `(let ((,app *language-app*))
        (lambda ,arguments
-         (when (eq ,app *language-app*) (locally ,@body))))))
+         ,@declarations
+         (when (eq ,app *language-app*) ,@body)))))
 
 (defun run-language-app (root app)
   "Run APP, a Racket or Clojure program, in its language's REPL tab."

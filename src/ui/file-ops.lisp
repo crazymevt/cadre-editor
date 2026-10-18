@@ -38,7 +38,7 @@
                 (ensure-directories-exist path)
                 (unless (uiop:directory-pathname-p path)
                   (with-open-file (out path :direction :output :if-does-not-exist :create :if-exists nil)
-                    (declare (ignore out)))
+                    (declare (ignorable out)))
                   (open-file-path path))))))
 
 (defun new-folder-in (directory)

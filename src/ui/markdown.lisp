@@ -432,8 +432,7 @@ means the source is scrolled to its end, so the preview goes to its end."
 (defun setup-preview-view (view)
   "Make VIEW, of a preview buffer, look like a page: read-only, wrapped,
 proportional text, with links that open when clicked."
-  (let ((text-view (view-text-view view))
-        (preview (view-buffer view)))
+  (let ((text-view (view-text-view view)))
     (gtk:text-view-set-editable text-view nil)
     (gtk:text-view-set-cursor-visible text-view nil)
     (gtk:text-view-set-monospace text-view nil)

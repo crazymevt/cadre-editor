@@ -455,7 +455,7 @@ breaks the line there; otherwise lines run together."
                    ;; - item, 1. item
                    ((and (list-marker line) (or (null paragraph) (not (blank-line-p (subseq line (nth-value 2 (list-marker line)))))))
                     (multiple-value-bind (ms me content kind number) (list-marker line)
-                      (declare (ignore ms me))
+                      (declare (ignore ms me content))
                       (let ((items '()))
                         (loop while (and (< i (length lines)) (eq (nth-value 3 (list-marker (line i))) kind))
                               do (multiple-value-bind (ims ime icontent) (list-marker (line i))

@@ -200,11 +200,15 @@ fetches what they need), so the tests and the code are current."
 
 (defmacro test-run-callback (page arguments &body body)
   "Ignore asynchronous replies from a stopped or replaced test run."
-  (let ((token (gensym "RUN")) (holder (gensym "PAGE")))
+  (let ((token (gensym "RUN")) (holder (gensym "PAGE"))
+        ;; Declarations about ARGUMENTS belong to the lambda.
+        (declarations (loop while (and (consp (first body)) (eq (car (first body)) 'declare))
+                            collect (pop body))))
     `(let* ((,holder ,page) (,token (tsp-run ,holder)))
        (lambda ,arguments
+         ,@declarations
          (when (and (eq ,token (tsp-run ,holder)) (tsp-running ,holder))
-           (locally ,@body))))))
+           ,@body)))))
 
 (defmacro with-test-run-connection ((connection page &key (language :common-lisp)) &body body)
   (let ((token (gensym "RUN")) (holder (gensym "PAGE")))
