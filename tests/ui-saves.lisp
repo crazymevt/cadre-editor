@@ -630,6 +630,16 @@
     (destructuring-bind (formatted problem) (run-formatter '("sleep" "10") "x" :timeout 0.3)
       (false formatted)
       (true (search "took longer" problem)))
+    ;; A formatter that ignores SIGTERM is killed after the grace period, and
+    ;; one that catches it and exits 0 still counts as stopped.
+    (let ((ui::*formatter-stop-grace* 0.3))
+      (dolist (script '("trap '' TERM; while :; do sleep 0.05; done"
+                        "trap 'echo partial; exit 0' TERM; while :; do sleep 0.05; done"))
+        (let ((start (get-internal-real-time)))
+          (destructuring-bind (formatted problem) (run-formatter (list "sh" "-c" script) "x" :timeout 0.3)
+            (false formatted)
+            (true (search "took longer" problem)))
+          (true (< (/ (- (get-internal-real-time) start) internal-time-units-per-second) 2.5)))))
     (destructuring-bind (formatted problem) (run-formatter '("cadre-no-such-formatter") "x")
       (false formatted)
       (true (search "Could not run" problem)))))

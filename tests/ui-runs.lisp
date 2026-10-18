@@ -144,6 +144,26 @@
       (ui::disconnect-project-runs connection "Connection lost")
       (is eq :failed (ui::pr-status app)))))
 
+(define-test run-locations-keep-each-place :parent runs
+  (with-runs-fixture
+    (let* ((root (uiop:ensure-directory-pathname
+                  (merge-pathnames (format nil "cadre-runs-~a/" (c:make-uuid)) (uiop:temporary-directory))))
+           (run (ui::begin-project-run root nil "Build")))
+      (ensure-directories-exist root)
+      (with-open-file (out (merge-pathnames "a.lisp" root) :direction :output) (write-line "x" out))
+      (unwind-protect
+           (progn
+             (dolist (line '("a.lisp:3: first" "a.lisp:9:2: second in the same file" "a.lisp:3: first again"
+                             "missing.lisp:1: no such file" "a.lisp:12: a warning"))
+               (ui::append-project-run-output run line))
+             (is equal '(("a.lisp" 3 1) ("a.lisp" 9 2) ("a.lisp" 12 1))
+                 (mapcar (lambda (entry) (destructuring-bind (file row column) (second entry)
+                                           (list (file-namestring file) row column)))
+                         (ui::run-output-locations run "")))
+             (is = 1 (length (ui::run-output-locations run "warning")))
+             (is = 2 (length (ui::run-output-locations run "" :limit 2))))
+        (uiop:delete-directory-tree root :validate t)))))
+
 (define-test active-runs-are-not-evicted :parent runs
   (with-runs-fixture
     (let* ((ui::*project-run-limit* 1)

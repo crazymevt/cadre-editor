@@ -189,6 +189,10 @@
                                (values "done" nil)))
              (c::codex-send-json (lambda (server object)
                                    (declare (ignore server)) (push object replies))))
+          (flet ((turn-started (id)
+                   (c::codex-handle-notification
+                    server (c:jobj "method" "turn/started" "params" (c:jobj "turn" (c:jobj "id" id))))))
+          (turn-started "old")
           (let ((request (c:jobj "id" 1 "params" (c:jobj "turnId" "old" "tool" "test"))))
             (c::codex-dynamic-tool-call server request)
             (true stopped-once)
@@ -200,10 +204,11 @@
             (c::codex-dynamic-tool-call server request)
             (false executed)
             (true (c:jget (first replies) "error"))
+            (turn-started "new")
             (c::codex-dynamic-tool-call
              server (c:jobj "id" 2 "params" (c:jobj "turnId" "new" "tool" "test")))
             (true executed)
-            (false (c:jget (first replies) "error"))))))))
+            (false (c:jget (first replies) "error")))))))))
 
 (define-test session-approvals-are-per-provider :parent assistants
   (let ((ui::*session-allowed* (make-hash-table :test 'equal))

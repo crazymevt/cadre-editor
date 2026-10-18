@@ -154,8 +154,12 @@
          server (c:jobj "method" "turn/completed"
                         "params" (c:jobj "turn" (c:jobj "id" turn "status" "completed"))))))
     (is = 3 (hash-table-count (c::codex-tool-turns server)))
-    ;; A late tool call for a recent finished turn still gets its dead token.
-    (false (car (c::codex-tool-request-token server (c:jobj "params" (c:jobj "turnId" "turn-9")))))))
+    ;; Late tool calls for finished turns, kept or forgotten, and for turns
+    ;; never started, are refused, while the next turn is live.
+    (c::codex-prepare-tools server)
+    (true (car (c::codex-tool-token server)))
+    (dolist (turn '("turn-9" "turn-0" "never-started"))
+      (false (car (c::codex-tool-request-token server (c:jobj "params" (c:jobj "turnId" turn))))))))
 
 (define-test codex-request-timeout :parent cadre-tests
   (let ((now #x10000000))

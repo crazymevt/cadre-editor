@@ -155,26 +155,36 @@ with LOCATIONS, list the file:line places in it."
     (when at-end (scroll-run-output-to-end page))
     (when locations (refresh-run-locations page run query))))
 
+(defun run-output-locations (run query &key (limit 20))
+  "Up to LIMIT distinct file:line places that RUN printed on lines matching
+QUERY, in files that exist, as (line location) each. Each file is checked on
+disk once, however many places name it."
+  (let ((seen '()) (exists (make-hash-table :test 'equal)) (found '()))
+    (dolist (line (split-lines (pr-output run)) (nreverse found))
+      (when (>= (length found) limit) (return (nreverse found)))
+      (when (search query line :test #'char-equal)
+        (let ((location (ignore-errors (project-run-location line (pr-root run)))))
+          (when (and location (not (member location seen :test #'equal)))
+            (push location seen)
+            (let ((file (namestring (first location))))
+              (when (multiple-value-bind (known present) (gethash file exists)
+                      (if present known
+                          (setf (gethash file exists) (and (ignore-errors (probe-file file)) t))))
+                (push (list line location) found)))))))))
+
 (defun refresh-run-locations (page run query)
-  "List up to 20 file:line places that RUN printed and that exist, each
-checked on disk once."
+  "List the file:line places RUN printed (run-output-locations)."
   (gtk:list-box-remove-all (rnp-locations page))
   (when run
-    (let ((seen '()) (count 0))
-      (dolist (line (split-lines (pr-output run)))
-        (when (and (< count 20) (search query line :test #'char-equal))
-          (let ((location (ignore-errors (project-run-location line (pr-root run)))))
-            (when (and location (not (member (first location) seen :test #'equal)))
-              (push (first location) seen)
-              (when (ignore-errors (probe-file (first location)))
-                (incf count)
-                (let ((button (make-instance 'gtk:button
-                                             :child (label line :xalign 0.0 :ellipsize :end)
-                                             :hexpand t :css-classes '("flat")
-                                             :tooltip-text "Open this file location")))
-                  (gobject:connect button :clicked
-                                   (lambda (b) (declare (ignore b)) (show-project-run-location location)))
-                  (gtk:list-box-append (rnp-locations page) button))))))))))
+    (loop for (line location) in (run-output-locations run query)
+          do (let ((button (make-instance 'gtk:button
+                                          :child (label line :xalign 0.0 :ellipsize :end)
+                                          :hexpand t :css-classes '("flat")
+                                          :tooltip-text "Open this file location"))
+                   (location location))
+               (gobject:connect button :clicked
+                                (lambda (b) (declare (ignore b)) (show-project-run-location location)))
+               (gtk:list-box-append (rnp-locations page) button)))))
 
 (defun select-project-run (run)
   (let ((page *runs-page*))

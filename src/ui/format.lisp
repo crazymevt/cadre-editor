@@ -53,6 +53,20 @@ uses its program even if Cadre has a formatter of its own (JSON, CSS)."
 (defparameter *formatter-timeout* 20
   "Seconds an external formatter may take before it is stopped.")
 
+(defparameter *formatter-stop-grace* 1
+  "Seconds a timed-out formatter has to end after SIGTERM before SIGKILL.")
+
+(defun stop-formatter-process (process)
+  "End PROCESS: SIGTERM, then, if it is still running after
+*FORMATTER-STOP-GRACE* seconds (it may ignore SIGTERM), SIGKILL."
+  (sb-ext:process-kill process 15)
+  (let ((deadline (+ (get-internal-real-time) (* *formatter-stop-grace* internal-time-units-per-second))))
+    (loop while (and (sb-ext:process-alive-p process) (< (get-internal-real-time) deadline))
+          do (sleep 0.02)))
+  (when (sb-ext:process-alive-p process)
+    (sb-ext:process-kill process 9))
+  (sb-ext:process-wait process))
+
 (defun run-formatter-process (buffer text command then &key (deliver #'glib:call-in-main-thread)
                                                             (timeout *formatter-timeout*))
   "Run COMMAND, an external formatter (*formatter-commands*), on TEXT, from
@@ -81,16 +95,18 @@ stopped."
                              (deadline (+ (get-internal-real-time)
                                           (* timeout internal-time-units-per-second))))
                          (unwind-protect
-                              (progn
+                              (let ((timed-out nil))
                                 (loop while (sb-ext:process-alive-p process)
                                       do (when (> (get-internal-real-time) deadline)
-                                           (sb-ext:process-kill process 15)
-                                           (sb-ext:process-wait process)
+                                           (setf timed-out t)
+                                           (stop-formatter-process process)
                                            (return))
                                          (sleep 0.02))
-                                (let ((code (sb-ext:process-exit-code process))
-                                      (status (sb-ext:process-status process)))
-                                  (cond ((eq status :signaled)
+                                (sb-ext:process-wait process)
+                                (let ((code (sb-ext:process-exit-code process)))
+                                  ;; However it ended once stopped (a formatter may catch
+                                  ;; SIGTERM and exit 0), its output is incomplete.
+                                  (cond (timed-out
                                          (list nil (format nil "~a took longer than ~d s and was stopped" program timeout)))
                                         ((eql code 0)
                                          (list (uiop:read-file-string output :external-format :utf-8) nil))

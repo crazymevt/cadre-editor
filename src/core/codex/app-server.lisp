@@ -105,13 +105,16 @@ server) or :codex. Approvals given for a session cover only that assistant.")
   (setf (codex-tool-token server) (list t)))
 
 (defun codex-tool-request-token (server request)
+  "The tool token of REQUEST's turn. A turn gets the live token when it starts
+(turn/started, which comes before any of its tool calls); a turn not known
+here, never started or finished long ago, gets a dead one, so a late call
+can't borrow the current turn's."
   (or (gethash (jget request "params" "turnId") (codex-tool-turns server))
-      (setf (gethash (jget request "params" "turnId") (codex-tool-turns server))
-            (codex-tool-token server))))
+      (list nil)))
 
 (defparameter *codex-finished-turns-kept* 64
-  "Finished turns whose dead tool tokens are kept, so a late tool call for
-one of them is refused rather than given the current turn's token.")
+  "Finished turns whose tool tokens are kept. Older ones are forgotten:
+calls for a turn not known are refused anyway (codex-tool-request-token).")
 
 (defun codex-forget-finished-turns (server turn-id)
   "Note that TURN-ID finished; forget the oldest finished turns past
