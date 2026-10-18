@@ -692,6 +692,7 @@ Claude meant as its reply: not showing it lost that."
   (unless (event-subagent event)
     (case (event-kind event)
       (:init (setf (chat-session-id *chat*) (event-session-id event))
+       (conversation-backend-started :claude)
        (let ((cadre (cdr (assoc "cadre" (event-data event) :test #'equal))))
          (unless (equal cadre "connected")
            (chat-note (format nil "Cadre's tools are not available to Claude (MCP status: ~a)." (or cadre "missing"))))))

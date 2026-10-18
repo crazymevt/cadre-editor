@@ -411,3 +411,25 @@
       (is = 1 (ui::clear-project-runs))
       (is equal '("A running") (mapcar #'ui::pr-title ui::*project-runs*))
       (false (ui::read-project-runs)))))
+
+(define-test malformed-run-records-do-not-hide-valid-neighbors :parent runs
+  (with-saved-runs-fixture
+    (let ((valid '(:title "Valid" :root "/tmp/a/" :plan (:program "true") :started 3900000000
+                   :seconds 1 :exit-code 0 :status :passed :output "ok")))
+      (dolist (bad '((:title "Broken" :root) (:title . "Dotted")
+                     (:title "Bad plan" :root "/tmp/" :plan (:program) :started 1 :seconds 0 :status :passed :output "")))
+        (with-open-file (out (ui::project-runs-file) :direction :output :if-exists :supersede)
+          (prin1 (list :version 1 :runs (list bad valid)) out))
+        (is equal '("Valid") (mapcar #'ui::pr-title (ui::read-project-runs)))))))
+
+(define-test malformed-run-envelopes-are-safe-on-startup :parent runs
+  (with-saved-runs-fixture
+    (dolist (text '("(:version 1 :runs)" "(:version 1 . broken)" "#1=(:version 1 . #1#)"
+                    "(:version 1 :runs #1=(nil . #1#))"))
+      (with-open-file (out (ui::project-runs-file) :direction :output :if-exists :supersede)
+        (write-string text out))
+      (let ((ui::*project-runs-loaded* nil))
+        (ui::load-project-runs)
+        (true ui::*project-runs-loaded*)
+        (false ui::*project-runs*)))
+    (false (ui::plain-data-p (let ((cycle (list :program))) (setf (cdr cycle) cycle) cycle)))))

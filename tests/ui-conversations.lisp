@@ -101,14 +101,82 @@
       (dotimes (n 3)
         (ui::record-chat-entry :user :text (format nil "conversation ~d" n))
         (let ((conversation (ui::current-conversation)))
-          (ui::save-conversation-now conversation)
-          ;; Distinct times, oldest first.
-          (let ((time (+ 1000000000 n)))
-            (sb-posix:utimes (namestring (ui::conversation-file (ui::cv-id conversation))) time time)))
+          ;; Activity order is independent of filesystem time and flushes.
+          (setf (ui::cv-started conversation) (+ 1000000000 n)
+                (ui::cv-updated conversation) (+ 1000000000 n))
+          (ui::save-conversation-now conversation))
         (ui::end-current-conversation :claude))
       (ui::prune-conversations)
       (is equal '("conversation 1" "conversation 2")
           (sort (mapcar (lambda (r) (getf r :title)) (ui::saved-conversations)) #'string<)))))
+
+(define-test idle-flush-does-not-displace-recent-history :parent conversations
+  (with-conversations-fixture ()
+    (let ((ui::*assistant-conversations-kept* 2))
+      (dolist (spec '(("old-idle" 100 400) ("recent" 200 200) ("current" 300 300)))
+        (destructuring-bind (id updated mtime) spec
+          (let* ((conversation (ui::make-conversation :id id :provider :claude :title id
+                                                       :started updated :updated updated))
+                 (file (ui::conversation-file id)))
+            (ui::write-snapshot file (ui::conversation-record conversation))
+            (sb-posix:utimes (namestring file) mtime mtime))))
+      (ui::prune-conversations)
+      (is equal '("current" "recent")
+          (mapcar (lambda (r) (getf r :title)) (ui::saved-conversations))))))
+
+(define-test backend-start-persists-before-any-reply :parent conversations
+  (with-conversations-fixture (:provider :codex)
+    (let ((server (c::make-codex-app-server)))
+      (setf (ui::chat-codex-process ui::*chat*) server
+            (ui::chat-codex-thread-id ui::*chat*) nil
+            (ui::chat-codex-directory ui::*chat*) nil)
+      (ui::record-chat-entry :user :text "hello")
+      (ui::save-current-conversations)
+      (false (ui::cv-save-timer (ui::current-conversation)))
+      (setf (ui::chat-codex-directory ui::*chat*) #P"/tmp/backend-project/")
+      (ui::handle-codex-chat-event server (c::make-codex-event :kind :thread-started :thread-id "new-thread"))
+      (true (ui::cv-save-timer (ui::current-conversation)))
+      (is equal "new-thread" (ui::cv-thread-id (ui::current-conversation)))
+      (ui::save-current-conversations)
+      (let ((record (only-saved-conversation)))
+        (is equal "new-thread" (getf record :thread-id))
+        (is equal "/tmp/backend-project/" (getf record :directory))
+        (is = 1 (length (getf record :entries)))))))
+
+(define-test claude-init-persists-its-session :parent conversations
+  (with-conversations-fixture ()
+    (ui::record-chat-entry :user :text "hello")
+    (ui::save-current-conversations)
+    (ui::handle-claude-event (c::make-claude-event :kind :init :session-id "backend-session"
+                                                  :data '(("cadre" . "connected"))))
+    (true (ui::cv-save-timer (ui::current-conversation)))
+    (ui::save-current-conversations)
+    (is equal "backend-session" (getf (only-saved-conversation) :session-id))))
+
+(define-test final-flush-refreshes-only-the-current-conversation :parent conversations
+  (with-conversations-fixture (:provider :codex)
+    (setf (ui::chat-codex-thread-id ui::*chat*) nil)
+    (ui::record-chat-entry :user :text "before thread start")
+    (let ((ended (ui::current-conversation)))
+      (setf (ui::chat-codex-thread-id ui::*chat*) "first-thread")
+      (ui::save-current-conversations)
+      (is equal "first-thread" (getf (only-saved-conversation) :thread-id))
+      (ui::end-current-conversation :codex)
+      (setf (ui::chat-codex-thread-id ui::*chat*) "second-thread")
+      (ui::record-chat-entry :user :text "new conversation")
+      (ui::save-conversation-now ended)
+      (is equal "first-thread" (getf (ui::read-conversation (ui::conversation-file (ui::cv-id ended))) :thread-id)))))
+
+(define-test malformed-conversation-records-do-not-hide-valid-history :parent conversations
+  (with-conversations-fixture ()
+    (ui::record-chat-entry :user :text "valid")
+    (ui::save-current-conversations)
+    (dolist (text '("(:version 1 :id)" "(:version 1 . broken)" "#1=(:version 1 . #1#)"
+                    "(:version 1 :id \"broken\" :provider :claude :started 1 :updated 1 :entries ((:user :text)))"))
+      (with-open-file (out (ui::conversation-file "broken") :direction :output :if-exists :supersede)
+        (write-string text out))
+      (false (ui::read-conversation (ui::conversation-file "broken")))
+      (is equal '("valid") (mapcar (lambda (r) (getf r :title)) (ui::saved-conversations))))))
 
 (define-test diff-excerpts :parent conversations
   (let ((diff (c::diff-lines (loop for i below 20 collect (format nil "line ~d" i))
@@ -116,3 +184,25 @@
     (is equal (format nil "  line 1~%  line 2~%- line 3~%+ LINE 3~%  line 4~%  line 5~%⋯~%  line 13~%  line 14~%- line 15~%+ LINE 15~%  line 16~%  line 17~%")
         (ui::diff-excerpt diff))
     (is = 3 (count #\Newline (ui::diff-excerpt diff :limit 2)))))
+
+(define-test pruning-reads-records-only-when-over-the-limit :parent conversations
+  (with-conversations-fixture ()
+    (let ((ui::*assistant-conversations-kept* 3)
+          (reads 0))
+      (dotimes (n 3)
+        (ui::write-snapshot (ui::conversation-file (format nil "c~d" n))
+                            (ui::conversation-record (ui::make-conversation :id (format nil "c~d" n) :provider :claude
+                                                                            :title (format nil "c~d" n)
+                                                                            :started n :updated n))))
+      (let ((original (symbol-function 'ui::read-conversation)))
+        (with-assistant-functions ((ui::read-conversation (lambda (file) (incf reads) (funcall original file))))
+          ;; At the limit: nothing is read.
+          (ui::prune-conversations)
+          (is = 0 reads)
+          ;; Over it: the oldest by activity goes.
+          (ui::write-snapshot (ui::conversation-file "c3")
+                              (ui::conversation-record (ui::make-conversation :id "c3" :provider :claude :title "c3"
+                                                                              :started 3 :updated 3)))
+          (ui::prune-conversations)
+          (is = 4 reads)))
+      (is equal '("c3" "c2" "c1") (mapcar (lambda (r) (getf r :title)) (ui::saved-conversations))))))

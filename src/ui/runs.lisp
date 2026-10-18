@@ -101,11 +101,17 @@
 (defun project-runs-file () (merge-pathnames "runs.sexp" (state-directory)))
 
 (defun plain-data-p (value)
-  "Whether VALUE is strings, numbers, keywords and lists of them, which read back as written."
-  (typecase value
-    ((or string real keyword null) t)
-    (cons (and (plain-data-p (car value)) (plain-data-p (cdr value))))
-    (t nil)))
+  "Whether VALUE is acyclic strings, numbers, keywords and lists of them."
+  (let ((visiting (make-hash-table :test 'eq)))
+    (labels ((plain (item)
+               (typecase item
+                 ((or string real keyword null) t)
+                 (cons (unless (gethash item visiting)
+                         (setf (gethash item visiting) t)
+                         (unwind-protect (and (plain (car item)) (plain (cdr item)))
+                           (remhash item visiting))))
+                 (t nil))))
+      (plain value))))
 
 (defun project-run-record (run)
   "RUN, finished, as plain data for runs.sexp."
@@ -122,9 +128,9 @@
           :output-cut cut :truncated (and (pr-truncated run) t))))
 
 (defun valid-run-record-p (record)
-  (and (listp record)
+  (and (data-plist-p record)
        (stringp (getf record :title)) (stringp (getf record :root))
-       (listp (getf record :plan)) (plain-data-p (getf record :plan))
+       (data-plist-p (getf record :plan)) (plain-data-p (getf record :plan))
        (integerp (getf record :started))
        (realp (getf record :seconds)) (not (minusp (getf record :seconds)))
        (typep (getf record :exit-code) '(or null integer))
@@ -160,15 +166,17 @@ read (load-project-runs), so they aren't written over."
     (error (e) (message "Could not save the Runs history: ~a" e)))))
 
 (defun read-project-runs (&optional (file (project-runs-file)))
-  "The runs saved in FILE, newest first; nil if there are none or it can't be read."
-  (let ((data (ignore-errors
-               (with-open-file (in file :external-format :utf-8 :if-does-not-exist nil)
-                 (when in
-                   (with-standard-io-syntax
-                     (let ((*read-eval* nil) (*package* (find-package :keyword)))
-                       (read in nil nil))))))))
-    (when (and (listp data) (eql 1 (getf data :version)) (listp (getf data :runs)))
-      (mapcar #'restore-project-run (remove-if-not #'valid-run-record-p (getf data :runs))))))
+  "Read saved runs, skipping malformed records without losing valid neighbors."
+  (ignore-errors
+    (with-open-file (in file :external-format :utf-8 :if-does-not-exist nil)
+      (when in
+        (with-standard-io-syntax
+          (let* ((*read-eval* nil) (*package* (find-package :keyword)) (data (read in nil nil)))
+            (when (and (data-plist-p data) (eql 1 (getf data :version))
+                       (proper-data-list-p (getf data :runs)))
+              (loop for record in (getf data :runs)
+                    for run = (ignore-errors (when (valid-run-record-p record) (restore-project-run record)))
+                    when run collect run))))))))
 
 (defun load-project-runs ()
   "Add the runs of earlier sessions after this session's, once."

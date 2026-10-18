@@ -10,7 +10,10 @@
   transcript, and the next message continues it on the same Claude Code
   session or Codex thread. Nothing runs again, and approvals given for the
   conversation aren't restored. `*assistant-conversations-kept*` (default
-  100) limits how many are kept.
+  100) limits how many are kept, removing those with the oldest activity
+  first. A conversation is saved as soon as Claude Code or Codex starts its
+  session, so it can be resumed even if no reply came; damaged records are
+  skipped.
 
 - **Runs history across restarts, by project.** Finished runs are kept for
   the next session, each with the last 64 KB of its output. Build and
@@ -18,7 +21,8 @@
   Runs page shows one project's runs; with All projects, each run names its
   project, and runs from earlier days show their date. The Clear button
   (or Project › Clear Finished Runs…) forgets the finished runs shown, for
-  one project or all, after asking; runs still going are kept.
+  one project or all, after asking; runs still going are kept. A damaged
+  record in the saved history is skipped without losing the others.
 
 - **Format on save no longer blocks the editor.** External formatters such
   as Prettier now run in the background, for saving and for Format Document

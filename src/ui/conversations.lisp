@@ -147,6 +147,11 @@ it runs in and its folder, as the chat has them now."
           (setf (cv-session-id conversation) id)))
     (when directory (setf (cv-directory conversation) directory))))
 
+(defun conversation-backend-started (provider)
+  "Persist a newly known backend ID even before the assistant replies."
+  (let ((conversation (current-conversation provider)))
+    (when conversation (conversation-changed conversation))))
+
 (defun conversation-record (conversation)
   "CONVERSATION as plain data for its file."
   (list :version 1 :id (cv-id conversation) :provider (cv-provider conversation)
@@ -176,6 +181,9 @@ of changes)."
       (setf (cv-save-timer conversation) nil)))
   (handler-case
       (progn
+        ;; Only the current record may inherit the provider's live metadata.
+        (when (and *chat* (eq conversation (current-conversation (cv-provider conversation))))
+          (note-conversation-ids conversation))
         (write-snapshot (conversation-file (cv-id conversation)) (conversation-record conversation))
         (prune-conversations))
     (error (e) (message "Could not save the assistant conversation: ~a" e))))
@@ -190,38 +198,62 @@ of changes)."
   (when (uiop:directory-exists-p (conversations-directory))
     (uiop:directory-files (conversations-directory) "*.sexp")))
 
+(defun conversation-record-newer-p (left right)
+  "Order activity timestamps, with stable tie-breakers for the same second."
+  (let ((updated-left (getf left :updated)) (updated-right (getf right :updated))
+        (started-left (getf left :started)) (started-right (getf right :started)))
+    (cond ((/= updated-left updated-right) (> updated-left updated-right))
+          ((/= started-left started-right) (> started-left started-right))
+          (t (string< (getf left :id) (getf right :id))))))
+
 (defun prune-conversations ()
-  "Delete the oldest conversation files beyond *ASSISTANT-CONVERSATIONS-KEPT*."
-  (let ((files (sort (conversation-files) #'> :key (lambda (f) (or (ignore-errors (file-write-date f)) 0)))))
-    (dolist (file (nthcdr (max 1 *assistant-conversations-kept*) files))
-      (ignore-errors (delete-file file)))))
+  "Delete the oldest records by activity, independent of when files were
+flushed. Records are read only when there are more files than are kept, so
+an ordinary save doesn't parse the whole history."
+  (let ((files (conversation-files))
+        (kept (max 1 *assistant-conversations-kept*)))
+    (when (> (length files) kept)
+      (let ((records (sort (loop for file in files
+                                 for record = (read-conversation file)
+                                 when record collect (cons file record))
+                           #'conversation-record-newer-p :key #'cdr)))
+        (dolist (entry (nthcdr kept records))
+          (ignore-errors (delete-file (car entry))))))))
 
 ;;; Reading
 
+(defun proper-data-list-p (value)
+  "Reject dotted and circular lists before traversing saved data."
+  (and (listp value) (ignore-errors (not (null (list-length value))))))
+
+(defun data-plist-p (value)
+  (and (proper-data-list-p value) (evenp (length value))
+       (loop for tail on value by #'cddr always (keywordp (car tail)))))
+
 (defun valid-conversation-entry-p (entry)
-  (and (consp entry) (keywordp (first entry)) (listp (rest entry))
-       (evenp (length (rest entry)))))
+  (and (consp entry) (keywordp (first entry)) (data-plist-p (rest entry))))
 
 (defun read-conversation (file)
-  "The conversation record in FILE, or nil if it isn't one."
-  (let ((data (ignore-errors
-               (with-open-file (in file :external-format :utf-8)
-                 (with-standard-io-syntax
-                   (let ((*read-eval* nil) (*package* (find-package :keyword)))
-                     (read in nil nil)))))))
-    (when (and (listp data) (eql 1 (getf data :version))
-               (stringp (getf data :id)) (member (getf data :provider) '(:claude :codex))
-               (integerp (getf data :started)) (integerp (getf data :updated))
-               (typep (getf data :title) '(or null string))
-               (typep (getf data :directory) '(or null string))
-               (typep (getf data :session-id) '(or null string))
-               (typep (getf data :thread-id) '(or null string))
-               (listp (getf data :entries)) (every #'valid-conversation-entry-p (getf data :entries)))
-      data)))
+  "The validated conversation in FILE, or nil for unreadable or malformed data."
+  (ignore-errors
+    (with-open-file (in file :external-format :utf-8)
+      (with-standard-io-syntax
+        (let* ((*read-eval* nil) (*package* (find-package :keyword)) (data (read in nil nil)))
+          (when (and (data-plist-p data) (eql 1 (getf data :version))
+                     (stringp (getf data :id)) (member (getf data :provider) '(:claude :codex))
+                     (integerp (getf data :started)) (integerp (getf data :updated))
+                     (typep (getf data :title) '(or null string))
+                     (typep (getf data :directory) '(or null string))
+                     (typep (getf data :session-id) '(or null string))
+                     (typep (getf data :thread-id) '(or null string))
+                     (proper-data-list-p (getf data :entries))
+                     (every #'valid-conversation-entry-p (getf data :entries)))
+            (when (getf data :directory) (uiop:ensure-directory-pathname (getf data :directory)))
+            data))))))
 
 (defun saved-conversations ()
-  "The saved conversation records, the most recently used first."
-  (sort (remove nil (mapcar #'read-conversation (conversation-files))) #'> :key (lambda (r) (getf r :updated))))
+  "Validated records, most recent activity first."
+  (sort (remove nil (mapcar #'read-conversation (conversation-files))) #'conversation-record-newer-p))
 
 ;;; Showing a restored conversation
 
