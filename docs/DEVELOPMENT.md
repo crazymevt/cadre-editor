@@ -52,3 +52,9 @@ SBCL's statistical profile.
 | `scripts/` | `run.lisp`, `test.lisp`, `smoke.lisp`, `gallery.lisp` (with `drive.lisp`, which both use), `perf.lisp`; the app: `build-app.lisp`, `make-app.sh`, the `cadre` launcher |
 | `packaging/` | The app icon (`Cadre.svg`), the macOS launcher, entitlements and disk image, the Linux package, notices, pinned versions (see [docs/RELEASING.md](RELEASING.md)) |
 | `icons/` | Cadre's own symbolic icons |
+
+`make test-ui` isolates both configuration and state in a temporary directory:
+creating buffers can update recent-file preferences even without a window.
+`make test-recovery` uses two isolated Lisp processes to verify that checkpoints
+survive a forced termination. It requires Python 3 and SBCL with the normal
+project dependencies installed.

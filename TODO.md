@@ -13,10 +13,10 @@ implemented work; a feature stays open until its remaining scope is covered.
 
 ## 2. Local history and crash recovery
 
-- [ ] Recover unsaved file and scratch buffers after an unexpected exit.
-- [ ] Keep bounded saved revisions outside Git, with compare and restore.
-- [ ] Handle external changes and newer disk contents without overwriting them.
-- [ ] Provide retention settings and a way to clear stored history.
+- [x] Recover unsaved file and scratch buffers after an unexpected exit.
+- [x] Keep bounded saved revisions outside Git, with compare and restore.
+- [x] Handle external changes and newer disk contents without overwriting them.
+- [x] Provide retention settings and a way to clear stored history.
 
 ## 3. Persistent assistant conversations
 

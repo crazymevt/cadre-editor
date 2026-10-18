@@ -92,7 +92,8 @@ command. Menus and buttons use it."
     ;; In the background, so the Claude tab is ready when opened.
     (check-claude-status)
     (check-codex-status)
-    (message "Welcome to Cadre")))
+    (message "Welcome to Cadre")
+    (offer-buffer-recovery)))
 
 (defun main (&key project files quit-after (init-file t))
   "Run Cadre. PROJECT is a folder to open (default: the last one); FILES

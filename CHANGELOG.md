@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **macOS troubleshooting.** Document the window-dragging session issue and
+  the confirmed sign-out/sign-in recovery in the README.
+
+- **Test preference isolation.** UI and crash-recovery tests now isolate both
+  configuration and state so temporary buffers cannot overwrite the user's
+  preferences.
+
+- **Local history and unsaved-buffer recovery.** Keep bounded saved revisions
+  outside the project, compare them with the current buffer and restore as an
+  undoable unsaved edit. Checkpoint unsaved files and untitled buffers, offer
+  recovery from exited processes as separate copies, and preserve newer disk
+  contents. Scratch autosaves now replace their file atomically.
+
 - **Runs page.** Builds, tests in a new Lisp and other project processes now
   have separate session history with status, exit code, duration and retained
   output. Filter output, open file:line diagnostics, rerun in the original

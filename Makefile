@@ -2,7 +2,7 @@ SBCL ?= sbcl
 LISP = $(SBCL) --dynamic-space-size 4096 --non-interactive
 DIR ?= .
 
-.PHONY: run test test-ui smoke smoke-list gallery perf core app install-app release-macos release-linux
+.PHONY: run test test-ui test-recovery smoke smoke-list gallery perf core app install-app release-macos release-linux
 
 # Start Cadre on a folder: make run DIR=~/projects/foo
 run:
@@ -15,6 +15,10 @@ test:
 # Save and close regression tests (loads GTK bindings without opening a window)
 test-ui:
 	$(LISP) --load scripts/test-ui.lisp
+
+# Verify checkpoints survive an actual terminated process, with isolated settings.
+test-recovery:
+	python3 scripts/test-recovery-crash.py
 
 # Open a window, drive it through every feature, and quit. While fixing
 # something, run one section and what it needs: make smoke ONLY=run-app

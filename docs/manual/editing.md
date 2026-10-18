@@ -228,3 +228,37 @@ with `let` around the form containing it.
 Typing `(`, `[`, `{`, `"`, `'` or `` ` `` with text selected wraps the
 selection in that pair and keeps it selected (turn off with
 `*wrap-selection*`).
+
+## Local history and recovery
+
+**View › Local History…** (or `M-x local-history`) lists saved revisions of
+the current file. Saving keeps the previous disk text and the newly saved
+text, skipping duplicate revisions. Select a revision to compare it beside
+the current buffer. **Restore to Buffer** replaces the buffer as one undo
+step and leaves the file on disk alone; review it and Save when ready.
+**Open Copy** opens an unsaved copy instead.
+
+Unsaved file and untitled buffers are checkpointed about a second after
+editing starts, including during continuous typing. After an unexpected
+exit, Cadre offers **Review Buffers** at startup. You can also choose
+**View › Recover Unsaved Buffers…** or `M-x recover-buffers`. The preview
+shows the checkpoint beside the current disk file. **Open Copy** creates an
+unsaved buffer without a file: use Save As to choose where to write it.
+Recovery never overwrites the source file. **Discard Checkpoint** removes
+the selected checkpoint. Checkpoints owned by another live Cadre process
+are excluded. Saving or explicitly discarding a buffer clears its checkpoint;
+cancelling a close keeps it. Unreviewed checkpoints from earlier processes
+remain available until recovered or discarded.
+
+The **Session** settings include **Local History**, **Local History
+Revisions** (20 per file), **Local History Total** (200 across all files),
+**Recover Unsaved Buffers**, and **Snapshot Max Characters** (1,048,576).
+Larger buffers are skipped, with a message for recovery; edits made before
+the first checkpoint can still be lost. `M-x clear-local-history` clears saved
+revisions after confirmation and keeps unsaved recovery checkpoints.
+
+Both stores live under `~/.local/state/cadre/` (`$XDG_STATE_HOME/cadre/` when
+set), in `local-history/` and `recovery/`, with private files and atomic
+replacement. They contain copies of your text, outside Git. Scratch buffers
+continue their existing automatic saving; those writes are now atomic too.
+A failed scratch autosave keeps its recovery checkpoint when closing.

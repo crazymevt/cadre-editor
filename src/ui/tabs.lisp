@@ -495,7 +495,7 @@ repeated requests share the pending decision."
   (when (window-close-pending-p win)
     (return-from request-close t))
   (setf (window-close-pending-p win) t)
-  (let ((waiting nil))
+  (let ((waiting nil) (accepted nil))
     (unwind-protect
          (progn
            (save-session win)
@@ -510,7 +510,12 @@ repeated requests share the pending decision."
                   (unwind-protect
                        (when proceed
                          (dolist (b modified) (setf (buffer-modified-p b) nil))
+                         (discard-session-checkpoints)
                          (gtk:window-destroy (window-gtk-window win)))
                     (setf (window-close-pending-p win) nil))))
-               (setf waiting t))))
-      (unless waiting (setf (window-close-pending-p win) nil)))))
+               (setf waiting t)))
+           (unless waiting (setf accepted t))
+           waiting)
+      (unless waiting
+        (when accepted (discard-session-checkpoints))
+        (setf (window-close-pending-p win) nil)))))

@@ -91,6 +91,15 @@ To run Cadre from source instead, see
 GTK 4 and libadwaita, and two libraries checked out beside Cadre, then
 `make run`.
 
+## Troubleshooting
+
+**macOS window will not drag:** On macOS 27.2 build `26B5112a`, we encountered
+a WindowServer session issue where dragging Cadre's title bar stopped moving
+the window. Save your work, sign out of macOS, then sign back in and reopen
+Cadre. This restored normal dragging in our test; restarting Cadre alone did
+not resolve it. Signing out closes applications. See the
+[investigation notes](docs/MACOS-WINDOW-DRAG.md) for diagnostic details.
+
 ## Development
 
 `make test` runs the headless tests and `make smoke` drives a real window

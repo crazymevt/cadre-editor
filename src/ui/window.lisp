@@ -202,6 +202,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
                 ("Toggle Layout" toggle-layout) ("Automatic Layout" use-automatic-layout))
       (:section ("Zoom In" zoom-in) ("Zoom Out" zoom-out) ("Word Wrap" toggle-word-wrap))
       (:section ("Fold All" fold-all) ("Unfold All" unfold-all))
+      (:section ("Local History…" local-history) ("Recover Unsaved Buffers…" recover-buffers))
       (:section ("Project" show-systems) ("Terminal" show-terminal) ("New Terminal" new-terminal))))
    '(:section
      (:submenu "Project"

@@ -2732,6 +2732,89 @@ d" 0 0)
               (null (cadre-ui::hist-commits cadre-ui::*history*))))
   (screenshot "39-new-project-open"))
 
+;;; Private saved revisions and recovery checkpoints.
+(section "local-history")
+(defvar *history-smoke-buffer* nil)
+(defvar *history-smoke-recovered* nil)
+(defvar *history-smoke-entry* nil)
+
+(defun snapshot-button (text)
+  (find text (find-widgets (adw:dialog-get-child cadre-ui::*snapshot-dialog*)
+                          (lambda (w) (typep w 'gtk:button))) :key #'gtk:button-get-label :test #'equal))
+
+(then 50
+  (with-open-file (out (merge-pathnames "history-smoke.lisp" *root*) :direction :output :if-exists :supersede)
+    (write-string "old saved text" out))
+  (open-file-path (merge-pathnames "history-smoke.lisp" *root*)))
+
+(then-when ((find-file-buffer (merge-pathnames "history-smoke.lisp" *root*)))
+  (setf *history-smoke-buffer* (find-file-buffer (merge-pathnames "history-smoke.lisp" *root*)))
+  (text-replace-contents (buffer-text *history-smoke-buffer*) "new saved text")
+  (setf (buffer-modified-p *history-smoke-buffer*) t)
+  (call-command 'save-buffer))
+
+(then-when ((not (buffer-modified-p *history-smoke-buffer*)))
+  (check "saving retains both the previous and new local revisions"
+         (equal '("new saved text" "old saved text")
+                (mapcar (lambda (entry) (getf (cdr entry) :text))
+                        (cadre-ui::saved-revisions (buffer-file *history-smoke-buffer*)))))
+  (call-command 'cadre-ui::local-history)
+  (let* ((picker (cadre-ui::window-picker *window*)) (entry (second (cadre-ui::picker-items picker))))
+    (check "Local History offers the retained revisions" entry)
+    (cadre-ui::close-picker picker)
+    (funcall (cadre-ui::picker-on-choose picker) entry)))
+
+(then 300
+  (check "history comparison shows the buffer and saved revision"
+         (and cadre-ui::*snapshot-dialog* (snapshot-button "Restore to Buffer")))
+  (gobject:emit (snapshot-button "Restore to Buffer") :clicked)
+  (check "Restore changes only the buffer, leaving newer disk contents intact"
+         (and (equal "old saved text" (buffer-string *history-smoke-buffer*))
+              (buffer-modified-p *history-smoke-buffer*)
+              (equal "new saved text" (uiop:read-file-string (buffer-file *history-smoke-buffer*)))))
+  (gtk:text-buffer-undo (buffer-text *history-smoke-buffer*))
+  (check "history restore is one undo step" (equal "new saved text" (buffer-string *history-smoke-buffer*)))
+  (text-replace-contents (buffer-text *history-smoke-buffer*) "unsaved checkpoint text")
+  (setf (buffer-modified-p *history-smoke-buffer*) t))
+
+(then 1300
+  (let ((path (buffer-local *history-smoke-buffer* :checkpoint-path)))
+    (check "unsaved edits are checkpointed without saving the file"
+           (and path (equal "unsaved checkpoint text" (getf (cadre-ui::read-snapshot path) :text))
+                (equal "new saved text" (uiop:read-file-string (buffer-file *history-smoke-buffer*))))))
+  ;; Model a previous process's checkpoint, alongside the current live session.
+  (let* ((path (merge-pathnames "99999999-dead/draft.sexp" (cadre-ui::snapshot-directory :recovery)))
+         (data (list :version 1 :name "history-smoke.lisp" :file (namestring (buffer-file *history-smoke-buffer*))
+                     :time (cadre-ui::snapshot-time) :text "edits from exited process")))
+    (cadre-ui::write-snapshot path data)
+    (setf *history-smoke-entry* (cons path data)))
+  (call-command 'cadre-ui::recover-buffers)
+  (let ((picker (cadre-ui::window-picker *window*)))
+    (check "recovery lists exited processes and excludes this live session"
+           (and (= 1 (length (cadre-ui::picker-items picker)))
+                (equal (car *history-smoke-entry*) (caar (cadre-ui::picker-items picker)))))
+    (cadre-ui::close-picker picker)
+    (funcall (cadre-ui::picker-on-choose picker) *history-smoke-entry*)))
+
+(then 300
+  (check "recovery offers a copy rather than overwriting the source"
+         (not (gtk:widget-get-sensitive (snapshot-button "Restore to Buffer"))))
+  (gobject:emit (snapshot-button "Open Copy") :clicked))
+
+(then 400
+  (setf *history-smoke-recovered* (view-buffer (cadre-ui::selected-view *window*)))
+  (check "recovered text opens as an unsaved buffer without a file"
+         (and (null (buffer-file *history-smoke-recovered*)) (buffer-modified-p *history-smoke-recovered*)
+              (equal "edits from exited process" (buffer-string *history-smoke-recovered*))))
+  (check "the newer disk file survives recovery"
+         (equal "new saved text" (uiop:read-file-string (buffer-file *history-smoke-buffer*))))
+  (check "a recovered copy has its own checkpoint before the old one is removed"
+         (and (probe-file (buffer-local *history-smoke-recovered* :checkpoint-path))
+              (not (probe-file (car *history-smoke-entry*)))))
+  (dolist (buffer (list *history-smoke-recovered* *history-smoke-buffer*))
+    (setf (buffer-modified-p buffer) nil)
+    (dolist (view (cadre-ui::buffer-views *window* buffer)) (cadre-ui::close-view *window* view))))
+
 ;;; Recent process runs, retained output and controls.
 (section "runs")
 (defvar *smoke-first-run* nil)

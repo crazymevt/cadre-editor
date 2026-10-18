@@ -34,9 +34,8 @@
   "Write BUFFER, a scratch buffer, to its file if it changed."
   (when (and (buffer-modified-p buffer) (buffer-file buffer))
     (ensure-directories-exist (buffer-file buffer))
-    (with-open-file (out (buffer-file buffer) :direction :output :if-exists :supersede
-                                              :external-format :utf-8)
-      (write-string (buffer-string buffer) out))
+    (let ((text (buffer-string buffer)))
+      (write-private-state (buffer-file buffer) (lambda (out) (write-string text out))))
     (setf (buffer-modified-p buffer) nil)
     (remember-disk-text buffer)))
 
