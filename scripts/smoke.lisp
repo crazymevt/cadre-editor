@@ -1634,6 +1634,21 @@ d" 0 0)
            (list rn1 rn2)))
   (dolist (name '("rn1.lisp" "rn2.lisp")) (setf (buffer-modified-p (find-buffer name)) nil)))
 
+(then 100
+  (let ((contexts (make-hash-table :test 'equal))
+        (ps cadre-ui::*project-search*))
+    (setf (gethash :error contexts) "Injected validation failure")
+    (cadre-ui::show-project-results
+     ps (list (list (merge-pathnames "src/rn1.lisp" *root*) #("(widget)")
+                    '((0 1 7 :same nil)) contexts)) 1)
+    (let ((check (fourth (first (second (first (search-results)))))))
+      (check "a failed rename validation is unchecked and disabled"
+             (and (not (gtk:check-button-get-active check)) (not (gtk:widget-get-sensitive check)))))
+    (check "the preview explains validation failure and how to retry"
+           (find-if (lambda (text) (and (search "Injected validation failure" text)
+                                       (search "Refresh the preview" text)))
+                    (label-texts (cadre-ui::ps-results ps))))))
+
 (section "completion")
 (open-files "src/m1.lisp")
 (defun arglist-markup () (gtk:label-get-label (cadre-ui::window-status-arglist *window*)))

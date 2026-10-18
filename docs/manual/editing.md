@@ -242,6 +242,8 @@ context changes after preview, or its file disappears or becomes unreadable.
 Edits to unrelated definitions do not block unchanged matches. Moved matches
 need a new preview. The preview refreshes on the old name so you can review
 skipped places and rename again.
+If context validation fails, the affected rows show the error and a refresh
+instruction; their checkboxes stay disabled until a preview can validate them.
 **Extract function** moves the selection into a new `defun`
 above the current form and calls it there; the variables it uses from
 around it (the defun's parameters, `let`, `flet`, `dolist`, `loop` and other

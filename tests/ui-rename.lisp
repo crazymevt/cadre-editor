@@ -99,7 +99,83 @@
       (ui::open-project-search :text "widget" :mode :symbol :symbol "widget" :target-package "CURRENT")
       (is string= "CURRENT" (ui::ps-target-package ui::*project-search*))
       (ui::open-project-search :text "other" :mode :symbol :symbol "other")
-      (false (ui::ps-target-package ui::*project-search*)))))
+      (false (ui::ps-target-package ui::*project-search*))
+      (dolist (name '("other:widget" "other::widget"))
+        (ui::open-project-search :text name :mode :symbol :symbol name :target-package "CURRENT")
+        (is string= "widget" (ui::ps-symbol ui::*project-search*))
+        (is string= "OTHER" (ui::ps-target-package ui::*project-search*))))))
+
+(define-test rename-context-ignores-unrelated-form-order :parent rename
+  ;; Replacing a blank line adds a form without moving the match's coordinates.
+  (let* ((match '(1 1 7))
+         (empty (ui::rename-contexts (format nil "~%(widget)") (list match)))
+         (added (ui::rename-contexts (format nil "(other)~%(widget)") (list match))))
+    (true (gethash match empty))
+    (is equal (gethash match empty) (gethash match added))
+    (false (gethash match (ui::rename-contexts (format nil "(other)~%~%(widget)") (list match))))))
+
+(define-test rename-context-includes-reader-conditionals :parent rename
+  (let* ((match '(1 1 7))
+         (original (gethash match (ui::rename-contexts (format nil "~%(widget)") (list match)))))
+    (dolist (prefix '("#+sbcl" "#-sbcl" "#+(and sbcl unix)" "#+outer #-inner" "'"))
+      (let* ((source (format nil "~a~%(widget)" prefix))
+             (context (gethash match (ui::rename-contexts source (list match)))))
+        (true context)
+        (false (equal original context))
+        (is equal (list (list 0 (length source))) (ui::rename-form-spans (c::read-form-tree source)))))
+    ;; A conditional on IN-PACKAGE changes the package context of later forms.
+    (let* ((source (format nil "~%(in-package #:one)~%(widget)"))
+           (changed (format nil "#+sbcl~%(in-package #:one)~%(widget)"))
+           (match '(2 1 7)))
+      (false (equal (gethash match (ui::rename-contexts source (list match)))
+                    (gethash match (ui::rename-contexts changed (list match))))))
+    ;; Adjacent forms must not make a package directive hash its predecessor.
+    (is equal
+        (gethash match (ui::rename-contexts (format nil "(other 1)(in-package #:one)~%(widget)") (list match)))
+        (gethash match (ui::rename-contexts (format nil "(other 2)(in-package #:one)~%(widget)") (list match))))))
+
+(define-test rename-context-hashes-only-relevant-forms :parent rename
+  (let ((original (symbol-function 'sb-md5:md5sum-string))
+        (calls 0)
+        (source (with-output-to-string (out)
+                  (write-line "(in-package #:one)" out)
+                  (dotimes (n 100) (format out "(unrelated ~d)~%" n))
+                  (write-line "(widget)" out))))
+    (with-assistant-functions
+        ((sb-md5:md5sum-string (lambda (&rest args) (incf calls) (apply original args))))
+      (true (gethash '(101 1 7) (ui::rename-contexts source '((101 1 7)))))
+      (is = 2 calls))))
+
+(define-test rename-context-errors-are-isolated :parent rename
+  (with-assistant-functions
+      ((ui::rename-contexts (lambda (&rest args) (declare (ignore args)) (error "Bad file"))))
+    (let ((contexts (ui::safe-rename-contexts "bad" '((0 0 3)))))
+      (true (hash-table-p contexts))
+      (true (search "Bad file" (gethash :error contexts)))
+      (true (search "Refresh the preview" (ui::rename-validation-note contexts))))))
+
+(define-test project-search-survives-fingerprint-error :parent rename
+  (let ((ui::*project-search* (ui::make-project-search :mode :symbol :symbol "widget"))
+        (original (symbol-function 'ui::rename-contexts))
+        (results nil))
+    (with-assistant-functions
+        ((gtk:editable-get-text (lambda (entry) (declare (ignore entry)) "widget"))
+         (gtk:toggle-button-get-active (lambda (button) (declare (ignore button)) nil))
+         (gtk:label-set-text (lambda (&rest args) (declare (ignore args))))
+         (ui::window-project (lambda (window) (declare (ignore window)) (uiop:temporary-directory)))
+         (c:buffer-list (lambda () nil))
+         (c:project-files (lambda (&rest args) (declare (ignore args)) '(#P"bad.lisp" #P"good.lisp")))
+         (ui::read-text-file (lambda (path) (if (equal path #P"bad.lisp") "(widget) ; bad" "(widget)")))
+         (ui::rename-contexts (lambda (text matches)
+                                (if (search "; bad" text) (error "Bad file") (funcall original text matches))))
+         (sb-thread:make-thread (lambda (thunk &key name) (declare (ignore name)) (funcall thunk)))
+         (ui::deliver-to-gui #'funcall)
+         (ui::classify-symbol-results (lambda (ps found count generation)
+                                       (declare (ignore ps count generation)) (setf results found))))
+      (ui::run-project-search)
+      (is = 2 (length results))
+      (true (search "Bad file" (gethash :error (fourth (first results)))))
+      (is = 1 (hash-table-count (fourth (second results)))))))
 
 (define-test rename-keeps-old-name-for-missing-files :parent rename
   (dolist (mode '(:symbol :lexical))

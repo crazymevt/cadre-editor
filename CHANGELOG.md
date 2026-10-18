@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Sturdier rename previews.** If a file's context can't be checked, the
+  search still finishes and that file's rows say why, with their check
+  boxes disabled until a refreshed preview can check them. Adding or
+  removing an unrelated form no longer skips a match that stays where the
+  preview found it, while adding a reader conditional (`#+`, `#-`) in front
+  of a match's form does. Checking context before renaming is faster in
+  large files.
+
 - **Rename rejects changed context.** Matches whose enclosing form or package
   context changed after preview are skipped, while edits to unrelated
   definitions do not block unchanged matches. Compact fingerprints keep
@@ -12,7 +20,8 @@
 
 - **Reference search package context.** Finding references without a Lisp
   connection uses the requested symbol's package rather than a previous
-  rename's package. GTK smoke checks also rate-limit the initial title probe
+  rename's package, and a qualified name such as `other:foo` uses its
+  prefix's package. GTK smoke checks also rate-limit the initial title probe
   and its retries together.
 
 - **Finding recent features.** The README and manual index now point to

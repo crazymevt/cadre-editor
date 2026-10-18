@@ -29,10 +29,11 @@ and history were isolated from the user's configuration.
 | Check | Result |
 | --- | --- |
 | `make test` | 1,609 checks passed, none failed or skipped |
-| `make test-ui` | 570 checks passed after review follow-ups, none failed or skipped |
+| `make test-ui` | 602 checks passed after review follow-ups, none failed or skipped |
 | `make test-recovery` | Actual SIGKILL recovery passed; newer disk text preserved |
 | Full `make smoke` | 991 checks, one GTK startup-probe race; corrected afterward |
 | `make smoke ONLY='run-app rename'` after fixes | 46 checks passed, none failed |
+| `make smoke ONLY=rename` after reader/diagnostic follow-ups | 7 checks passed, including visible failure diagnostics and disabled checkboxes |
 | `make app` | Built; opened this repository and exited normally |
 | `scripts/make-app.sh --bundle` | Built with 70 bundled libraries; opened this repository and exited normally |
 | `packaging/macos/package.sh` | Local disk image and SHA-256 checksum created; ad hoc signed, not notarized |
@@ -44,7 +45,9 @@ path and GTK restart probe; the entire suite was not rerun after those fixes.
 
 The local app requires macOS 27.0 because it uses this host's Homebrew
 libraries. It is a validation build, not a replacement for the macOS 15
-release workflow. No version bump, tag, commit or publication was performed.
+release workflow. No version bump, tag or publication was performed.
+The initial stabilization changes were committed as `8e7cbb8`; subsequent
+review fixes are separate changes.
 
 ### Scale probes
 
