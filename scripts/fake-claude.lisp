@@ -70,6 +70,10 @@
 
 (defun turn (message)
   (cond
+    ((search "effort probe" message)
+     (say (format nil "Claude effort=~a session=~a"
+                  (or (second (member "--effort" *args* :test #'string=)) "default") *session*))
+     (finish "effort probe"))
     ((search "Fix the compiler problems" message)
      (let ((problems (use-tool "get_problems" (jobj))))
        (use-tool "read_buffer" (jobj "buffer" "src/m2.lisp"))

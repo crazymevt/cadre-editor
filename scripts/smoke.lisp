@@ -76,6 +76,18 @@
 (then 1000
   (check "two tabs open" (equal '("hello.lisp" "notes.txt") (sort (copy-list (tab-titles)) #'string<))
          (tab-titles))
+  ;; Check the actual rendered tabs, not just AdwTabView's page model.
+  (let* ((group (cadre-ui::window-active-group *window*))
+         (tabs (cadre-ui::strip-tabs (cadre-ui::group-strip group))))
+    (check "ordinary files build a complete tab strip"
+           (equal (mapcar #'car tabs) (cadre-ui::group-pages group)))
+    (check "ordinary file tabs have working close controls"
+           (and tabs (every (lambda (tab)
+                              (find-widgets (cdr tab)
+                                            (lambda (widget)
+                                              (and (typep widget 'gtk:button)
+                                                   (gtk:widget-has-css-class widget "cadre-tab-close")))))
+                            tabs))))
   (check "opening an open file reuses its tab"
          (progn (open-file-path (merge-pathnames "notes.txt" *root*))
                 (= 2 (length (tab-titles)))))
@@ -881,6 +893,140 @@
   (check "Codex smoke restores the Claude provider for later sections"
          (eq :claude (cadre-ui::chat-provider cadre-ui::*chat*))))
 
+
+;;; Assistant controls: exercise real GTK signals and inspect what the peers receive.
+(section "assistant-controls" :needs ("claude" "codex"))
+
+(defun choose-thinking (effort)
+  (let ((index (position effort (cadre-ui::chat-effort-choices cadre-ui::*chat*) :test #'equal)))
+    (unless index (error "Thinking level ~s is unavailable" effort))
+    (gtk:drop-down-set-selected (cadre-ui::chat-effort-dropdown cadre-ui::*chat*) index)))
+
+(defvar *effort-process* nil)
+(defvar *effort-session* nil)
+(defvar *effort-codex-server* nil)
+(defvar *effort-layout* nil)
+(defvar *effort-panel-size* nil)
+(defvar *effort-narrow-rows* nil)
+(defvar *effort-claude-original* nil)
+(defvar *effort-codex-original* nil)
+
+(then 100
+  (setf *effort-claude-original* *claude-effort*
+        *effort-codex-original* cadre-ui::*codex-effort*
+        *effort-process* (cadre-ui::chat-process cadre-ui::*chat*)
+        *effort-session* (cadre-ui::chat-session-id cadre-ui::*chat*))
+  (choose-thinking "high")
+  (chat-type "effort probe high"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*)) (chat-says "Claude effort=high")))
+  (check "Claude receives the selected thinking level" (chat-says "Claude effort=high"))
+  (check "changing Claude effort replaces its process"
+         (not (eq *effort-process* (cadre-ui::chat-process cadre-ui::*chat*))))
+  (check "changing Claude effort resumes its conversation"
+         (and (equal *effort-session* (cadre-ui::chat-session-id cadre-ui::*chat*))
+              (chat-says (format nil "session=~a" *effort-session*))))
+  (setf *effort-process* (cadre-ui::chat-process cadre-ui::*chat*))
+  (choose-thinking nil)
+  (chat-type "effort probe default"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*)) (chat-says "Claude effort=default")))
+  (check "Claude Default omits the effort argument" (chat-says "Claude effort=default"))
+  (check "returning to Default also restarts Claude"
+         (not (eq *effort-process* (cadre-ui::chat-process cadre-ui::*chat*))))
+  (choose-thinking "low")
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 1)
+  (check "Codex offers the selected model's thinking levels"
+         (equal '(nil "medium" "high") (cadre-ui::chat-effort-choices cadre-ui::*chat*)))
+  (choose-thinking "high")
+  (setf *effort-codex-server* (cadre-ui::chat-codex-process cadre-ui::*chat*))
+  (chat-type "effort probe high"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+                 (chat-says "Codex effort=high model=fake-gpt-default")))
+  (check "Codex receives the chosen effort in the existing thread"
+         (and (eq *effort-codex-server* (cadre-ui::chat-codex-process cadre-ui::*chat*))
+              (chat-says "Codex effort=high model=fake-gpt-default thread=fake-codex-thread")))
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 0)
+  (check "switching back restores Claude's thinking choice"
+         (equal "low" (nth (gtk:drop-down-get-selected (cadre-ui::chat-effort-dropdown cadre-ui::*chat*))
+                            (cadre-ui::chat-effort-choices cadre-ui::*chat*))))
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 1)
+  (check "switching back restores Codex's thinking choice"
+         (= 2 (gtk:drop-down-get-selected (cadre-ui::chat-effort-dropdown cadre-ui::*chat*))))
+  (gtk:drop-down-set-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*) 1)
+  (check "changing models refreshes supported thinking levels"
+         (equal '(nil "low") (cadre-ui::chat-effort-choices cadre-ui::*chat*)))
+  (check "unsupported thinking levels display Default"
+         (zerop (gtk:drop-down-get-selected (cadre-ui::chat-effort-dropdown cadre-ui::*chat*))))
+  (chat-type "effort probe fallback"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+                 (chat-says "Codex effort=low model=fake-gpt-low")))
+  (check "an unsupported effort sends the new model's default"
+         (chat-says "Codex effort=low model=fake-gpt-low thread=fake-codex-thread"))
+  (gtk:drop-down-set-selected (cadre-ui::chat-model-dropdown cadre-ui::*chat*) 0)
+  (choose-thinking nil)
+  (chat-type "effort probe default"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+                 (chat-says "Codex effort=medium model=fake-gpt-default")))
+  (check "Codex Default sends the advertised default in the same thread"
+         (and (eq *effort-codex-server* (cadre-ui::chat-codex-process cadre-ui::*chat*))
+              (chat-says "Codex effort=medium model=fake-gpt-default thread=fake-codex-thread")))
+  (setf *effort-layout* (cadre-ui::window-layout *window*))
+  (cadre-ui::remember-panel-size *window*)
+  (setf *effort-panel-size* (copy-list (cadre-ui::window-panel-sizes *window*)))
+  (cadre-ui::apply-layout *window* :vertical)
+  (cadre-ui::panel-show (cadre-ui::window-panel *window*) "claude")
+  (gtk:paned-set-position (cadre-ui::window-main-paned *window*)
+                          (- (cadre-ui::paned-extent *window* :vertical) 360)))
+
+(then 600
+  (let* ((chat cadre-ui::*chat*)
+         (panel (cadre-ui::panel-widget (cadre-ui::window-panel *window*)))
+         (controls (list (cadre-ui::chat-provider-dropdown chat) (cadre-ui::chat-mode-dropdown chat)
+                         (cadre-ui::chat-model-dropdown chat) (cadre-ui::chat-effort-dropdown chat)))
+         (rows '()))
+    (dolist (control controls)
+      (multiple-value-bind (ok x y) (gtk:widget-translate-coordinates control panel 0d0 0d0)
+        (check "a selector stays visible and inside the narrow panel"
+               (and ok (gtk:widget-get-visible control) (gtk:widget-get-sensitive control)
+                    (plusp (gtk:widget-get-width control)) (>= x 0)
+                    (<= (+ x (gtk:widget-get-width control)) (gtk:widget-get-width panel)))
+               (list x y (gtk:widget-get-width control) (gtk:widget-get-width panel)))
+        (pushnew y rows :test #'=)))
+    (setf *effort-narrow-rows* (length rows))
+    (check "assistant selectors wrap into multiple rows" (> (length rows) 1) rows)
+    (multiple-value-bind (ok x y) (gtk:widget-translate-coordinates (cadre-ui::chat-status chat) panel 0d0 0d0)
+      (declare (ignore x))
+      (check "assistant status has readable space below the selectors"
+             (and ok (> y (apply #'max rows)) (> (gtk:widget-get-width (cadre-ui::chat-status chat)) 180))))
+    (screenshot "18b-assistant-narrow"))
+  (cadre-ui::apply-layout *window* :horizontal))
+
+(then 600
+  (let* ((chat cadre-ui::*chat*)
+         (panel (cadre-ui::panel-widget (cadre-ui::window-panel *window*)))
+         (rows '()))
+    (dolist (control (list (cadre-ui::chat-provider-dropdown chat) (cadre-ui::chat-mode-dropdown chat)
+                           (cadre-ui::chat-model-dropdown chat) (cadre-ui::chat-effort-dropdown chat)))
+      (multiple-value-bind (ok x y) (gtk:widget-translate-coordinates control panel 0d0 0d0)
+        (check "a selector stays inside the wide panel"
+               (and ok (>= x 0) (plusp (gtk:widget-get-width control))
+                    (<= (+ x (gtk:widget-get-width control)) (gtk:widget-get-width panel))))
+        (pushnew y rows :test #'=)))
+    (check "widening the panel compacts the selectors into fewer rows"
+           (< (length rows) *effort-narrow-rows*) rows))
+  (setf (cadre-ui::window-panel-sizes *window*) (copy-list *effort-panel-size*))
+  (cadre-ui::apply-layout *window* *effort-layout*)
+  ;; apply-layout remembers the temporary narrow size; restore both entries.
+  (setf (cadre-ui::window-panel-sizes *window*) (copy-list *effort-panel-size*))
+  (cadre-ui::restore-panel-size *window*)
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 0)
+  (setf *claude-effort* *effort-claude-original*
+        cadre-ui::*codex-effort* *effort-codex-original*)
+  (cadre-ui::refresh-assistant-effort-dropdown))
 
 ;;; M5: Emacs depth
 (section "emacs")

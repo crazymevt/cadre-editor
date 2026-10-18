@@ -72,7 +72,16 @@ def main():
                             "isDefault": True,
                             "defaultReasoningEffort": "medium",
                             "supportedReasoningEfforts": [
-                                {"reasoningEffort": "medium", "description": "Balanced"}
+                                {"reasoningEffort": "medium", "description": "Balanced"},
+                                {"reasoningEffort": "high", "description": "Thorough"}
+                            ],
+                        },
+                        {
+                            "id": "fake-gpt-low", "model": "fake-gpt-low",
+                            "displayName": "Fake GPT Low", "hidden": False,
+                            "isDefault": False, "defaultReasoningEffort": "low",
+                            "supportedReasoningEfforts": [
+                                {"reasoningEffort": "low", "description": "Quick"}
                             ],
                         },
                         {"id": "fake-hidden", "hidden": True},
@@ -134,7 +143,9 @@ def main():
             if tool_reply is None or tool_reply.get("id") != 900:
                 return
 
-            if "retry after fake failure" in prompt:
+            if "effort probe" in prompt:
+                reply = f"Codex effort={params.get('effort')} model={params.get('model')} thread={thread_id}"
+            elif "retry after fake failure" in prompt:
                 reply = "Fake Codex recovered after failure"
             elif "You are in agent mode" in prompt:
                 reply = "Fake Codex agent mode"
