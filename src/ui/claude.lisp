@@ -72,7 +72,8 @@ of proposing every change for review. Open files reload when they change on disk
   (provider :claude)
   (mode :chat)                          ; :chat or :agent
   (process-mode nil)                    ; the mode the running process was started in
-  mode-dropdown
+  mode-dropdown effort-dropdown effort-choices (refreshing-effort nil)
+  process-effort
   provider-dropdown
   (plan-box nil)                        ; the checklist of Claude's current plan (TodoWrite)
   messages message-boxes scroller input send-button status model-dropdown stack composer
@@ -87,6 +88,7 @@ of proposing every change for review. Open files reload when they change on disk
   codex-process codex-thread-id codex-directory (codex-turn-generation 0))
 
 (defvar *chat* nil)
+(defvar *codex-effort* nil "The chosen Codex thinking level, or nil for the model default.")
 
 (defun ensure-mcp-server ()
   (unless *mcp-server*
@@ -116,6 +118,11 @@ of proposing every change for review. Open files reload when they change on disk
          (status (make-instance 'gtk:label :xalign 0.0 :hexpand t :ellipsize :end :css-classes '("dim-label")))
          (provider (gtk:drop-down-new-from-strings '("Claude" "Codex")))
          (models (gtk:drop-down-new-from-strings (coerce *claude-models* 'list)))
+         (efforts (gtk:drop-down-new-from-strings '("Default")))
+         (controls (make-instance 'gtk:flow-box :selection-mode :none :homogeneous nil
+                                  :column-spacing 6 :row-spacing 4
+                                  :min-children-per-line 1 :max-children-per-line 4
+                                  :margin-start 6 :margin-end 6 :margin-top 4 :margin-bottom 4))
          (modes (gtk:drop-down-new-from-strings '("Chat" "Agent")))
          (file (make-instance 'gtk:toggle-button :label "File" :active t :css-classes '("flat")
                                                  :tooltip-text "Tell the assistant which file you are in, where the cursor is, and the selection"))
@@ -125,7 +132,7 @@ of proposing every change for review. Open files reload when they change on disk
                                                      :tooltip-text "Attach the debugger's condition and backtrace"))
          (stack (make-instance 'gtk:stack :vexpand t))
          (chat (make-chat :provider *assistant-provider* :messages messages :scroller scroller :input input :send-button send :status status
-                          :provider-dropdown provider :model-dropdown models :mode-dropdown modes
+                          :provider-dropdown provider :model-dropdown models :mode-dropdown modes :effort-dropdown efforts
                           :stack stack :context-file file :context-problems problems
                           :context-debugger debugger :session-id (make-uuid))))
     (setf *chat* chat
@@ -142,6 +149,18 @@ of proposing every change for review. Open files reload when they change on disk
         (gtk:viewport-set-scroll-to-focus viewport nil)))
     (let ((model (position *claude-model* *claude-models* :test #'string=)))
       (when model (gtk:drop-down-set-selected models model)))
+    (gtk:widget-set-tooltip-text efforts "Thinking level for the next message")
+    (gobject:connect models "notify::selected"
+                     (lambda (d pspec) (declare (ignore d pspec))
+                       (refresh-assistant-effort-dropdown)))
+    (gobject:connect efforts "notify::selected"
+                     (lambda (d pspec) (declare (ignore pspec))
+                       (unless (chat-refreshing-effort chat)
+                         (let ((effort (nth (gtk:drop-down-get-selected d) (chat-effort-choices chat))))
+                           (if (eq (chat-provider chat) :claude)
+                               (setf *claude-effort* effort)
+                               (setf *codex-effort* effort))))))
+    (refresh-assistant-effort-dropdown)
     (gtk:widget-set-tooltip-text modes "Chat answers questions and proposes edits. Agent works through a larger task: it plans, edits, compiles and runs the tests, asking before each change.")
     (gobject:connect modes "notify::selected"
                      (lambda (d pspec) (declare (ignore pspec))
@@ -176,13 +195,15 @@ of proposing every change for review. Open files reload when they change on disk
                   (gtk:scrolled-window :max-content-height 160 :propagate-natural-height t
                                        :hscrollbar-policy :never :child input))
                 send))))
+    ;; FlowBox keeps each selector intact and wraps controls as the side
+    ;; panel narrows. Status gets its own expanding row so it stays readable.
+    (dolist (control (list provider modes models efforts))
+      (gtk:flow-box-append controls control))
     (gtk:build
       (gtk:box :orientation :vertical
-        (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-top 2 :margin-bottom 2
+        controls
+        (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-bottom 4
           status
-          provider
-          modes
-          models
           (gtk:button :icon-name "cadre-document-new-symbolic" :tooltip-text "New conversation"
                       :css-classes '("flat")
                       :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-new-chat))))
@@ -683,7 +704,8 @@ Claude meant as its reply: not showing it lost that."
 (defun ensure-claude-process ()
   "The conversation's process, started (or resumed) if needed. A process
 started in the other mode is replaced, resuming the same conversation."
-  (when (and (claude-alive-p (chat-process *chat*)) (not (eq (chat-process-mode *chat*) (chat-mode *chat*))))
+  (when (and (claude-alive-p (chat-process *chat*)) (or (not (eq (chat-process-mode *chat*) (chat-mode *chat*)))
+             (not (equal (chat-process-effort *chat*) *claude-effort*))))
     (stop-claude (chat-process *chat*)))
   (or (and (claude-alive-p (chat-process *chat*)) (chat-process *chat*))
       (progn
@@ -719,6 +741,7 @@ started in the other mode is replaced, resuming the same conversation."
                               :on-stderr (lambda (line) (panel-log-raw (window-panel *window*) (format nil "claude: ~a" line)))
                               :on-exit (lambda (code) (claude-exited process code))))
           (setf (chat-process *chat*) process
+                (chat-process-effort *chat*) *claude-effort*
                 (chat-process-mode *chat*) (chat-mode *chat*)
                 (chat-started *chat*) t)
           process))))

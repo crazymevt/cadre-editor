@@ -138,6 +138,35 @@
   (when (and *chat* (eq (chat-provider *chat*) :codex)) (show-codex-status))
   (when (and then (codex-ready-p)) (funcall then)))
 
+(defun assistant-effort-choices (provider model)
+  "Default followed by the provider's available thinking levels."
+  (cons nil
+        (if (eq provider :claude)
+            '("low" "medium" "high" "xhigh" "max")
+            (remove-duplicates
+             (loop for entry in (cadre::jlist (jget model "supportedReasoningEfforts"))
+                   for effort = (jget entry "reasoningEffort")
+                   when (stringp effort) collect effort)
+             :test #'equal))))
+
+(defun refresh-assistant-effort-dropdown ()
+  (when (and *chat* (chat-effort-dropdown *chat*))
+    (let* ((provider (chat-provider *chat*))
+           (model (when (eq provider :codex)
+                    (nth (gtk:drop-down-get-selected (chat-model-dropdown *chat*)) *codex-model-catalog*)))
+           (choices (assistant-effort-choices provider model))
+           (chosen (if (eq provider :claude) *claude-effort* *codex-effort*))
+           (dropdown (chat-effort-dropdown *chat*)))
+      (setf (chat-refreshing-effort *chat*) t)
+      (unwind-protect
+           (progn
+             (setf (chat-effort-choices *chat*) choices)
+             (gtk:drop-down-set-model dropdown
+                                      (gtk:string-list-new (mapcar (lambda (x) (format nil "Thinking: ~a" (if x (string-capitalize x) "Default"))) choices)))
+             (gtk:drop-down-set-selected dropdown (or (position chosen choices :test #'equal) 0))
+             (gtk:widget-set-sensitive dropdown (> (length choices) 1)))
+        (setf (chat-refreshing-effort *chat*) nil)))))
+
 (defun refresh-assistant-model-dropdown (&key (preserve t))
   (when (and *chat* (typep (chat-model-dropdown *chat*) 'gtk:drop-down))
     (let* ((dropdown (chat-model-dropdown *chat*))
@@ -169,12 +198,15 @@
                               :key (lambda (model) (or (jget model "id") (jget model "model")))
                               :test #'equal))
                (position-if (lambda (model) (eq (jget model "isDefault") t)) *codex-model-catalog*)
-               0))))))
+               0)))
+      (refresh-assistant-effort-dropdown))))
 
 (defun selected-codex-model ()
   (let* ((model (nth (gtk:drop-down-get-selected (chat-model-dropdown *chat*)) *codex-model-catalog*))
          (id (and model (or (jget model "id") (jget model "model"))))
-         (effort (and model (jget model "defaultReasoningEffort"))))
+         (effort (or (and (member *codex-effort* (assistant-effort-choices :codex model) :test #'equal)
+                          *codex-effort*)
+                     (and model (jget model "defaultReasoningEffort")))))
     (values id effort)))
 
 (defun check-selected-assistant-status (&key force then)

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Assistant layout in narrow panels.** Model, provider, mode and thinking
+  controls wrap as the panel narrows. Status has its own row so usage and
+  activity stay readable in the vertical layout.
+
+- **Assistant thinking level.** Choose thinking effort beside the model in
+  the Assistant panel for Claude and Codex. Codex offers the levels supported
+  by the selected model; Default keeps the provider’s default behavior.
+
 - **Markdown source and preview in one tab.** Each Markdown tab now has a
   Preview / Source button to switch views in place. Switching back restores
   the full editor, including line numbers and cursor updates. Closing a

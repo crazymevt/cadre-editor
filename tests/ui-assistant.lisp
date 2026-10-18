@@ -238,3 +238,26 @@
     (is = 1 fetches)
     (false workers)
     (false ui::*codex-checking*)))
+
+(define-test assistant-thinking-levels :parent assistants
+  (let* ((model (c:jobj "id" "test" "defaultReasoningEffort" "medium"
+                        "supportedReasoningEfforts"
+                        (vector (c:jobj "reasoningEffort" "low")
+                                (c:jobj "reasoningEffort" "medium")))))
+    (is equal '(nil "low" "medium") (ui::assistant-effort-choices :codex model))
+    (is equal '(nil) (ui::assistant-effort-choices :codex nil))
+    (true (member "high" (ui::assistant-effort-choices :claude nil) :test #'equal))))
+
+(define-test codex-thinking-selection-and-fallback :parent assistants
+  (let* ((ui::*chat* (ui::make-chat :provider :codex))
+         (ui::*codex-model-catalog*
+           (list (c:jobj "id" "test" "defaultReasoningEffort" "medium"
+                         "supportedReasoningEfforts"
+                         (vector (c:jobj "reasoningEffort" "low")
+                                 (c:jobj "reasoningEffort" "medium"))))))
+    (with-assistant-functions ((gtk:drop-down-get-selected (lambda (dropdown) (declare (ignore dropdown)) 0)))
+      (dolist (selection '(nil "low" "unsupported"))
+        (let ((ui::*codex-effort* selection))
+          (multiple-value-bind (model effort) (ui::selected-codex-model)
+            (is equal "test" model)
+            (is equal (if (equal selection "low") "low" "medium") effort)))))))
