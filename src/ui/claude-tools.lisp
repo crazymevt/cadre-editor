@@ -155,17 +155,27 @@ that language's default (the REPL's)."
 ;;; Asking for the user's approval
 
 (defvar *session-allowed* (make-hash-table :test 'equal)
-  "Tools the user allowed for this conversation.")
+  "Tools the user allowed for this conversation, as (provider . key): what
+Claude was allowed, Codex wasn't, and the other way round.")
+
+(defun forget-session-approvals (&optional provider)
+  "Forget what PROVIDER (or, if nil, either assistant) was allowed for the session."
+  (if provider
+      (loop for key being the hash-keys of *session-allowed*
+            when (eq (car key) provider) do (remhash key *session-allowed*))
+      (clrhash *session-allowed*)))
 
 (defun ask-approval (key title detail)
   "Ask in the chat whether the assistant may do something. KEY names what a \"for
-this session\" answer covers. Returns :once, :session or :deny."
-  (if (on-main (gethash key *session-allowed*))
-      :session
-      (let ((answer (wait-for (lambda (done) (chat-show-approval title detail done)))))
-        (when (eq answer :session)
-          (on-main (setf (gethash key *session-allowed*) t)))
-        answer)))
+this session\" answer covers, for the assistant making the call (*tool-provider*).
+Returns :once, :session or :deny."
+  (let ((key (cons *tool-provider* key)))
+    (if (on-main (gethash key *session-allowed*))
+        :session
+        (let ((answer (wait-for (lambda (done) (chat-show-approval title detail done)))))
+          (when (eq answer :session)
+            (on-main (setf (gethash key *session-allowed*) t)))
+          answer))))
 
 (defun require-approval (key title detail)
   (when (eq (ask-approval key title detail) :deny)

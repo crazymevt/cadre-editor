@@ -34,11 +34,13 @@
                                   :message-boxes (make-hash-table)))
          (ui::*session-allowed* (make-hash-table :test 'equal))
          (denied 0))
-    (setf (gethash "eval" ui::*session-allowed*) t
+    (setf (gethash '(:claude . "eval") ui::*session-allowed*) t
+          (gethash '(:codex . "eval") ui::*session-allowed*) t
           (ui::chat-pending-approvals ui::*chat*) (list (lambda () (incf denied))))
     (with-assistant-functions ((ui::chat-note (lambda (&rest args) (declare (ignore args)))))
       (ui::claude-follow-folder #P"/tmp/assistant-new/"))
-    (is = 0 (hash-table-count ui::*session-allowed*))
+    ;; Only Claude's conversation moved, so only what Claude was allowed goes.
+    (is equal '((:codex . "eval")) (loop for key being the hash-keys of ui::*session-allowed* collect key))
     (is = 1 denied)
     (false (ui::chat-pending-approvals ui::*chat*))
     (false (ui::chat-started ui::*chat*))
@@ -128,7 +130,7 @@
     (with-codex-stop-fixture
       (let ((ui::*session-allowed* (make-hash-table :test 'equal))
             (shown 0) (executed nil) (stopped-once nil) (sync-calls 0) (replies nil))
-        (when (eq timing :session) (setf (gethash "test" ui::*session-allowed*) t))
+        (when (eq timing :session) (setf (gethash '(:codex . "test") ui::*session-allowed*) t))
         (with-assistant-functions
             ((glib:call-in-main-thread
               (lambda (function &key wait)
@@ -166,6 +168,29 @@
              server (c:jobj "id" 2 "params" (c:jobj "turnId" "new" "tool" "test")))
             (true executed)
             (false (c:jget (first replies) "error"))))))))
+
+(define-test session-approvals-are-per-provider :parent assistants
+  (let ((ui::*session-allowed* (make-hash-table :test 'equal))
+        (shown 0))
+    (with-assistant-functions
+        ((glib:call-in-main-thread (lambda (function &key wait) (declare (ignore wait)) (funcall function)))
+         (ui::chat-show-approval (lambda (title detail done)
+                                   (declare (ignore title detail))
+                                   (incf shown) (funcall done :session))))
+      ;; Claude is allowed to evaluate for the session...
+      (is eq :session (ui::ask-approval "eval" "Evaluate" "(+ 1 2)"))
+      (is = 1 shown)
+      (is eq :session (ui::ask-approval "eval" "Evaluate" "(+ 1 2)"))
+      (is = 1 shown)
+      ;; ...which doesn't let Codex: it asks.
+      (let ((c:*tool-provider* :codex))
+        (is eq :session (ui::ask-approval "eval" "Evaluate" "(+ 1 2)"))
+        (is = 2 shown)
+        (is eq :session (ui::ask-approval "eval" "Evaluate" "(+ 1 2)"))
+        (is = 2 shown))
+      ;; A new Codex conversation forgets only what Codex was allowed.
+      (ui::forget-session-approvals :codex)
+      (is equal '((:claude . "eval")) (loop for key being the hash-keys of ui::*session-allowed* collect key)))))
 
 (define-test stop-during-startup-cancels-turn-request :parent assistants
   (with-codex-stop-fixture

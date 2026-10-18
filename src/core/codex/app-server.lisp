@@ -87,6 +87,10 @@
 (defvar *tool-call-active-p* nil
   "Optional cancellation predicate for the current client-side tool call.")
 
+(defvar *tool-provider* :claude
+  "The assistant making the current tool call, :claude (through the MCP
+server) or :codex. Approvals given for a session cover only that assistant.")
+
 (defun ensure-tool-call-active ()
   (when (and *tool-call-active-p* (not (funcall *tool-call-active-p*)))
     (tool-error "The assistant turn was cancelled.")))
@@ -170,6 +174,7 @@
 (defun codex-dynamic-tool-call (server request &optional (token (codex-tool-request-token server request)))
   (let* ((params (jget request "params"))
          (*tool-call-active-p* (lambda () (and (car token) (not (codex-stopped server)))))
+         (*tool-provider* :codex)
          (name (jget params "tool"))
          (arguments (jget params "arguments"))
          (id (jget request "id")))
@@ -218,8 +223,10 @@
                                          "error" (jobj "code" -32603
                                                        "message" (princ-to-string e))))))))
           :name "Codex dynamic tool")))
-      ;; Native shell and filesystem requests are intentionally denied in v1.
-      ;; Codex uses Cadre's propose_edit and approved Lisp tools instead.
+      ;; Native shell and filesystem requests are denied. Codex's own command
+      ;; tools are off (*codex-disabled-features*) and the "untrusted" policy
+      ;; asks before anything else runs; Codex uses Cadre's propose_edit and
+      ;; approved Lisp tools instead.
       ((member method '("item/commandExecution/requestApproval" "item/fileChange/requestApproval")
                :test #'equal)
        (codex-deliver-event server (make-codex-event :kind :permission-denied :name method :data params))
@@ -291,7 +298,7 @@
 
 (defun start-codex-app-server (program directory &key (deliver #'funcall) on-event on-exit)
   "Start the local Codex app-server in DIRECTORY."
-  (let* ((process (sb-ext:run-program program '("app-server" "--listen" "stdio://")
+  (let* ((process (sb-ext:run-program program (codex-app-server-arguments)
                                       :search t :wait nil :directory (and directory (namestring directory))
                                       :input :stream :output :stream :error :stream
                                       :external-format '(:utf-8 :replacement #\?)))
@@ -401,6 +408,32 @@
            (codex-models-from-response (codex-request server "model/list" (jobj))))
       (stop-codex-app-server server))))
 
+;;; What Codex may do on its own. Cadre's tools ask the user before a change,
+;;; an evaluation or a test run, and show edits for review; Codex's own
+;;; command, plugin and MCP tools would act without either, so they are off.
+
+(defparameter *codex-disabled-features* '("shell_tool" "unified_exec" "plugins" "apps")
+  "Codex features turned off in every app-server Cadre starts: its shell
+commands, and plugins and apps (computer use and the browser among them).")
+
+(defparameter *codex-approval-policy* "untrusted"
+  "Codex asks before running anything it doesn't trust, and Cadre declines.")
+
+(defun codex-app-server-arguments ()
+  (append '("app-server")
+          (loop for feature in *codex-disabled-features* append (list "--disable" feature))
+          '("--listen" "stdio://")))
+
+(defun codex-thread-config (server)
+  "Config overrides for a Cadre thread: each MCP server the user configured
+for Codex (in ~/.codex/config.toml), off. If they can't be read, no thread
+starts."
+  (let ((servers (jget (codex-request server "config/read" (jobj)) "config" "mcp_servers")))
+    (jobj "mcp_servers"
+          (cons :object (and (jobject-p servers)
+                             (loop for (name . nil) in (cdr servers)
+                                   collect (cons name (jobj "enabled" :false))))))))
+
 (defun codex-start-thread (server &key model instructions (sandbox "read-only"))
   "Initialize app-server and start a thread configured with Cadre's tools."
   (codex-initialize-app-server server :experimental-api t)
@@ -408,7 +441,8 @@
                                 (jobj "cwd" (uiop:native-namestring (codex-directory server))
                                       "model" (or model :null)
                                       "sandbox" sandbox
-                                      "approvalPolicy" "on-request"
+                                      "approvalPolicy" *codex-approval-policy*
+                                      "config" (codex-thread-config server)
                                       "baseInstructions" (or instructions :null)
                                       "dynamicTools" (codex-dynamic-tools))))
          (thread-id (jget result "thread" "id")))
@@ -425,7 +459,8 @@
   (let ((result (codex-request server "thread/resume"
                                (jobj "threadId" thread-id
                                      "cwd" (uiop:native-namestring (codex-directory server))
-                                     "sandbox" sandbox "approvalPolicy" "on-request"
+                                     "sandbox" sandbox "approvalPolicy" *codex-approval-policy*
+                                     "config" (codex-thread-config server)
                                      "baseInstructions" (or instructions :null)))))
     (declare (ignore result))
     (setf (codex-thread-id server) thread-id)

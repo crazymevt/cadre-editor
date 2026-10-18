@@ -35,6 +35,7 @@ def main():
 
     thread_id = "fake-codex-thread"
     turn_number = 0
+    thread_params = {}
     while True:
         message = read_message()
         if message is None:
@@ -47,6 +48,25 @@ def main():
         elif method == "test/hang":
             # Used by the Lisp unit test to prove a missing response times out.
             continue
+        elif method == "test/argv":
+            respond(message, args)
+        elif method == "test/thread-params":
+            # What the last thread/start or thread/resume asked for.
+            respond(message, thread_params)
+        elif method == "config/read":
+            # MCP servers the user configured for Codex, which Cadre turns off.
+            respond(
+                message,
+                {
+                    "config": {
+                        "mcp_servers": {
+                            "fake_repl": {"command": "/bin/fake-repl"},
+                            "dotted.name": {"url": "http://localhost:1"},
+                        }
+                    },
+                    "origins": {},
+                },
+            )
         elif method == "test/unicode":
             respond(message, message.get("params", {}).get("text", ""))
         elif method == "test/exit-with-inherited-stderr":
@@ -89,8 +109,10 @@ def main():
                 },
             )
         elif method == "thread/start":
+            thread_params = message.get("params", {})
             respond(message, {"thread": {"id": thread_id}})
         elif method == "thread/resume":
+            thread_params = message.get("params", {})
             thread_id = message["params"]["threadId"]
             respond(message, {"thread": {"id": thread_id}})
         elif method == "turn/start":

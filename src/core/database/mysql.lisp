@@ -72,8 +72,13 @@
     (ratio (format nil "~f" (coerce value 'double-float)))
     (t value)))
 
+(defun my-hex-literal (octets)
+  (format nil "X'~{~2,'0X~}'" (coerce octets 'list)))
+
 (defun my-literal (value)
-  "VALUE as a MySQL literal: NULL, a number, X'…' for bytes, or a quoted string."
+  "VALUE as a MySQL literal: NULL, a number, X'…' for bytes, or a string as
+_utf8mb4 X'…'. Whether a backslash in a quoted string escapes depends on the
+server's sql_mode (NO_BACKSLASH_ESCAPES), which a hex string doesn't."
   (typecase value
     ((or null (eql :null)) "NULL")
     (integer (princ-to-string value))
@@ -81,16 +86,9 @@
                   (text (princ-to-string value)))
              ;; Common Lisp's D exponent is not part of MySQL's numeric grammar.
              (substitute #\e #\d (substitute #\e #\D text))))
-    ((vector (unsigned-byte 8)) (format nil "X'~{~2,'0X~}'" (coerce value 'list)))
-    (t (with-output-to-string (out)
-         (write-char #\' out)
-         (loop for c across (princ-to-string value)
-               do (case c
-                    ;; Doubling quotes is valid even with NO_BACKSLASH_ESCAPES.
-                    ;; Preserve backslashes and control characters literally.
-                    (#\' (write-string "''" out))
-                    (t (write-char c out))))
-         (write-char #\' out)))))
+    ((vector (unsigned-byte 8)) (my-hex-literal value))
+    (t (format nil "_utf8mb4 ~a"
+               (my-hex-literal (sb-ext:string-to-octets (princ-to-string value) :external-format :utf-8))))))
 
 (defun my-inline-params (sql params)
   "SQL with each ? (outside strings, quoted names and comments) replaced by

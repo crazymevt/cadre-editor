@@ -116,6 +116,32 @@
       (true (c:codex-event-error event))
       (is string= "u1" (c:codex-event-turn-id event)))))
 
+(define-test codex-native-tools-off :parent cadre-tests
+  ;; Codex's own shell, plugins and apps are off in every app-server Cadre starts.
+  (let ((server (c:start-codex-app-server (namestring (truename "scripts/fake-codex.py"))
+                                          (truename "."))))
+    (unwind-protect
+         (progn
+           (c::codex-initialize-app-server server)
+           (let ((argv (coerce (c::codex-request server "test/argv") 'list)))
+             (is string= "app-server" (first argv))
+             (dolist (feature '("shell_tool" "unified_exec" "plugins" "apps"))
+               (true (search (list "--disable" feature) argv :test #'equal) "~a is not disabled" feature)))
+           ;; Threads ask before anything untrusted runs, and the user's own
+           ;; Codex MCP servers are off in them, started or resumed.
+           (flet ((check-thread-params ()
+                    (let ((params (c::codex-request server "test/thread-params")))
+                      (is string= "untrusted" (c:jget params "approvalPolicy"))
+                      (is equal '("dotted.name" "fake_repl")
+                          (sort (mapcar #'car (cdr (c:jget params "config" "mcp_servers"))) #'string<))
+                      (is eq :false (c:jget params "config" "mcp_servers" "fake_repl" "enabled"))
+                      (is eq :false (c:jget params "config" "mcp_servers" "dotted.name" "enabled")))))
+             (c:codex-start-thread server)
+             (check-thread-params)
+             (c:codex-resume-thread server "saved-thread")
+             (check-thread-params)))
+      (c:stop-codex-app-server server))))
+
 (define-test codex-request-timeout :parent cadre-tests
   (let ((now #x10000000))
     (is eql (+ now (round (* 0.1 c::internal-time-units-per-second)))

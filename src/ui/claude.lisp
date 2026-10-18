@@ -891,10 +891,10 @@ started in the other mode is replaced, resuming the same conversation."
         (if (chat-busy *chat*)
             (setf (chat-pending-directory *chat*) directory)
             (progn
-              ;; Approvals are currently shared by both providers. Any reset
-              ;; starts a new conversation, including an inactive provider.
+              ;; Each reset starts a new conversation, an inactive provider's
+              ;; too, so what that provider was allowed is forgotten.
               (deny-pending-approvals)
-              (clrhash *session-allowed*)
+              (dolist (entry changed) (forget-session-approvals (car entry)))
               (dolist (entry changed)
                 (let ((provider (car entry)))
                   (if (eq provider active)
@@ -943,7 +943,7 @@ started in the other mode is replaced, resuming the same conversation."
         (setf (chat-process *chat*) nil (chat-started *chat*) nil
               (chat-session-id *chat*) (make-uuid) (chat-directory *chat*) nil)))
   (deny-pending-approvals)
-  (clrhash *session-allowed*)
+  (forget-session-approvals (chat-provider *chat*))
   (clrhash (chat-tools *chat*))
   (setf (chat-busy *chat*) nil (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
         (chat-plan-box *chat*) nil (chat-pending-directory *chat*) nil)

@@ -44,9 +44,12 @@ password secret, database shop); nil if MariaDB isn't installed."
 (define-test mysql :parent cadre-tests
   (let ((c:*identifier-quote* #\`))
     (is string= "`a``b`" (c:quote-sql-identifier "a`b")))
-  (is string= "SELECT 'it''s', NULL, 3, X'0102' FROM t WHERE a = '?' AND b = 'x\\y'"
-      (cadre::my-inline-params "SELECT ?, ?, ?, ? FROM t WHERE a = '?' AND b = ?"
-                               (list "it's" :null 3 (make-array 2 :element-type '(unsigned-byte 8) :initial-contents '(1 2)) "x\\y")))
+  ;; Strings go as hex, so neither quotes nor backslashes in them are read
+  ;; as SQL, whatever the server's sql_mode.
+  (is string= "SELECT _utf8mb4 X'697427735C', NULL, 3, X'0102', _utf8mb4 X'' FROM t WHERE a = '?'"
+      (cadre::my-inline-params "SELECT ?, ?, ?, ?, ? FROM t WHERE a = '?'"
+                               (list "it's\\" :null 3 (make-array 2 :element-type '(unsigned-byte 8) :initial-contents '(1 2)) "")))
+  (is string= "SELECT _utf8mb4 X'CEBB'" (cadre::my-inline-params "SELECT ?" (list "λ")))
   (is string= "SELECT 1.5" (cadre::my-inline-params "SELECT ?" (list 1.5d0)))
   (is string= "SELECT 1.0e20" (cadre::my-inline-params "SELECT ?" (list 1.0d20)))
   (is string= "SELECT 'a''?''b', /* ? */ 1 # ?
@@ -60,10 +63,15 @@ password secret, database shop); nil if MariaDB isn't installed."
             (db (c:open-database connection :password "secret")))
        (unwind-protect
             (c:with-db-quoting (db)
-              (c:db-run db "SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
-              (let* ((value "it's\\a path")
-                     (result (c:db-run db "SELECT ?" :params (list value))))
-                (is string= value (aref (first (c:db-result-rows result)) 0)))
+              ;; Values with quotes and backslashes come back as they went,
+              ;; with the server's default sql_mode (backslashes escape) and
+              ;; with NO_BACKSLASH_ESCAPES.
+              (dolist (mode '("DEFAULT" "'NO_BACKSLASH_ESCAPES'"))
+                (c:db-run db (format nil "SET SESSION sql_mode = ~a" mode))
+                (dolist (value (list "it's\\a path" "\\' OR 1=1 -- " "ends in \\" "C:\\new\\table" "a\\\\b" ""))
+                  (let ((result (c:db-run db "SELECT ?, 'after'" :params (list value))))
+                    (is equal (list value "after") (coerce (first (c:db-result-rows result)) 'list)))))
+              (c:db-run db "SET SESSION sql_mode = DEFAULT")
               (c:db-run db "CREATE TABLE people (id int AUTO_INCREMENT PRIMARY KEY, name varchar(40) NOT NULL, age int,
   born date, score decimal(5,2), photo blob);
 CREATE TABLE tags (tag varchar(20));
@@ -88,6 +96,16 @@ CREATE UNIQUE INDEX people_name ON people (name);")
                   (is = 1 (length (c:db-result-rows result)))
                   (is string= "Ann" (aref (first (c:db-result-rows result)) 2))
                   (is string= "1990-05-01" (aref (first (c:db-result-rows result)) 4))))
+              ;; A value that would end a backslash-escaped string doesn't
+              ;; make the rest of it SQL (it would match every row).
+              (is equalp '(#(0)) (c:db-result-rows (c:db-run db "SELECT count(*) FROM people WHERE name = ?"
+                                                             :params '("\\' OR 1=1 -- "))))
+              (multiple-value-bind (sql params) (c:update-row-sql "people" '("id") #(3) '(("name" . "Cy\\' OR 1=1 -- ")))
+                (is = 1 (c:db-result-changes (c:db-run db sql :params params))))
+              (is equalp '(#("Ann") #("Bo") #("Cy\\' OR 1=1 -- "))
+                  (c:db-result-rows (c:db-run db "SELECT name FROM people ORDER BY id")))
+              (multiple-value-bind (sql params) (c:update-row-sql "people" '("id") #(3) '(("name" . "Cy")))
+                (is = 1 (c:db-result-changes (c:db-run db sql :params params))))
               (multiple-value-bind (sql params) (c:update-row-sql "people" '("id") #(2) '(("name" . "Bob") ("age" . "13")))
                 (is = 1 (c:db-result-changes (c:db-run db sql :params params))))
               (is equalp '(#("Bob" 13)) (c:db-result-rows (c:db-run db "SELECT name, age FROM people WHERE id = 2")))

@@ -819,7 +819,7 @@
   (check "Agent mode starts Claude Code with the agent prompt and tools"
          (chat-says "agent=yes todo=yes model=opus")
          (find-if (lambda (s) (search "Mode:" s)) (chat-texts)))
-  (setf (gethash "compile" cadre-ui::*session-allowed*) t)
+  (setf (gethash '(:claude . "compile") cadre-ui::*session-allowed*) t)
   (chat-type "make a plan"))
 
 (then-when ((chat-says "Compiled:"))

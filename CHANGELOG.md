@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **MySQL string values are safe in every sql_mode.** Values in queries and
+  table edits are now sent as hex string literals. Previously, with the
+  server's default sql_mode, a backslash in a value was read as an escape:
+  it corrupted text such as `C:\new` and let a value like `\' OR 1=1 -- `
+  run as SQL.
+
+- **Codex acts only through Cadre's tools.** Codex's own shell commands,
+  plugins (computer use, the browser) and apps are now off, and so are the
+  MCP servers configured in `~/.codex/config.toml`, for the threads Cadre
+  starts. Previously, commands that fit the read-only sandbox could run
+  without asking. Threads use the `untrusted` approval policy, and Cadre
+  declines what Codex asks to run.
+
+- **Session approvals are per assistant.** "Allow for this session" now
+  covers only the assistant that asked. Switching between Claude and Codex no
+  longer carries an approval over. A new conversation forgets only that
+  assistant's approvals.
+
 - **More activities in Runs.** Record Test Explorer selections, REPL tests,
   and console, GTK, Racket and Clojure apps with retained output and status.
   Rerun in the original project or stop the selected activity; test selections
