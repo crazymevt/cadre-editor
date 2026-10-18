@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Reliable editor tabs.** Avoid adding an absent Markdown control to
+  ordinary file tabs, which could interrupt tab creation and break tab
+  selection, pin controls and Markdown preview switching.
+
 - **Assistant layout in narrow panels.** Model, provider, mode and thinking
   controls wrap as the panel narrows. Status has its own row so usage and
   activity stay readable in the vertical layout.
