@@ -74,3 +74,21 @@ afterwards.
 `*claude-model*` (default `sonnet`, also in the panel's model menu),
 `*claude-effort*` and `*claude-isolated*` (ignore your own Claude Code settings
 and MCP servers) are options for your init file.
+
+## Earlier conversations
+
+Cadre keeps the conversations you have in the panel, with Claude or Codex:
+your messages, the replies, thinking, tool calls and their results, plans,
+the approvals asked for and how you answered, and each proposed edit with its
+changes and whether you accepted it. They are saved as you go, in
+`conversations/` in Cadre's state folder, readable only by you;
+`*assistant-conversations-kept*` (default 100) is how many are kept.
+
+The history button beside **New conversation** (or `M-x
+assistant-conversations`) lists them, the most recent first, by date,
+provider, project and first message; type to narrow the list. Choosing one
+shows its transcript and makes it the provider's conversation again: the next
+message continues it, resuming Claude Code's session in the folder it ran in,
+or Codex's thread. Nothing in it runs again, and what you allowed for it
+(**Allow for This Conversation**) isn't allowed again until you say so.
+Conversations started outside Cadre, in a terminal, aren't listed.

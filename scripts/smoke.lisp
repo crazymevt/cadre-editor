@@ -900,6 +900,94 @@
          (eq :claude (cadre-ui::chat-provider cadre-ui::*chat*))))
 
 
+;;; Assistant conversations kept across sessions: the Codex conversation
+;;; above is recorded, listed, restored and continued on its thread.
+(section "conversations" :needs ("claude" "codex"))
+(defvar *smoke-conversation* nil)
+(defvar *smoke-claude-session* nil)
+
+(then 100
+  (cadre-ui::save-current-conversations)
+  (setf *smoke-conversation*
+        (find-if (lambda (record)
+                   (and (eq :codex (getf record :provider))
+                        (find "hello Codex" (getf record :entries)
+                              :key (lambda (e) (getf (rest e) :text)) :test #'equal)))
+                 (cadre-ui::saved-conversations)))
+  (check "a Codex conversation is recorded with its thread"
+         (and *smoke-conversation* (equal "fake-codex-thread" (getf *smoke-conversation* :thread-id)))
+         *smoke-conversation*)
+  (check "the record keeps replies and tool rows"
+         (let ((entries (getf *smoke-conversation* :entries)))
+           (and (find :assistant entries :key #'first)
+                (find-if (lambda (e) (and (eq :tool (first e)) (search "current_context" (getf (rest e) :title))))
+                         entries)))
+         (mapcar #'first (getf *smoke-conversation* :entries)))
+  (call-command 'cadre-ui::assistant-conversations))
+
+(then-when ((and (picker) (gtk:widget-get-visible (cadre-ui::picker-popover (picker)))) :timeout 10)
+  (check "Conversations lists the kept conversations"
+         (plusp (length (cadre-ui::picker-items (picker)))))
+  (gtk:editable-set-text (cadre-ui::picker-entry (picker)) "hello Codex"))
+
+(then 300
+  (cadre-ui::choose (picker)))
+
+(then 300
+  (check "restoring switches to the conversation's provider" (eq :codex (cadre-ui::chat-provider cadre-ui::*chat*)))
+  (check "the restored transcript shows messages, replies and tool rows"
+         (and (chat-says "hello Codex") (chat-says "Fake Codex reply")
+              (find-if (lambda (row) (search "current_context" (gtk:expander-get-label row)))
+                       (find-widgets (cadre-ui::chat-messages cadre-ui::*chat*) (lambda (w) (typep w 'gtk:expander)))))
+         (chat-texts))
+  (check "the restored conversation will resume its thread"
+         (and (equal "fake-codex-thread" (cadre-ui::chat-codex-thread-id cadre-ui::*chat*))
+              (null (cadre-ui::chat-codex-process cadre-ui::*chat*))
+              (chat-says "Restored the conversation")))
+  (screenshot "conversation-restored")
+  (chat-type "after restoring"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+                 (<= 2 (count-if (lambda (s) (search "Fake Codex reply" s)) (chat-texts))))
+            :timeout 20)
+  (let ((params (cadre::codex-request (cadre-ui::chat-codex-process cadre-ui::*chat*) "test/thread-params")))
+    (check "the next message resumes the same Codex thread"
+           (equal "fake-codex-thread" (jget params "threadId"))
+           (json-string params)))
+  (cadre-ui::save-current-conversations)
+  (check "and is added to the same record"
+         (let ((record (find (getf *smoke-conversation* :id) (cadre-ui::saved-conversations)
+                             :key (lambda (r) (getf r :id)) :test #'equal)))
+           (and record (find "after restoring" (getf record :entries)
+                             :key (lambda (e) (getf (rest e) :text)) :test #'equal))))
+  (gtk:drop-down-set-selected (cadre-ui::chat-provider-dropdown cadre-ui::*chat*) 0)
+  (check "conversation smoke restores the Claude provider for later sections"
+         (eq :claude (cadre-ui::chat-provider cadre-ui::*chat*)))
+  ;; A Claude conversation, then a new one, then the first again.
+  (call-command 'cadre-ui::claude-new-chat)
+  (chat-type "effort probe before restoring"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*)) (chat-says "Claude effort=")) :timeout 20)
+  (setf *smoke-claude-session* (cadre-ui::chat-session-id cadre-ui::*chat*))
+  (call-command 'cadre-ui::claude-new-chat)
+  (check "a new Claude conversation has a new session"
+         (not (equal *smoke-claude-session* (cadre-ui::chat-session-id cadre-ui::*chat*))))
+  (cadre-ui::restore-conversation
+   (find "effort probe before restoring" (cadre-ui::saved-conversations) :key (lambda (r) (getf r :title)) :test #'equal))
+  (check "a restored Claude conversation will resume its session"
+         (and (equal *smoke-claude-session* (cadre-ui::chat-session-id cadre-ui::*chat*))
+              (cadre-ui::chat-started cadre-ui::*chat*)
+              (chat-says "effort probe before restoring")))
+  (chat-type "effort probe after restoring"))
+
+(then-when ((and (not (cadre-ui::chat-busy cadre-ui::*chat*))
+                 (<= 2 (count-if (lambda (s) (search "Claude effort=" s)) (chat-texts))))
+            :timeout 20)
+  (check "the next message runs on the restored Claude session"
+         (some (lambda (s) (search (format nil "session=~a" *smoke-claude-session*) s))
+               (last (chat-texts) 3))
+         (last (chat-texts) 3)))
+
 ;;; Assistant controls: exercise real GTK signals and inspect what the peers receive.
 (section "assistant-controls" :needs ("claude" "codex"))
 

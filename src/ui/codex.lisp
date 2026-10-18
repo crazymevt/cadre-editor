@@ -412,9 +412,7 @@ conversation, and only while SERVER is still the chat's."
 (defun send-to-codex (text &key shown)
   "Send TEXT, with editor context, through Codex app-server."
   (let ((context (message-context)))
-    (chat-append (gtk:build
-                   (gtk:box :halign :end :css-classes '("cadre-chat-user")
-                     (gtk:label :label (or shown text) :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char))))
+    (chat-user-message (or shown text))
     (incf (chat-codex-turn-generation *chat*))
     (setf (chat-busy *chat*) t)
     (chat-update-status)

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Earlier assistant conversations.** Cadre keeps the conversations you
+  have in the Assistant panel, Claude's and Codex's, as you go: messages,
+  replies, tool calls, plans, approvals with your answers, and proposed
+  edits with their changes and outcomes. The new history button (or
+  `M-x assistant-conversations`) lists them; choosing one shows its
+  transcript, and the next message continues it on the same Claude Code
+  session or Codex thread. Nothing runs again, and approvals given for the
+  conversation aren't restored. `*assistant-conversations-kept*` (default
+  100) limits how many are kept.
+
 - **Runs history across restarts, by project.** Finished runs are kept for
   the next session, each with the last 64 KB of its output. Build and
   process runs from earlier sessions can be rerun. A project menu on the

@@ -20,8 +20,8 @@ implemented work; a feature stays open until its remaining scope is covered.
 
 ## 3. Persistent assistant conversations
 
-- [ ] Browse and resume Claude and Codex conversations inside Cadre.
-- [ ] Restore transcripts, proposed edits and approval history without
+- [x] Browse and resume Claude and Codex conversations inside Cadre.
+- [x] Restore transcripts, proposed edits and approval history without
       restoring permission grants or replaying actions.
 
 ## 4. More precise refactoring

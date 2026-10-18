@@ -85,7 +85,9 @@ of proposing every change for review. Open files reload when they change on disk
   (pending-approvals '())               ; functions that deny the waiting approvals
   (directory nil)                       ; the folder the conversation runs in (Claude Code keeps it there)
   (pending-directory nil)               ; a folder opened while Claude was replying, to move to after
-  codex-process codex-thread-id codex-directory (codex-turn-generation 0))
+  codex-process codex-thread-id codex-directory (codex-turn-generation 0)
+  ;; Provider → the conversation being recorded (conversations.lisp).
+  (conversations (make-hash-table :test 'eq)))
 
 (defvar *chat* nil)
 (defvar *codex-effort* nil "The chosen Codex thinking level, or nil for the model default.")
@@ -99,6 +101,7 @@ of proposing every change for review. Open files reload when they change on disk
 
 (defun stop-claude-session ()
   "Stop assistant processes and the MCP server (when quitting)."
+  (save-current-conversations)
   (when *chat* (stop-claude (chat-process *chat*)))
   (when *chat* (stop-codex-app-server (chat-codex-process *chat*)))
   (stop-mcp-server *mcp-server*)
@@ -204,6 +207,11 @@ of proposing every change for review. Open files reload when they change on disk
         controls
         (gtk:box :spacing 6 :margin-start 10 :margin-end 6 :margin-bottom 4
           status
+          (gtk:button :icon-name "document-open-recent-symbolic" :tooltip-text "Conversations: continue an earlier one"
+                      :css-classes '("flat")
+                      :on-clicked (lambda (b) (declare (ignore b))
+                                    (handler-case (call-command 'assistant-conversations)
+                                      (editor-error (e) (message "~a" (editor-error-message e))))))
           (gtk:button :icon-name "cadre-document-new-symbolic" :tooltip-text "New conversation"
                       :css-classes '("flat")
                       :on-clicked (lambda (b) (declare (ignore b)) (call-command 'claude-new-chat))))
@@ -445,8 +453,16 @@ chat or what is missing. THEN is called if Claude is ready."
                                          :label (format nil "Ask the selected assistant about your code. It can read your buffers, inspect your running Lisp, and propose edits for review.~%~%Return sends; Shift+Return starts a new line."))))
 
 (defun chat-note (text &rest classes)
+  (record-chat-entry :note :text text :classes classes)
   (chat-append (make-instance 'gtk:label :label text :wrap t :xalign 0.0 :selectable t
                                          :css-classes (or classes '("dim-label")))))
+
+(defun chat-user-message (text)
+  "Show TEXT, a message of the user's, and record it."
+  (record-chat-entry :user :text text)
+  (chat-append (gtk:build
+                 (gtk:box :halign :end :css-classes '("cadre-chat-user")
+                   (gtk:label :label text :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char)))))
 
 ;;; Rendering replies: Markdown, simply
 
@@ -560,6 +576,7 @@ and links, nested as Markdown nests them (bold around code, say)."
 
 (defun chat-finish-text (text)
   "A finished block of the reply: render it in place of what was streamed."
+  (record-chat-entry :assistant :text text)
   (let ((box (or (chat-stream-box *chat*)
                  (chat-append (make-instance 'gtk:box :orientation :vertical :spacing 6)))))
     (clear-box box)
@@ -599,6 +616,7 @@ the next message restarts Claude Code with that mode's tools and model."
   "Show Claude's plan (TodoWrite's todos) as a checklist, updated in place."
   (let ((todos (and (jobject-p input) (jlist (jget input "todos")))))
     (when todos
+      (record-chat-entry :plan :input (json-string input))
       (let ((box (or (chat-plan-box *chat*)
                      (let ((box (make-instance 'gtk:box :orientation :vertical :spacing 2
                                                         :css-classes '("cadre-chat-plan"))))
@@ -621,6 +639,7 @@ the next message restarts Claude Code with that mode's tools and model."
   (when (equal name "TodoWrite")
     (show-plan input)
     (return-from chat-tool-row nil))
+  (record-tool-start id (format nil "⚙ ~a" (tool-summary name input)))
   (let ((entry (gethash id (chat-tools *chat*))))
     (if entry
         (set-tool-row-label (car entry) (format nil "⚙ ~a" (tool-summary name input)))
@@ -638,6 +657,7 @@ the next message restarts Claude Code with that mode's tools and model."
           (chat-append expander)))))
 
 (defun chat-tool-result (id text error)
+  (record-tool-result id text error)
   (let ((entry (gethash id (chat-tools *chat*))))
     (when entry
       (gtk:label-set-text (cdr entry) (if (> (length text) 4000) (concatenate 'string (subseq text 0 4000) "…") text))
@@ -652,6 +672,7 @@ The CLI mostly sends thinking empty, but when it isn't, it can hold what
 Claude meant as its reply: not showing it lost that."
   (let ((text (string-trim '(#\Space #\Newline) (or text ""))))
     (when (plusp (length text))
+      (record-chat-entry :thinking :text text)
       (let* ((body (make-instance 'gtk:box :orientation :vertical :css-classes '("dim-label")))
              (first-line (subseq text 0 (or (position #\Newline text) (length text))))
              (title (make-instance 'gtk:label :label (format nil "💭 ~a" first-line)
@@ -770,9 +791,7 @@ started in the other mode is replaced, resuming the same conversation."
   (when (eq (chat-provider *chat*) :codex)
     (return-from send-to-claude (send-to-codex text :shown shown)))
   (let ((context (message-context)))
-    (chat-append (gtk:build
-                   (gtk:box :halign :end :css-classes '("cadre-chat-user")
-                     (gtk:label :label (or shown text) :wrap t :xalign 0.0 :selectable t :wrap-mode :word-char))))
+    (chat-user-message (or shown text))
     (setf (chat-busy *chat*) t)
     (chat-update-status)
     (claude-send (ensure-claude-process)
@@ -792,9 +811,11 @@ started in the other mode is replaced, resuming the same conversation."
          (buttons (make-instance 'gtk:flow-box :selection-mode :none :halign :end :homogeneous nil
                                                :column-spacing 6 :row-spacing 6 :max-children-per-line 3))
          (answered nil)
-         (deny nil))
+         (deny nil)
+         (entry (record-chat-entry :approval :title title :detail detail :answer nil)))
     (labels ((answer (value label)
                (unless answered
+                 (update-chat-entry entry :answer label)
                  (setf answered t
                        (chat-pending-approvals *chat*) (remove deny (chat-pending-approvals *chat*)))
                  (gtk:box-remove card buttons)
@@ -900,6 +921,7 @@ started in the other mode is replaced, resuming the same conversation."
                   (if (eq provider active)
                       (claude-new-chat)
                       (progn
+                        (end-current-conversation provider)
                         (if (eq provider :codex)
                             (progn
                               (when (chat-codex-process *chat*)
@@ -934,6 +956,9 @@ started in the other mode is replaced, resuming the same conversation."
 
 (define-command claude-new-chat ()
   "Start a new conversation with the selected assistant."
+  ;; Answered and saved before the session's ids are reset.
+  (deny-pending-approvals)
+  (end-current-conversation (chat-provider *chat*))
   (if (eq (chat-provider *chat*) :codex)
       (progn
         (when (chat-codex-process *chat*) (stop-codex-app-server (chat-codex-process *chat*)))
