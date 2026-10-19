@@ -711,3 +711,18 @@ Over lines.\"
       (c:format-css "@import url(\"x;y.css\");@media (max-width: 600px){p:hover{color:blue;}}/* end */"))
   (let ((once (c:format-css "a{b:c}")))
     (is string= once (c:format-css once))))
+
+(define-test occurrences :parent cadre-tests
+  (let ((string "alpha beta alpha alphabet alpha-x"))
+    (is equal '(0 5) (multiple-value-list (c:word-at string 2 #'c:word-char-p)))
+    (is equal '(0 5) (multiple-value-list (c:word-at string 5 #'c:word-char-p)) "just after a word")
+    (is eq nil (c:word-at "  " 1 #'c:word-char-p))
+    (is equal '(0 11 17 26) (c:occurrences string "alpha"))
+    (is equal '(0 11 26) (c:occurrences string "alpha" :whole-word t :char-p #'c:word-char-p))
+    (is equal '(0 11) (c:occurrences string "alpha" :whole-word t :char-p #'c:symbol-constituent-p)
+        "alpha-x is one Lisp symbol")
+    (is equal '(0 2) (c:occurrences "aaaa" "aa") "without overlaps")
+    (is = 11 (c:next-occurrence string "alpha" 5 '(0) :whole-word t :char-p #'c:word-char-p))
+    (is = 0 (c:next-occurrence string "alpha" 27 '(11 26) :whole-word t :char-p #'c:word-char-p)
+        "going round")
+    (is eq nil (c:next-occurrence string "alpha" 0 '(0 11 26) :whole-word t :char-p #'c:word-char-p))))

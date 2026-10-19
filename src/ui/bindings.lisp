@@ -97,6 +97,11 @@
     "C-S-Left" 'select-to-beginning-of-code-or-line))
 
 (bind-keys *standard-editing-keymap*
+  "C-d" 'select-next-occurrence
+  "C-k C-d" 'skip-occurrence
+  "C-S-l" 'select-all-occurrences
+  "C-M-Up" 'add-cursor-above
+  "C-M-Down" 'add-cursor-below
   "C-/" 'toggle-comment
   "C-S-k" 'kill-whole-line
   "C-z" 'undo
@@ -263,9 +268,12 @@
   "C-c M-p" 'profile-form
   "C-c P" 'show-profiler
   "C-c M-s" 'step-expression
-  "C-c M-c" 'compile-defun-for-debugging)
+  "C-c M-c" 'compile-defun-for-debugging
+  "C-x SPC" 'toggle-breakpoint)
 
 (bind-keys (mode-profile-keymap 'lisp-mode :standard)
+  "F9" 'toggle-breakpoint
+  "C-S-F9" 'clear-breakpoints
   "C-RET" 'compile-or-eval-defun
   "C-S-RET" 'eval-expression-or-region
   "C-M-RET" 'compile-and-load-file
@@ -570,6 +578,14 @@
   "C-c C-a p" 'ask-claude-about-problems)
 
 (bind-keys *emacs-editing-keymap*
+  ;; Multiple cursors, with multiple-cursors.el's keys.
+  "C->" 'select-next-occurrence
+  "C-c m s" 'skip-occurrence
+  "C-c m a" 'select-all-occurrences
+  "C-c m p" 'add-cursor-above
+  "C-c m n" 'add-cursor-below)
+
+(bind-keys *emacs-editing-keymap*
   "C-f" 'forward-char
   "C-b" 'backward-char
   "C-n" 'next-line
@@ -754,6 +770,17 @@ Emacs keys want M-f."
     (call-command command)
     (show-pending-keys win nil)))
 
+(defun run-key-command-at-cursors (win command keys)
+  "Run COMMAND, at each cursor if the focused editor has several and it's
+a command for that (cursors.lisp)."
+  (let ((view (focused-view win))
+        (prefix *pending-prefix-arg*))
+    (if (and view (view-cursors view) (cursor-command-p command))
+        (call-at-each-cursor view (lambda ()
+                                    (let ((*pending-prefix-arg* prefix))
+                                      (run-key-command win command keys))))
+        (run-key-command win command keys))))
+
 (defun process-key (win key text &key replaying)
   "Act on KEY (a canonical key) typed in WIN; TEXT is the character it
 types, if any. Returns t if Cadre used the key, nil to let the focused
@@ -763,7 +790,12 @@ typed into the focused widget here."
   (let ((dispatcher (window-dispatcher win)))
     (cond
       ((and *key-reader* (funcall *key-reader* key)) t)
-      ((and (null (dispatcher-pending dispatcher)) (null *pending-prefix-arg*) (wrap-selection-key win key text)) t)
+      ((and (null (dispatcher-pending dispatcher)) (null *pending-prefix-arg*)
+            (let ((view (focused-view win)))
+              (if view
+                  (call-at-each-cursor view (lambda () (wrap-selection-key win key text)) :only-if-done t)
+                  (wrap-selection-key win key text))))
+       t)
       ((and (null (dispatcher-pending dispatcher)) (collect-prefix-digit key))
        (show-pending-keys win nil)
        t)
@@ -771,14 +803,15 @@ typed into the focused widget here."
        (multiple-value-bind (action keys command) (dispatch-key dispatcher key (keymaps-for-key win key))
          (ecase action
            (:prefix (show-pending-keys win keys) t)
-           (:command (run-key-command win command keys) t)
+           (:command (run-key-command-at-cursors win command keys) t)
            (:undefined (clear-prefix-arg) (show-pending-keys win nil)
             (message "~a is undefined" (keys-string keys)) t)
            (:unbound
             (let ((command (and (= 1 (length keys)) (mac-command-fallback win key))))
               (if command
                   (progn (run-key-command win command keys) t)
-                  (unbound-key win key text :replaying replaying))))))))))
+                  (or (cursors-unbound-key win key text)
+                      (unbound-key win key text :replaying replaying)))))))))))
 
 (defun mac-command-fallback (win key)
   "In the Emacs profile on macOS, ⌘ with a key Emacs's keys leave unbound

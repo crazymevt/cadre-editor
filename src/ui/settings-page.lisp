@@ -28,6 +28,7 @@
     (*color-scheme* . apply-theme) (*light-theme* . apply-theme) (*dark-theme* . apply-theme)
     (*keybinding-profile* . apply-keybinding-option)
     (*paredit* . apply-paredit-option)
+    (*sticky-scroll* . refresh-sticky-headers)
     (*highlight-from-image* . image-changed)
     (*codex-model* . apply-codex-model-option)
     (*terminal-scrollback* . restyle-terminals)

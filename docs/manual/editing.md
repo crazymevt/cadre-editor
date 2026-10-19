@@ -51,6 +51,26 @@ Go to Definition and Find References work without a running Lisp too: they
 use the definitions in your source, and search the project for the symbol.
 `*word-wrap*` wraps new editors; the zoom is saved as `*editor-zoom*`.
 
+## Multiple cursors
+
+| Action | Standard (⌘ on macOS) | Emacs |
+| --- | --- | --- |
+| Select the word, then add a cursor at its next occurrence | `Ctrl+D` | `C->` |
+| Skip this occurrence | `Ctrl+K Ctrl+D` | `C-c m s` |
+| A cursor at every occurrence | `Ctrl+Shift+L` | `C-c m a` |
+| Add a cursor above / below | `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | `C-c m p` / `C-c m n` |
+| Add or remove a cursor | `Alt+click` (Option+click) | `Alt+click` |
+| Back to one cursor | `Escape`, or a click | `C-g`, or a click |
+
+What you type, delete or paste goes in at every cursor, and the arrow keys,
+`Home`, `End` and word moves move them all. So do editing commands such as
+paredit's, kill line or indent. Commands that aren't about the text at the
+cursor, such as saving or opening files, run once. Undo takes back a change
+at all the cursors in one step. Copying with several cursors copies each
+selection, and pasting with the same number of cursors puts one back at each.
+A word that `Ctrl+D` picked matches only as a whole word (whole symbols in
+Lisp); a selection you made matches anywhere.
+
 ## Emacs depth
 
 | Action | Standard (⌘ on macOS) | Emacs |
@@ -125,6 +145,13 @@ Folding again at the same place folds the form around it, and Fold All folds
 every top-level form or section. Folds are also in the right-click menu and
 the View menu. Folded text is never changed unseen: moving the cursor into it
 (by searching, going to a line or a definition) or editing it unfolds it.
+
+## Sticky header
+
+When you scroll past the start of a definition, its first line stays at the
+top of the editor, as in VS Code: the top-level form in Lisp, and the
+unindented line that opens the block in JavaScript, TypeScript and CSS. Click
+it to go there. Turn it off with `*sticky-scroll*` (Settings › Editing).
 
 ## Outline
 

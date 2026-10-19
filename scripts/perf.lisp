@@ -454,7 +454,7 @@ and, if Cadre doesn't take it, as the text view would."
                                 (uiop:temporary-directory))))
   (ensure-directories-exist (merge-pathnames "cadre/" config))
   (with-open-file (o (merge-pathnames "cadre/settings.sexp" config) :direction :output)
-    (prin1 '(:keybinding-profile :standard) o))
+    (prin1 '(:keybinding-profile :standard :setup-checked t) o))
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1)
   (sb-posix:setenv "XDG_STATE_HOME" (namestring (merge-pathnames "state/" config)) 1))
 

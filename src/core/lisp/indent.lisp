@@ -75,6 +75,23 @@ gives the position of &body, or is nil when a macro no longer has one."
                (remhash name *indentation-specs*)
                (remhash name *learned-indentation*)))))))
 
+(defun learned-indentation ()
+  "The specs learned from the Lisp, as an alist of (name . spec) sorted by name."
+  (sort (loop for name being the hash-keys of *learned-indentation*
+              for spec = (gethash name *indentation-specs*)
+              when (integerp spec) collect (cons name spec))
+        #'string< :key #'car))
+
+(defun restore-learned-indentation (specs)
+  "Bring back SPECS, an alist from LEARNED-INDENTATION saved earlier, so
+macros indent right before the Lisp is running. A name that already has a
+spec, built in or learned since, keeps it."
+  (loop for (name . spec) in specs
+        when (and (stringp name) (typep spec '(integer 0 32))
+                  (not (gethash name *indentation-specs*)))
+          do (setf (gethash name *indentation-specs*) spec
+                   (gethash name *learned-indentation*) t)))
+
 (defun symbol-base-name (string)
   "STRING without any package prefix, in lower case."
   (string-downcase (subseq string (1+ (or (position #\: string :from-end t) -1)))))

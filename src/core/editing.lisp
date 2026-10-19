@@ -131,3 +131,41 @@ POINT first: searching back from POINT, then forward."
                      (setf i end))
                    (incf i))))
     (remove-duplicates (append before (nreverse after)) :test #'string= :from-end t)))
+
+;;; Occurrences, for more than one cursor (ui/cursors.lisp)
+
+(defun word-at (string position char-p)
+  "The start and end of the run of characters satisfying CHAR-P around
+POSITION in STRING (just before it counts too), or nil."
+  (let* ((position (min position (length string)))
+         (start (loop for i downfrom position
+                      while (and (> i 0) (funcall char-p (char string (1- i))))
+                      finally (return i)))
+         (end (or (position-if-not char-p string :start position) (length string))))
+    (and (< start end) (values start end))))
+
+(defun occurrences (string needle &key whole-word char-p)
+  "The start of each occurrence of NEEDLE in STRING, in order, without
+overlaps. With WHOLE-WORD, only those not inside a longer run of
+characters satisfying CHAR-P."
+  (let ((n (length needle)))
+    (when (plusp n)
+      (loop with i = 0
+            for found = (search needle string :start2 i)
+            while found
+            when (or (not whole-word)
+                     (and (or (zerop found) (not (funcall char-p (char string (1- found)))))
+                          (or (= (+ found n) (length string))
+                              (not (funcall char-p (char string (+ found n)))))))
+              collect found into starts
+              and do (setf i (+ found n))
+            else do (setf i (1+ found))
+            finally (return starts)))))
+
+(defun next-occurrence (string needle after taken &key whole-word char-p)
+  "The start of the first occurrence of NEEDLE in STRING at or after AFTER,
+going round to the beginning, that isn't one of the starts in TAKEN; or nil."
+  (let ((all (remove-if (lambda (start) (member start taken))
+                        (occurrences string needle :whole-word whole-word :char-p char-p))))
+    (or (find-if (lambda (start) (>= start after)) all)
+        (first all))))

@@ -39,6 +39,7 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 | Open the project's scratch buffer | `Ctrl+K Shift+S` | `C-x M-s` |
 | Step through the form (or a call of the definition) | `F11` | `C-c M-s` |
 | Compile the form with full debug information | `Ctrl+K D` | `C-c M-c` |
+| Set or clear a breakpoint on the line / clear all in the file | `F9` / `Ctrl+Shift+F9` | `C-x SPC` / `M-x clear-breakpoints` |
 | While stepping: step over / step out | `F10` / `Shift+F11` | `x` / `o` in the Stepper |
 | Fold / unfold the form or section | `Ctrl+Shift+[` / `Ctrl+Shift+]` | `C-c @ C-h` / `C-c @ C-s` |
 | Toggle the fold at the cursor | `Ctrl+K Ctrl+.` | `C-c @ C-c` |
@@ -48,6 +49,11 @@ Talking to the Lisp, in Lisp files (Cadre starts a Lisp with `*lisp-command*`,
 
 Values from evaluating appear inline after the form (`⇒ 42`) until you edit,
 and in the status bar.
+
+Macros you define with `&body` indent like `when` once the Lisp has seen
+them. Cadre keeps what it learned for each project, so they indent that way
+the next time you open the project, before a Lisp is running
+(`*remember-learned-indentation*`).
 
 ## Image-aware highlighting
 
@@ -82,6 +88,27 @@ In the debugger, digits choose a restart, `a` aborts and `c` continues. Open a
 frame to see its locals (click one to inspect it) and to evaluate in the frame.
 
 <img alt="The Debugger page with the condition, restarts and backtrace" src="../gallery/dark/debugger.png">
+
+## Breakpoints
+
+Click left of a line number in a Lisp file (or press `F9`) to set a
+breakpoint, shown as a red dot. It stops before the statement the line is in:
+a form in the body of a `defun`, `let`, `when`, a `cond` clause, a macro with
+`&body` and so on. If you click a line that isn't a statement on its own, such
+as a `let` binding or the second line of a call, the dot moves to the
+statement around it. A definition's first line stops at its first statement.
+Click the dot again to clear it.
+
+Cadre puts breakpoints in by compiling: when a Lisp is connected, setting
+one compiles its top-level form again with `(break)` before that statement,
+and your file stays as it is. Running the code then opens the debugger, which
+says which breakpoint stopped it; Continue (`c`) goes on. Compiling the form or
+the file later keeps the breakpoints in, and clearing a form's last one
+compiles it again without. If the Lisp isn't running yet, or hasn't loaded
+the file's package, a breakpoint waits and goes in once it has: after you
+load the project, the file, or anything that makes the package. Breakpoints
+move with your edits, and last until you close the file. They're for Common
+Lisp files.
 
 ## Tracing
 

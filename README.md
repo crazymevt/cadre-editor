@@ -42,8 +42,12 @@ The [manual](docs/manual/README.md) covers each of these, and the
 Since 1.2.0, unreleased work adds [Runs history](docs/manual/projects.md#recent-runs),
 [local history and crash recovery](docs/manual/editing.md#local-history-and-recovery),
 [assistant conversation history](docs/manual/using-claude.md#earlier-conversations),
-and more precise [renaming](docs/manual/editing.md). See **Unreleased** in the
-changelog.
+more precise [renaming](docs/manual/editing.md),
+[breakpoints](docs/manual/common-lisp.md#breakpoints),
+[multiple cursors](docs/manual/editing.md#multiple-cursors), a
+[sticky header](docs/manual/editing.md#sticky-header) and a
+[setup check](docs/manual/installing.md#installing-a-release). See
+**Unreleased** in the changelog.
 
 <table>
   <tr>

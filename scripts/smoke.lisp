@@ -2892,6 +2892,242 @@ d" 0 0)
 (then 300
   (check "Unfold All shows everything" (and (null (folds)) (not (line-hidden-p 13)))))
 
+;;; The sticky header
+(section "sticky")
+
+(with-open-file (o (merge-pathnames "src/long.lisp" *root*) :direction :output)
+  (format o "(defun short-one () 1)~%~%(defun long-one (x)~%~{  (print ~d)~%~}  x)~%~%~{(defvar *after-~d* 2)~%~}"
+          (loop for i below 120 collect i) (loop for i below 80 collect i)))
+
+(defun sticky-shown ()
+  (let ((sticky (cadre-ui::view-sticky (current-view))))
+    (and sticky (third sticky) (gtk:widget-get-visible (first sticky))
+         (gtk:label-get-text (second sticky)))))
+(defun scroll-to-line (line)
+  (let* ((text-view (cadre-ui::view-text-view (current-view)))
+         (y (nth-value 0 (gtk:text-view-get-line-yrange text-view (cadre-ui::line-iter (buffer-text (current-buffer)) line)))))
+    (gtk:adjustment-set-value (gtk:scrolled-window-get-vadjustment (cadre-ui::view-widget (current-view)))
+                              (coerce y 'double-float))))
+
+(then 300
+  (open-file-path (merge-pathnames "src/long.lisp" *root*)))
+
+(then-when ((find-buffer "long.lisp"))
+  (show-buffer-named "long.lisp")
+  (check "no header at the top of the file" (null (sticky-shown)) (sticky-shown))
+  (scroll-to-line 60))
+
+(then 400
+  (check "scrolled into a form, its first line stays at the top"
+         (equal "(defun long-one (x)" (sticky-shown)) (sticky-shown))
+  (screenshot "38-sticky")
+  (scroll-to-line 130))
+
+(then 400
+  (check "between forms there is no header" (null (sticky-shown)) (sticky-shown))
+  (scroll-to-line 60)
+  (setf cadre-ui::*sticky-scroll* nil)
+  (cadre-ui::refresh-sticky-headers))
+
+(then 300
+  (check "*sticky-scroll* turns it off" (null (sticky-shown)) (sticky-shown))
+  (setf cadre-ui::*sticky-scroll* t)
+  (cadre-ui::refresh-sticky-headers))
+
+(then 300
+  (check "and back on" (sticky-shown))
+  (cadre-ui::goto-line-column (current-view) (third (cadre-ui::view-sticky (current-view))) 0 :extend nil))
+
+(then 400
+  (check "going to the header's line" (= 2 (first (cursor))) (cursor))
+  (check "and the header goes away once it's in sight" (null (sticky-shown)) (sticky-shown)))
+
+;;; More than one cursor
+(section "cursors")
+
+(defparameter *cursors-text* (format nil "alpha beta alpha~%alphabet alpha~%"))
+(with-open-file (o (merge-pathnames "cursors.txt" *root*) :direction :output :if-exists :supersede)
+  (write-string *cursors-text* o))
+
+(defun extra-cursors () (cadre-ui::view-cursors (current-view)))
+(defun selected-text ()
+  (multiple-value-bind (has start end) (gtk:text-buffer-get-selection-bounds (buffer-text (current-buffer)))
+    (and has (gtk:text-buffer-get-text (buffer-text (current-buffer)) start end nil))))
+
+(then 300
+  (open-file-path (merge-pathnames "cursors.txt" *root*)))
+
+(then-when ((find-buffer "cursors.txt"))
+  (show-buffer-named "cursors.txt")
+  (gtk:widget-grab-focus (cadre-ui::view-text-view (current-view)))
+  (set-cursor 0 1)
+  (press "C-d"))
+
+(then 200
+  (check "Ctrl+D selects the word at the cursor" (equal "alpha" (selected-text)) (selected-text))
+  (check "and adds no cursor yet" (null (extra-cursors)))
+  (press "C-d"))
+
+(then 200
+  (check "again, adds the next occurrence" (= 1 (length (extra-cursors))) (length (extra-cursors)))
+  (check "which is selected" (equal '(0 16) (cursor)) (cursor))
+  (press "C-d"))
+
+(then 200
+  (check "a word picked that way skips longer words" (equal '(1 14) (cursor)) (cursor))
+  (screenshot "39-cursors")
+  (press "x"))
+
+(then 300
+  (check "typing replaces every selection"
+         (equal (format nil "x beta x~%alphabet x~%") (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (press "C-z"))
+
+(then 300
+  (check "and undoes as one step" (equal *cursors-text* (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (press "ESC"))
+
+(then 200
+  (check "Escape goes back to one cursor" (null (extra-cursors)))
+  (set-cursor 0 0)
+  (press "C-M-Down"))
+
+(then 200
+  (check "Ctrl+Alt+Down adds a cursor below" (= 1 (length (extra-cursors))))
+  (press "End")
+  (press "!")
+  (press "Left")
+  (press "S-Left")
+  ;; PRESS can't name Backspace: its canonical name, DEL, isn't GDK's.
+  (cadre-ui::handle-key *window* (gdk:keyval-from-name "BackSpace") nil))
+
+(then 300
+  (check "keys move and edit at every cursor"
+         (equal (format nil "alpha beta alph!~%alphabet alph!~%") (buffer-string (current-buffer)))
+         (buffer-string (current-buffer)))
+  (press "C-z")
+  (press "ESC"))
+
+(then 300
+  (set-cursor 0 1)
+  (press "C-S-l"))
+
+(then 200
+  (check "Ctrl+Shift+L selects every occurrence" (= 2 (length (extra-cursors))) (length (extra-cursors)))
+  (cadre-ui::toggle-cursor-at (current-view) 16))
+
+(then 200
+  (check "Alt+click on a cursor removes it" (= 1 (length (extra-cursors))) (length (extra-cursors)))
+  (cadre-ui::toggle-cursor-at (current-view) 7))
+
+(then 200
+  (check "and elsewhere adds one" (= 2 (length (extra-cursors))) (length (extra-cursors)))
+  (press "ESC")
+  (gtk:text-buffer-set-modified (buffer-text (current-buffer)) nil))
+
+;;; Breakpoints
+(section "breakpoints")
+
+(with-open-file (o (merge-pathnames "src/bp.lisp" *root*) :direction :output :if-exists :supersede)
+  (format o "(defun bp-add (a b)~%  (let ((sum (+ a b)))~%    (print sum)~%    (let ((ignored-bp 1))~%      (list sum))))~%"))
+(connect-lisp)
+
+(defun bp-notes ()
+  (remove-if-not (lambda (s) (eq (cadre-ui::sn-buffer s) (find-buffer "bp.lisp"))) cadre-ui::*notes*))
+
+(then 300
+  (open-file-path (merge-pathnames "src/bp.lisp" *root*)))
+
+(then-when ((and (find-buffer "bp.lisp") (cadre-ui::connected-p)) :timeout 60)
+  (show-buffer-named "bp.lisp")
+  (cadre-ui::toggle-breakpoint-at (current-view) 2))
+
+(then-when ((bp-notes) :timeout 30)
+  (check "the breakpoint is on its line" (equal '(2) (cadre-ui::breakpoint-lines (current-buffer)))
+         (cadre-ui::breakpoint-lines (current-buffer)))
+  (check "a note after the break is still on its own line"
+         (equal '(3) (mapcar #'cadre-ui::sn-line (bp-notes))) (mapcar #'cadre-ui::sn-line (bp-notes)))
+  (check "the file itself is unchanged" (not (search "break" (buffer-string (current-buffer)))))
+  (let ((gutter-width (gtk:widget-get-width (cadre-ui::view-gutter (current-view)))))
+    (check "a click left of the line numbers sets a breakpoint" (cadre-ui::breakpoint-zone-p (current-view) 8)
+           gutter-width)
+    (check "but not on the fold arrows" (not (cadre-ui::breakpoint-zone-p (current-view) (- gutter-width 3)))))
+  (screenshot "40-breakpoint")
+  (cadre-ui::repl-eval "(bp-add 1 2)"))
+
+(then-when (cadre-ui::*debug-levels* :timeout 30)
+  (check "running it stops in the debugger"
+         (search "Breakpoint: bp.lisp, line 3" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))
+         (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))
+  (call-command 'cadre-ui::debugger-continue))
+
+(then-when ((null cadre-ui::*debug-levels*) :timeout 20)
+  (check "Continue goes on" (search "(3)" (repl-output-text)) (repl-output-text))
+  (cadre-ui::toggle-breakpoint-at (current-view) 1))
+
+(then 300
+  (check "a line that isn't a statement sets one on its statement"
+         (equal '(1 2) (cadre-ui::breakpoint-lines (current-buffer))) (cadre-ui::breakpoint-lines (current-buffer)))
+  (call-command 'cadre-ui::clear-breakpoints))
+
+(then 2000
+  (check "Clear Breakpoints clears them" (null (cadre-ui::breakpoint-lines (current-buffer))))
+  (cadre-ui::repl-eval "(bp-add 2 2)"))
+
+(then-when ((search "(4)" (repl-output-text)) :timeout 20)
+  (check "and runs without stopping" (null cadre-ui::*debug-levels*))
+  (with-open-file (o (merge-pathnames "src/bp-later.lisp" *root*) :direction :output :if-exists :supersede)
+    (format o "(in-package :bp-later)~%~%(defun later ()~%  (print :later)~%  :done)~%"))
+  (open-file-path (merge-pathnames "src/bp-later.lisp" *root*)))
+
+(then-when ((find-buffer "bp-later.lisp"))
+  (show-buffer-named "bp-later.lisp")
+  (cadre-ui::toggle-breakpoint-at (current-view) 3))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :breakpoints-waiting) :timeout 20)
+  (check "without the file's package in the Lisp, the breakpoint waits" (null cadre-ui::*debug-levels*))
+  (cadre-ui::repl-eval "(defpackage :bp-later (:use :cl))"))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :breakpoint-insertions) :timeout 30)
+  (check "the waiting breakpoint is compiled in" t))
+
+(then 2000
+  (cadre-ui::repl-eval "(bp-later::later)"))
+
+(then-when (cadre-ui::*debug-levels* :timeout 30)
+  (check "and goes in once the package is there"
+         (search "bp-later.lisp, line 4" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))
+         (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))
+  (call-command 'cadre-ui::debugger-continue))
+
+(then-when ((null cadre-ui::*debug-levels*) :timeout 20)
+  (call-command 'cadre-ui::clear-breakpoints))
+
+;;; Checking the setup
+(section "setup")
+
+(defvar *setup-results* nil)
+(defvar *setup-dialog* nil)
+
+(then 100
+  (cadre-ui::check-setup-in-background (lambda (results) (setf *setup-results* results))))
+
+(then-when (*setup-results* :timeout 30)
+  (check "SBCL is found, with its version"
+         (search "SBCL" (or (getf (cdr (assoc :sbcl *setup-results*)) :detail) ""))
+         (assoc :sbcl *setup-results*))
+  (check "every tool is checked" (= (length cadre-ui::*setup-tools*) (length *setup-results*)))
+  (setf *setup-dialog* (cadre-ui::show-setup-dialog *setup-results*)))
+
+(then 600
+  (let ((titles (mapcar (lambda (row) (gobject:property row :title))
+                        (find-widgets *setup-dialog* (lambda (w) (typep w 'adw:action-row))))))
+    (check "the page lists each tool" (= (length cadre-ui::*setup-tools*) (length titles)) titles))
+  (screenshot "41-setup")
+  (adw:dialog-close *setup-dialog*))
+
 ;;; A new project
 (section "new-project")
 
@@ -4408,6 +4644,16 @@ and the number of items MODEL itself shows."
 (then-when ((cadre:indentation-spec "smoke-around") :timeout 20)
   (check "a macro's &body position comes from the Lisp" (eql 1 (cadre:indentation-spec "smoke-around"))
          (cadre:indentation-spec "smoke-around")))
+
+(defun saved-smoke-around ()
+  (cdr (assoc "smoke-around"
+              (cdr (assoc (cadre-ui::project-key (cadre-ui::window-project *window*))
+                          (cadre-ui::read-saved-indentation) :test #'equal))
+              :test #'equal)))
+
+;; Saved a moment after the Lisp reports it; earlier sections may have saved other macros.
+(then-when ((saved-smoke-around) :timeout 10)
+  (check "and is kept for the project" (equal 1 (saved-smoke-around)) (saved-smoke-around)))
 
 (then 100
   (let ((key (cadre-ui::event-key (gdk:keyval-from-name "Return") '(:super-mask :alt-mask) :super-as-control t)))
@@ -5943,7 +6189,7 @@ INSERT INTO shop.items (item, qty, added) VALUES ('Apple', 3, '2026-01-02'), ('b
                                 (uiop:temporary-directory))))
   (ensure-directories-exist (merge-pathnames "cadre/" config))
   (with-open-file (o (merge-pathnames "cadre/settings.sexp" config) :direction :output)
-    (prin1 '(:keybinding-profile :standard) o))
+    (prin1 '(:keybinding-profile :standard :setup-checked t) o))
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1)
   (sb-posix:setenv "XDG_STATE_HOME" (namestring (merge-pathnames "state/" config)) 1))
 

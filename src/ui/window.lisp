@@ -122,6 +122,13 @@
                             :padding "8px")
     (".cadre-chat-tool" :opacity "0.8")
     (".cadre-chat-plan" :background-color "alpha(@accent_bg_color, 0.08)" :border-radius "8px" :padding "8px")
+    ;; The sticky header (sticky.lisp): the editor's background, set apart from the text below.
+    (".cadre-sticky" :background-color "@view_bg_color"
+                     :border-bottom "1px solid alpha(@view_fg_color, 0.12)"
+                     :box-shadow "0 2px 3px alpha(black, 0.12)")
+    (".cadre-sticky:hover" :color "@accent_color")
+    ;; Cursors besides GTK's own (cursors.lisp).
+    (".cadre-extra-cursor" :background-color "@view_fg_color" :min-width "2px")
     (".cadre-inline-result" :background-color "alpha(@accent_bg_color, 0.18)" :border-radius "4px"
                             :padding ("0" "6px") :font-family "monospace")
     ;; CLOS browser: compact tables, links and hierarchy nodes.
@@ -196,7 +203,9 @@ for a submenu, and (:section entry…) for a group set off by separators."
      (:submenu "Edit"
       (:section ("Find…" find-text) ("Find and Replace…" find-replace))
       (:section ("Find in Project…" find-in-project) ("Replace in Project…" replace-in-project))
-      (:section ("Rename Symbol…" rename-symbol)))
+      (:section ("Rename Symbol…" rename-symbol))
+      (:section ("Add Next Occurrence" select-next-occurrence) ("Select All Occurrences" select-all-occurrences)
+                ("Add Cursor Above" add-cursor-above) ("Add Cursor Below" add-cursor-below)))
      (:submenu "View"
       (:section ("Toggle Sidebar" toggle-sidebar) ("Toggle Panel" toggle-panel)
                 ("Toggle Layout" toggle-layout) ("Automatic Layout" use-automatic-layout))
@@ -217,6 +226,7 @@ for a submenu, and (:section entry…) for a group set off by separators."
       (:section ("Inspect…" inspect-value) ("Find References" find-references)
                 ("Macroexpand" expand-macro-once))
       (:section ("Search HyperSpec…" hyperspec-search))
+      (:section ("Toggle Breakpoint" toggle-breakpoint) ("Clear Breakpoints" clear-breakpoints))
       (:section ("Trace Function…" trace-function) ("Show Traces" show-traces))
       (:section ("Profile Form…" profile-expression) ("Profile All Threads" profile-all-threads)
                 ("Stop Profiling" stop-profiling) ("Show Profiler" show-profiler))
@@ -230,7 +240,8 @@ for a submenu, and (:section entry…) for a group set off by separators."
      ("Color Theme…" choose-theme)
      (:submenu "Keyboard Shortcuts"
       (:section ("Standard" use-standard-keys) ("Emacs" use-emacs-keys)))
-     ("Install Language Grammar…" install-language-grammar))
+     ("Install Language Grammar…" install-language-grammar)
+     ("Check Setup…" check-setup))
    '(:section ("Quit" quit))))
 
 (defvar *named-widgets* (make-hash-table :test 'eq)
@@ -440,6 +451,7 @@ it when the project has an :entry-point)."
   (let ((directory (uiop:ensure-directory-pathname directory)))
     (remember-recent-project directory)
     (setf (window-project win) directory)
+    (restore-project-indentation directory)
     ;; After the project changes, so Git looks at the new one.
     (git-project-opened)
     (adw:bin-set-child (window-explorer-holder win)

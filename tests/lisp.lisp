@@ -208,6 +208,80 @@ Second line of the docstring.\"
          (is = 1 (c:indentation-spec "when")))
     (c:learn-indentation '(("then-when" nil ()) ("frob-two" nil ()) ("my-progn" nil ())))))
 
+(define-test learned-indentation-restore :parent cadre-tests
+  (unwind-protect
+       (progn
+         (c:learn-indentation '(("with-frob" (4 "&body") ("CL-USER"))))
+         (is equal '(("with-frob" . 1)) (remove "with-frob" (c:learned-indentation) :key #'car :test-not #'equal))
+         ;; Saved specs come back, but don't replace built-in or newer ones.
+         (c:restore-learned-indentation '(("saved-macro" . 3) ("when" . 4) ("with-frob" . 5)
+                                          ("bad" . "x") (7 . 1)))
+         (is = 3 (c:indentation-spec "saved-macro"))
+         (is = 1 (c:indentation-spec "when"))
+         (is = 1 (c:indentation-spec "with-frob"))
+         (is eq nil (c:indentation-spec "bad"))
+         (true (assoc "saved-macro" (c:learned-indentation) :test #'equal))
+         (false (assoc "when" (c:learned-indentation) :test #'equal)))
+    (c:learn-indentation '(("with-frob" nil ()) ("saved-macro" nil ())))))
+
+(define-test sticky-lines :parent cadre-tests
+  (let ((s (c:make-lisp-syntax (c:make-string-text (format nil "(defun a ()~%  1~%  2)~%~%(defvar b~%  3)~%")))))
+    (is eq nil (c:enclosing-toplevel-line s 0) "a form's own first line")
+    (is = 0 (c:enclosing-toplevel-line s 1))
+    (is = 0 (c:enclosing-toplevel-line s 2) "its last line")
+    (is eq nil (c:enclosing-toplevel-line s 3) "between forms")
+    (is = 4 (c:enclosing-toplevel-line s 5)))
+  (let ((text (c:make-string-text (format nil "import x;~%function f() {~%  if (a) {~%~%    b();~%  }~%}~%~%.rule {~%  color: red;~%</div>~%  y~%"))))
+    (is eq nil (c:indentation-context-line text 1) "an unindented line")
+    (is = 1 (c:indentation-context-line text 2))
+    (is = 1 (c:indentation-context-line text 3) "a blank line in the block")
+    (is = 1 (c:indentation-context-line text 5))
+    (is eq nil (c:indentation-context-line text 7) "after the block closes")
+    (is = 8 (c:indentation-context-line text 9))
+    (is eq nil (c:indentation-context-line text 11) "a closing tag doesn't open a block")))
+
+(define-test breakpoint-places :parent cadre-tests
+  (let* ((lines '("(defun f (x)"                      ; 0
+                  "  \"Docs.\""                       ; 1
+                  "  (declare (ignorable x))"         ; 2
+                  "  (let ((a 1)"                     ; 3
+                  "        (b 2))"                    ; 4
+                  "    (print a)"                     ; 5
+                  "    (cond ((> a b)"                ; 6
+                  "           (print b))"             ; 7
+                  "          (t (list a"              ; 8
+                  "                   b)))))"         ; 9
+                  ""                                  ; 10
+                  "(defparameter *p* '(1"             ; 11
+                  "                    2))"           ; 12
+                  "(defmethod m :around ((x t))"      ; 13
+                  "  (call-next-method))"             ; 14
+                  "(flet ((g (y)"                     ; 15
+                  "         (* y 2)))"                ; 16
+                  "  (g 1))"))                        ; 17
+         (s (c:make-lisp-syntax (c:make-string-text (format nil "~{~a~%~}" lines)))))
+    (flet ((at (line) (c:breakpoint-place s line)))
+      (is equal '(3 2) (at 0) "a definition's first line: its first statement, past docs and declarations")
+      (is equal '(3 2) (at 1) "a docstring: the form it's in")
+      (is equal '(3 2) (at 3) "a statement")
+      (is equal '(3 2) (at 4) "a binding: its LET")
+      (is equal '(5 4) (at 5))
+      (is equal '(7 11) (at 7) "a COND clause's body")
+      (is equal '(8 13) (at 8) "the clause's first form")
+      (is equal '(8 13) (at 9) "inside a statement: that statement")
+      (is eq nil (at 10) "a blank line")
+      (is eq nil (at 12) "data")
+      (is equal '(14 2) (at 13) "a method with a qualifier")
+      (is equal '(17 2) (at 15) "a top-level FLET: its body")
+      (is equal '(16 9) (at 16) "a local function's body")
+      (is equal '(17 2) (at 17))))
+  (let ((insertions '((3 . "ab") (7 . "c"))))
+    (is equal "012ab3456c789" (c:insert-at-offsets "0123456789" insertions))
+    (is = 2 (c:unshift-position 2 insertions))
+    (is = 3 (c:unshift-position 4 insertions) "inside an insertion: where it went in")
+    (is = 3 (c:unshift-position 5 insertions))
+    (is = 8 (c:unshift-position 11 insertions))))
+
 (define-test fuzzy :parent cadre-tests
   (true (c:fuzzy-match "sb" "save-buffer"))
   (false (c:fuzzy-match "xyz" "save-buffer"))

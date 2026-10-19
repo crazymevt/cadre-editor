@@ -185,3 +185,21 @@ change cannot be undone, the cursor moves to the start, and TEXT is marked unmod
                      (setf low middle)
                      (setf high (1- middle))))))
     (values low (- position (svref starts low)))))
+
+(defun indentation-context-line (text line &key (limit 1000))
+  "For brace languages: the nearest line before LINE, within LIMIT lines,
+that starts at the left edge and opens the block LINE is in, or nil when
+LINE itself starts at the left edge. Lines that only close a block (}, ],
+), </…>) don't count."
+  (flet ((indented-or-blank-p (string)
+           (or (zerop (length string)) (member (char string 0) '(#\Space #\Tab))))
+         (opener-p (string)
+           (and (plusp (length (string-trim '(#\Space #\Tab) string)))
+                (not (member (char string 0) '(#\Space #\Tab #\} #\] #\))))
+                (not (uiop:string-prefix-p "</" string)))))
+    (when (and (< 0 line (text-line-count text))
+               (indented-or-blank-p (text-line-string text line)))
+      (loop for l from (1- line) downto (max 0 (- line limit))
+            for string = (text-line-string text l)
+            unless (indented-or-blank-p string)
+              do (return (and (opener-p string) l))))))

@@ -14,6 +14,11 @@
    (source-controllers-p :initform nil :accessor view-source-controllers-p)
    (widget :reader view-widget :documentation "The scrolled window holding the text view.")
    (gutter-digits :initform 0 :accessor view-gutter-digits)
+   (cursors :initform nil :accessor view-cursors
+            :documentation "The cursors besides GTK's own, see cursors.lisp.")
+   (occurrence-whole-word :initform nil :accessor view-occurrence-whole-word)
+   (sticky :initform nil :accessor view-sticky
+           :documentation "The sticky header: (widget label line), see sticky.lisp.")
    (group :initform nil :accessor view-group :documentation "The editor group whose tab holds this view.")
    (on-cursor-moved :initarg :on-cursor-moved :initform nil :accessor view-on-cursor-moved
                     :documentation "Called with the view when its cursor moves.")))
@@ -62,6 +67,7 @@ nil, there are no line numbers."
 
 (defun bind-editor-view-buffer (view buffer)
   "Move VIEW's buffer notifications together with its displayed buffer."
+  (when (view-cursors view) (clear-extra-cursors view))
   (dolist (handler (view-buffer-handlers view))
     (gobject:disconnect (view-gtk-buffer view) handler))
   (setf (view-buffer-handlers view) nil
@@ -73,7 +79,9 @@ nil, there are no line numbers."
                           (lambda (b) (declare (ignore b))
                             (when (view-gutter view)
                               (update-gutter-width view)
-                              (gtk:widget-queue-draw (view-gutter view)))))
+                              (gtk:widget-queue-draw (view-gutter view)))
+                            (when (view-sticky view) (schedule-sticky-update view))
+                            (when (view-cursors view) (schedule-cursor-redraw view))))
          (gobject:connect (buffer-text buffer) "notify::cursor-position"
                           (lambda (b pspec) (declare (ignore b pspec))
                             (when (view-gutter view) (gtk:widget-queue-draw (view-gutter view)))
@@ -132,8 +140,20 @@ nil, there are no line numbers."
          (bottom (+ top (gdk:rectangle-height rect)))
          (cursor-line (gtk:text-iter-get-line (cursor-iter buffer)))
          (layout (gtk:widget-create-pango-layout text-view nil))
-         (color (gtk:widget-get-color area)))
-    (flet ((draw-line (iter)
+         (color (gtk:widget-get-color area))
+         ;; Lines under the sticky header (sticky.lisp) give way to its line's number.
+         (sticky (view-sticky view))
+         (sticky-line (and sticky (third sticky)))
+         (sticky-height (if sticky-line (gtk:widget-get-height (first sticky)) 0))
+         (breakpoints (and (buffer-local (view-buffer view) :breakpoints) (breakpoint-lines (view-buffer view)))))
+    (flet ((draw-number (line wy)
+             (pango:layout-set-text layout (princ-to-string (1+ line)) -1)
+             (cairo:set-source-rgba cr (gdk:rgba-red color) (gdk:rgba-green color)
+                                    (gdk:rgba-blue color) (if (= line cursor-line) 0.9d0 0.4d0))
+             (cairo:move-to cr (- width (pango:layout-get-pixel-size layout) 6 *fold-gutter-width*) wy)
+             (pango-cairo:show-layout cr layout)))
+      (when sticky-line (draw-number sticky-line 0))
+      (flet ((draw-line (iter)
              (let ((line (gtk:text-iter-get-line iter)))
                (multiple-value-bind (y height) (gtk:text-view-get-line-yrange text-view iter)
                  ;; A folded-away line has no height: nothing to draw.
@@ -141,13 +161,11 @@ nil, there are no line numbers."
                    (multiple-value-bind (wx wy)
                        (gtk:text-view-buffer-to-window-coords text-view :left 0 y)
                      (declare (ignore wx))
-                     (pango:layout-set-text layout (princ-to-string (1+ line)) -1)
-                     (cairo:set-source-rgba cr (gdk:rgba-red color) (gdk:rgba-green color)
-                                            (gdk:rgba-blue color) (if (= line cursor-line) 0.9d0 0.4d0))
-                     (cairo:move-to cr (- width (pango:layout-get-pixel-size layout) 6 *fold-gutter-width*) wy)
-                     (pango-cairo:show-layout cr layout)
-                     (draw-blame-line view cr layout line wy)
-                     (draw-fold-arrow view cr layout line wy width)))
+                     (when (>= wy sticky-height)
+                       (draw-number line wy)
+                       (when (member line breakpoints) (draw-breakpoint view cr wy height))
+                       (draw-blame-line view cr layout line wy)
+                       (draw-fold-arrow view cr layout line wy width))))
                  y))))
       (let ((iter (gtk:text-view-get-line-at-y text-view top)))
         (loop
@@ -158,4 +176,4 @@ nil, there are no line numbers."
               (when (> (gtk:text-iter-get-line iter) line)
                 (draw-line iter))
               (return)))))
-      (draw-git-marks view cr))))
+      (draw-git-marks view cr)))))

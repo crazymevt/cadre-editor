@@ -95,7 +95,7 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
 
 (defparameter *named-tag-faces*
   '(("cadre-repl-prompt" . :repl-prompt) ("cadre-repl-result" . :repl-result) ("cadre-repl-note" . :repl-note)
-    ("cadre-repl-presentation" . :repl-presentation)
+    ("cadre-repl-presentation" . :repl-presentation) ("cadre-extra-selection" . :search)
     ("cadre-conflict-ours" . :conflict-ours) ("cadre-conflict-theirs" . :conflict-theirs)
     ("cadre-conflict-base" . :conflict-base) ("cadre-conflict-marker" . :conflict-marker)
     ("cadre-stepper-current" . :stepper-current) ("cadre-fold-header" . :fold-header)
@@ -121,7 +121,7 @@ FOREGROUND color the editor; CSS is extra GTK CSS while the theme is on."
                           thereis (theme-background th)))
         (foreground (loop for th = theme then (theme-parent th) while th
                           thereis (theme-foreground th))))
-    (format nil "~@[textview.cadre-editor, textview.cadre-editor text, .cadre-gutter { background-color: ~a; }~]~
+    (format nil "~@[textview.cadre-editor, textview.cadre-editor text, .cadre-gutter, .cadre-sticky { background-color: ~a; }~]~
 ~@[textview.cadre-editor text { color: ~a; } .cadre-gutter { color: ~:*~a; }~]~@[~a~]"
             background foreground (theme-css theme))))
 

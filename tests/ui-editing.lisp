@@ -51,3 +51,26 @@
     (c:run-hook 'c:*before-save-hook* buffer)
     (is string= (format nil "{~%  \"a\": 1,~%  \"b\": 2~%}~%")
                (c:buffer-string buffer))))
+
+(define-test setup-check :parent editing
+  (let ((home (merge-pathnames (format nil "cadre-setup-test-~a/" (c:make-uuid)) (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist (merge-pathnames "quicklisp/" home))
+           (is eq :missing (ui::quicklisp-state :home home))
+           (with-open-file (o (merge-pathnames "quicklisp/setup.lisp" home) :direction :output) (write-line ";" o))
+           (is eq :not-loaded (ui::quicklisp-state :home home) "installed, but SBCL doesn't load it")
+           (is eq :ready (ui::quicklisp-state :home home :sbcl nil) "another Lisp: installed is enough")
+           (with-open-file (o (merge-pathnames ".sbclrc" home) :direction :output)
+             (write-line "(load (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname)))" o))
+           (is eq :ready (ui::quicklisp-state :home home)))
+      (uiop:delete-directory-tree home :validate t :if-does-not-exist :ignore)))
+  (true (ui::program-path "sh"))
+  (false (ui::program-path "cadre-no-such-program-here"))
+  (false (ui::program-path "/no/such/cadre/program"))
+  (true (ui::install-command :sbcl))
+  (let ((results '((:sbcl :found t) (:quicklisp :found nil) (:git :found t) (:claude :found nil)
+                   (:racket :found nil) (:clojure :found nil) (:prettier :found nil))))
+    (is equal '(:quicklisp) (ui::setup-missing results) "optional tools don't count")
+    (is equal '() (ui::setup-missing results :importance '(:required)))
+    (is equal '(:sbcl) (ui::setup-missing (cons '(:sbcl :found nil) (rest results)) :importance '(:required)))))

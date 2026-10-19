@@ -220,3 +220,68 @@ for the HyperSpec tab, or nil if it has no file."
                      (connect-to (second lisp) (third lisp)))))
             t)
         (error (e) (message "Could not restore the session: ~a" e) nil)))))
+
+;;; Indentation learned from the Lisp
+;;;
+;;; Swank tells Cadre how the project's macros with &body indent. That is
+;;; kept per project in indentation.sexp, so files indent the same way the
+;;; next time the project is opened, before a Lisp is running.
+
+(define-option *remember-learned-indentation* t boolean
+  "Keep the indentation the Lisp reports for a project's macros, and use it the next time the project is opened."
+  :category "Lisp")
+
+(defparameter *learned-indentation-max* 2000
+  "The most learned specs kept for one project.")
+
+(defun indentation-file () (merge-pathnames "indentation.sexp" (state-directory)))
+
+(defun read-saved-indentation ()
+  (or (ignore-errors
+       (with-open-file (in (indentation-file) :if-does-not-exist nil)
+         (and in (with-standard-io-syntax
+                   (let ((*read-eval* nil) (*package* (find-package :keyword)))
+                     (let ((all (read in nil nil)))
+                       (and (listp all) all)))))))
+      '()))
+
+(defun project-key (directory) (uiop:native-namestring directory))
+
+(defun restore-project-indentation (directory)
+  "Use the indentation learned for DIRECTORY's macros in an earlier session."
+  (when *remember-learned-indentation*
+    (let ((saved (cdr (assoc (project-key directory) (read-saved-indentation) :test #'equal))))
+      (when (listp saved) (restore-learned-indentation saved)))))
+
+(defun save-project-indentation (directory)
+  "Remember the indentation learned so far for DIRECTORY."
+  (when *remember-learned-indentation*
+    (let* ((key (project-key directory))
+           (specs (learned-indentation))
+           (specs (subseq specs 0 (min (length specs) *learned-indentation-max*)))
+           (others (remove key (read-saved-indentation) :key #'car :test #'equal))
+           (all (cons (cons key specs)
+                      (subseq others 0 (min (length others) (1- *remembered-projects*))))))
+      (handler-case
+          (write-private-state (indentation-file)
+                               (lambda (out)
+                                 (with-standard-io-syntax
+                                   (let ((*package* (find-package :keyword)))
+                                     (format out ";;; Written by Cadre: macro indentation learned from the Lisp, by project.~%")
+                                     (prin1 all out)
+                                     (terpri out)))))
+        (error (e) (message "Could not save learned indentation: ~a" e))))))
+
+(defvar *indentation-save-pending* nil)
+
+(defun indentation-learned (updates)
+  "Handle Swank's :indentation-update, saving the result a moment later."
+  (learn-indentation updates)
+  (let ((project (and *window* (window-project *window*))))
+    (when (and project *remember-learned-indentation* (not *indentation-save-pending*))
+      (setf *indentation-save-pending* t)
+      (glib:timeout-add glib:+priority-default-idle+ 2000
+                        (lambda ()
+                          (setf *indentation-save-pending* nil)
+                          (save-project-indentation project)
+                          nil)))))

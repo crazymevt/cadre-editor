@@ -18,6 +18,13 @@ For the REPL, install a Lisp (`brew install sbcl`, or `sudo apt install
 sbcl`). The optional tools below (Git, Claude Code, Racket, the Clojure
 CLI, tree-sitter, Prettier) are used when they're installed.
 
+On the first run, Cadre checks for SBCL, Quicklisp, Git and Claude Code and,
+if one is missing, shows the command that installs it, with a button to copy
+it. It can install Quicklisp itself: **Install** downloads its installer,
+runs it with SBCL and adds it to `~/.sbclrc`. Later, the same check shows
+only when SBCL can't be found (`*check-setup-at-startup*` turns it off), and
+**Check Setup…** in the main menu shows it any time.
+
 ## Setup
 
 To run Cadre from source, or build its packages. Cadre is developed on macOS

@@ -386,3 +386,10 @@ the cursor is not at a paren."
                    (values l (token-start (token-ref syntax l i)) line (paren-column after)
                            (brackets-pair-p after (token-ref syntax l i)))
                    (values line (paren-column after) line (paren-column after) nil))))))))
+
+(defun enclosing-toplevel-line (syntax line)
+  "The line a top-level form starts on, when that form begins before LINE
+and goes on to it; nil when LINE is between forms or starts one."
+  (multiple-value-bind (sl sc el) (toplevel-form-bounds syntax line 0)
+    (declare (ignore sc))
+    (and sl (< sl line) el (>= el line) sl)))

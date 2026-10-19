@@ -553,7 +553,7 @@ Content-Type: application/json
 (let ((config (merge-pathnames "config/" *base*)))
   (ensure-directories-exist (merge-pathnames "cadre/" config))
   (with-open-file (o (merge-pathnames "cadre/settings.sexp" config) :direction :output)
-    (prin1 '(:keybinding-profile :standard) o))
+    (prin1 '(:keybinding-profile :standard :setup-checked t) o))
   (sb-posix:setenv "XDG_CONFIG_HOME" (namestring config) 1)
   (sb-posix:setenv "XDG_STATE_HOME" (namestring (merge-pathnames "state/" config)) 1))
 (setf cadre-ui::*color-scheme* (if (string= *scheme* "dark") :dark :light))

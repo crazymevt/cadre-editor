@@ -170,31 +170,40 @@ the identifier at VIEW's cursor (check-syntax reads the buffer's text)."
   "Compile the top-level form around the cursor, with POLICY (an alist such
 as ((cl:debug . 3))) if given; show the compiler's notes, then call THEN
 with whether it compiled."
-  (let* ((view (current-view))
-         (buffer (view-buffer view)))
+  (let ((view (current-view)))
     (multiple-value-bind (line column) (cursor-line-column view)
       (multiple-value-bind (sl sc el ec) (toplevel-form-bounds (current-syntax) line column)
         (unless sl (editor-error "Not in a top-level form"))
         (flash-region view sl sc el ec)
-        (let* ((text (view-region-text view sl sc el ec))
-               (position (1+ (text-line-position (buffer-text buffer) sl sc)))
-               (package (view-package view)))
-          (with-connection (connection :language (view-language view))
-            (follow-package connection package)
-            (call-in-file-namespace
-             view connection
-             (lambda ()
-               (request #'backend-compile-form connection text
-                        :buffer-name (buffer-name buffer) :position position :line (1+ sl) :column (1+ sc)
-                        :file (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
-                        :policy policy
-                        :package package
-                        :on-ok (lambda (result)
-                                 (multiple-value-bind (notes successp duration) (parse-compilation-result result)
-                                   (show-notes notes :buffer buffer :replace-lines (cons sl el))
-                                   (compilation-message notes successp duration what)
-                                   (image-changed)
-                                   (when then (funcall then successp)))))))))))))
+        (compile-form-region view sl sc el ec :policy policy :what what :then then)))))
+
+(defun compile-form-region (view sl sc el ec &key policy (what "Compiled") then)
+  "Compile the form from (SL, SC) to (EL, EC) in VIEW, with its breakpoints
+in (breakpoints.lisp); show the compiler's notes and WHAT, then call THEN
+with whether it compiled."
+  (let* ((buffer (view-buffer view))
+         (syntax (buffer-syntax buffer))
+         (text (breakpoint-form-text buffer sl sc el ec (view-region-text view sl sc el ec)))
+         (position (1+ (text-line-position (buffer-text buffer) sl sc)))
+         (package (or (and syntax (not (buffer-local buffer :package)) (buffer-package-name syntax sl))
+                      (view-package view))))
+    (with-connection (connection :language (view-language view))
+      (follow-package connection package)
+      (call-in-file-namespace
+       view connection
+       (lambda ()
+         (request #'backend-compile-form connection text
+                  :buffer-name (buffer-name buffer) :position position :line (1+ sl) :column (1+ sc)
+                  :file (and (buffer-file buffer) (uiop:native-namestring (buffer-file buffer)))
+                  :policy policy
+                  :package package
+                  :on-ok (lambda (result)
+                           (multiple-value-bind (notes successp duration) (parse-compilation-result result)
+                             (let ((notes (breakpoint-unshift-notes buffer notes)))
+                               (show-notes notes :buffer buffer :replace-lines (cons sl el))
+                               (when what (compilation-message notes successp duration what)))
+                             (image-changed)
+                             (when then (funcall then successp))))))))))
 
 (define-command compile-defun ()
   "Compile the top-level form around the cursor; show the compiler's notes."
@@ -234,7 +243,9 @@ otherwise evaluate it and show its value."
                                                         (format nil "Compiled ~a" (buffer-name buffer)))))
                         :on-loaded (lambda ()
                                      (handler-case (progn (follow-package connection (file-package buffer))
-                                                          (image-changed))
+                                                          (image-changed)
+                                                          ;; Loading replaced the code compiled with breaks in.
+                                                          (reapply-breakpoints buffer))
                                        (error (e) (message "Error: ~a" e))))))))
       (if (buffer-modified-p buffer)
           (write-buffer buffer (buffer-file buffer) (lambda (ok) (when ok (compile-it))))
@@ -269,7 +280,7 @@ otherwise evaluate it and show its value."
   (flet ((visit (view)
            (let ((gtk-buffer (view-gtk-buffer view)))
              (cond ((getf location :position)
-                    (gtk:text-buffer-place-cursor gtk-buffer (iter-at gtk-buffer (min (getf location :position)
+                    (gtk:text-buffer-place-cursor gtk-buffer (iter-at gtk-buffer (min (breakpoint-unshift (view-buffer view) (getf location :position))
                                                                                      (text-length gtk-buffer)))))
                    ((getf location :line)
                     (goto-line-column view (getf location :line) (or (getf location :column) 0) :extend nil)))

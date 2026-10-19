@@ -372,6 +372,8 @@ ON-ERROR, if supplied, is called before an unhandled save error propagates."
 keyboard macro being defined, and the selection."
   (clear-prefix-arg)
   (setf *key-reader* nil)
+  (let ((view (and *window* (focused-view *window*))))
+    (when view (clear-extra-cursors view)))
   (when *query-replace* (query-replace-finish))
   (cancel-kbd-macro)
   (when (window-picker-object *window*)

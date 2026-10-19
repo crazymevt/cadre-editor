@@ -203,3 +203,24 @@
         (ui::discard-session-checkpoints)
         (true (probe-file path))
         (is equal "scratch edits that could not be saved" (getf (ui::read-snapshot path) :text))))))
+
+(define-test learned-indentation-by-project :parent local-history
+  (with-history-fixture
+    (let ((project-a (merge-pathnames "a/" directory))
+          (project-b (merge-pathnames "b/" directory))
+          (ui::*remember-learned-indentation* t))
+      (unwind-protect
+           (progn
+             (c:learn-indentation '(("frobnicate-thing" (4 4 "&body") ("A"))))
+             (ui::save-project-indentation project-a)
+             (c:learn-indentation '(("frobnicate-thing" nil ("A"))))
+             (is eq nil (c:indentation-spec "frobnicate-thing"))
+             (ui::restore-project-indentation project-b)
+             (is eq nil (c:indentation-spec "frobnicate-thing") "another project's macros stay out")
+             (ui::restore-project-indentation project-a)
+             (is = 2 (c:indentation-spec "frobnicate-thing"))
+             (c:learn-indentation '(("frobnicate-thing" nil ("A"))))
+             (let ((ui::*remember-learned-indentation* nil))
+               (ui::restore-project-indentation project-a)
+               (is eq nil (c:indentation-spec "frobnicate-thing") "the setting turns it off")))
+        (c:learn-indentation '(("frobnicate-thing" nil ())))))))

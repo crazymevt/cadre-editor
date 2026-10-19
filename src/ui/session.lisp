@@ -233,7 +233,7 @@ as messages, and an abort without :on-abort says so."
       (:inspect (destructuring-bind (what &optional thread tag) args
                   (show-inspection what)
                   (when tag (swank-send connection (list :emacs-return thread tag nil)))))
-      (:indentation-update (learn-indentation (first args)))
+      (:indentation-update (indentation-learned (first args)))
       (:background-message (message "~a" (first args)))
       (:new-features nil)
       (:disconnected (session-closed connection (first args)))

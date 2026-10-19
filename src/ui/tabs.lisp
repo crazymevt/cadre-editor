@@ -139,6 +139,9 @@ to its preview keeps the source view's controllers, which then stand aside."
     (setup-context-menu view)
     (setup-git-gutter-clicks view)
     (setup-fold-gutter view)
+    (setup-sticky-header view)
+    (setup-cursor-clicks view)
+    (setup-breakpoint-clicks view)
     (setf (view-source-controllers-p view) t)))
 
 (defun add-view (win buffer &optional (group (window-active-group win)))

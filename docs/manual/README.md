@@ -5,9 +5,9 @@ shows each one in a picture.
 
 | Page | What's in it |
 | --- | --- |
-| [Installing and running](installing.md) | Installing a release; building from source, what it needs and what's optional; the macOS app and the `cadre` command |
-| [Editing](editing.md) | The keys (Standard and Emacs), everyday editing, the kill ring, structural editing and paredit, completion and hints, folding, the outline, tabs, files, Markdown, pictures, finding, replacing, refactoring, local history and crash recovery |
-| [Common Lisp](common-lisp.md) | Evaluating and compiling, highlighting from the image, the REPL, the debugger, tracing, profiling, stepping, expanding macros, the CLOS browser, threads, scratch buffers, the HyperSpec and libraries' docs |
+| [Installing and running](installing.md) | Installing a release; building from source, what it needs and what's optional; checking your setup; the macOS app and the `cadre` command |
+| [Editing](editing.md) | The keys (Standard and Emacs), everyday editing, multiple cursors, the kill ring, structural editing and paredit, completion and hints, folding, the sticky header, the outline, tabs, files, Markdown, pictures, finding, replacing, refactoring, local history and crash recovery |
+| [Common Lisp](common-lisp.md) | Evaluating and compiling, highlighting from the image, the REPL, the debugger, breakpoints, tracing, profiling, stepping, expanding macros, the CLOS browser, threads, scratch buffers, the HyperSpec and libraries' docs |
 | [Projects, tests and running programs](projects.md) | The Project page, libraries, New Project, Build Project, running tests and the Tests page, Runs history, ▶ for a project's program, GTK apps |
 | [Racket and Clojure](racket-clojure.md) | Editing both, Clojure through nREPL, Racket through Cadre's back end |
 | [Assistant](using-claude.md) | Claude and Codex in the assistant panel, asking for a change, chat and agent modes, approvals, browsing and resuming conversations |

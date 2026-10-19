@@ -45,13 +45,14 @@
    #:*kill-ring-max* #:*kill-ring* #:*kill-hook* #:kill-new #:kill-text #:current-kill
    #:case-fold-p #:find-all #:replacement-for #:replace-all
    #:word-char-p #:word-bounds-after #:capitalize-string #:symbol-constituent-p #:dabbrev-candidates
+   #:word-at #:occurrences #:next-occurrence
    ;; keymaps
    #:keymap #:make-keymap #:keymap-name #:bind-key #:unbind-key #:keymap-lookup
    #:lookup-keys #:parse-keys #:canonical-key #:keys-string #:make-key
    #:key-dispatcher #:make-key-dispatcher #:dispatch-key #:dispatcher-pending
    #:reset-dispatcher #:where-is
    ;; text lines
-   #:text-line-count #:text-line-string #:text-line-position #:text-position-line
+   #:text-line-count #:text-line-string #:text-line-position #:text-position-line #:indentation-context-line
    ;; fuzzy matching
    #:fuzzy-match #:fuzzy-filter
    ;; Lisp syntax
@@ -65,7 +66,7 @@
    #:line-info #:line-info-highlighted #:line-info-tokens #:forget-highlighting
    #:depth-at #:context-at
    #:forward-sexp-position #:backward-sexp-position #:up-list-position #:down-list-position
-   #:beginning-of-defun-position #:end-of-defun-position #:toplevel-form-bounds
+   #:beginning-of-defun-position #:end-of-defun-position #:toplevel-form-bounds #:enclosing-toplevel-line
    #:paren-match-at
    ;; structural editing
    #:apply-edits #:map-offset #:offset-of #:line-column-of #:enclosing-list #:sexp-at
@@ -93,6 +94,8 @@
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec #:learn-indentation
+   #:learned-indentation #:restore-learned-indentation
+   #:breakpoint-place #:insert-at-offsets #:unshift-position
    #:token-face #:datum-comment-columns #:dialect-definitions #:clojure-namespace-at #:*faces* #:*paren-face-count*
    ;; Swank
    #:remote-symbol #:remote-symbol-p #:remote-symbol-name #:remote-symbol= #:write-sexp #:read-sexp

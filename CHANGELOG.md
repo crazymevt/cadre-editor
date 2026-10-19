@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **Breakpoints.** Click left of a line number in a Common Lisp file, or
+  press `F9` (`C-x SPC` in the Emacs keys), to set a breakpoint. It stops
+  before the statement the line is in, and the dot moves to that statement's
+  line. With a Lisp connected, the form is compiled again at once with a
+  `(break)` in it, and your file isn't changed. Running the code opens the
+  debugger, and Continue goes on. Compiling the form or the file keeps the
+  breakpoints in. A breakpoint set before the file's package is loaded
+  waits, and goes in once it is, instead of opening the debugger. Compiler notes and the debugger's source positions skip
+  the inserted break. Clear Breakpoints (`Ctrl+Shift+F9`) removes them all.
+
+- **Multiple cursors.** `Ctrl+D` selects the word at the cursor, then adds
+  a cursor at its next occurrence. `Ctrl+K Ctrl+D` skips an occurrence,
+  `Ctrl+Shift+L` puts a cursor at every one, and `Ctrl+Alt+↑`/`↓` add one
+  above or below. `Alt`+click adds or removes a cursor. Typing, deleting,
+  moving, paredit and other editing commands act at every cursor, and undo
+  takes them back in one step. Copying and pasting keep one piece per cursor.
+  `Escape` or a click goes back to one cursor. In the Emacs keys: `C->`,
+  `C-c m s`, `C-c m a`, `C-c m p` and `C-c m n`.
+
+- **Sticky header.** When you scroll past the start of a definition, its first
+  line stays at the top of the editor. In Lisp that's the top-level form; in
+  JavaScript, TypeScript and CSS it's the line that opens the block. Click it
+  to go there. `*sticky-scroll*` turns it off.
+
+- **Check Setup.** On the first run, Cadre looks for SBCL, Quicklisp, Git
+  and Claude Code, plus Racket, the Clojure CLI and Prettier as optional
+  tools. It shows how to install whatever is missing, with a button to copy
+  the command. It can install Quicklisp and add it to `~/.sbclrc` for you.
+  Later it checks again only when SBCL can't be found. **Check Setup…** in
+  the main menu runs it any time, and `*check-setup-at-startup*` turns it
+  off.
+
+- **Learned indentation is kept.** The indentation the Lisp reports for a
+  project's macros with `&body` is saved per project. Those macros indent
+  correctly the next time the project is opened, before a Lisp is running.
+  `*remember-learned-indentation*` turns this off.
+
 - **More responsive opening and conversation history.** Project discovery
   stops at the open folder even when its path uses a different symlink spelling.
   Hidden HTTP pages no longer scan a newly opened project; they catch up when
