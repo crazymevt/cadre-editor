@@ -7,7 +7,7 @@ interface like VS Code's. Built on the [gtk4](https://github.com/crazymevt/gtk4)
 
 <img alt="Cadre editing Lisp, with the REPL below and argument hints in the status bar" src="docs/gallery/dark/editing.png">
 
-**Status:** version 1.2.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
+**Status:** version 1.3.0, for macOS and Linux ([CHANGELOG.md](CHANGELOG.md)),
 editing Common Lisp, Racket and Clojure. [docs/DESIGN.md](docs/DESIGN.md) has
 the design and the milestones it was built in.
 
@@ -39,7 +39,7 @@ the design and the milestones it was built in.
 The [manual](docs/manual/README.md) covers each of these, and the
 [gallery](docs/gallery/README.md) shows them.
 
-Since 1.2.0, unreleased work adds [Runs history](docs/manual/projects.md#recent-runs),
+New in 1.3.0: [Runs history](docs/manual/projects.md#recent-runs),
 [local history and crash recovery](docs/manual/editing.md#local-history-and-recovery),
 [assistant conversation history](docs/manual/using-claude.md#earlier-conversations),
 more precise [renaming](docs/manual/editing.md),
@@ -47,7 +47,7 @@ more precise [renaming](docs/manual/editing.md),
 [multiple cursors](docs/manual/editing.md#multiple-cursors), a
 [sticky header](docs/manual/editing.md#sticky-header) and a
 [setup check](docs/manual/installing.md#installing-a-release). See
-**Unreleased** in the changelog.
+**1.3.0** in the changelog.
 
 <table>
   <tr>
