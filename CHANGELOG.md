@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- With several cursors in both sides of a split, each side's selections stay
+  highlighted while the other edits or closes, and closing a side no longer
+  leaves its selections highlighted in the other.
+- Removed cursors and inline values no longer pile up as hidden widgets in
+  the editor: GTK can't take them out, so Cadre reuses them.
+- Clicking the gutter beside the sticky header sets a breakpoint on the
+  header's line, not on the line hidden under it, and no longer folds a line
+  you can't see.
+- Check Setup reports a program that is there but doesn't run, such as
+  macOS's `git` before the developer tools are installed, as missing. A
+  Quicklisp install that can't start offers Try Again instead of staying on
+  "Installing…".
+
 ## 1.3.0
 
 - **Breakpoints.** Click left of a line number in a Common Lisp file, or

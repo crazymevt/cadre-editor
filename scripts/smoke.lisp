@@ -2914,10 +2914,10 @@ d" 0 0)
 
 (then-when ((find-buffer "long.lisp"))
   (show-buffer-named "long.lisp")
-  (check "no header at the top of the file" (null (sticky-shown)) (sticky-shown))
-  (scroll-to-line 60))
+  (check "no header at the top of the file" (null (sticky-shown)) (sticky-shown)))
 
-(then 400
+;; Scrolling again until the new tab's text is laid out and it gets there.
+(then-when ((progn (scroll-to-line 60) (sticky-shown)) :timeout 5)
   (check "scrolled into a form, its first line stays at the top"
          (equal "(defun long-one (x)" (sticky-shown)) (sticky-shown))
   (screenshot "38-sticky")
@@ -2936,6 +2936,9 @@ d" 0 0)
 
 (then 300
   (check "and back on" (sticky-shown))
+  (check "a gutter click under the header is on the header's line"
+         (equal '(2 t) (multiple-value-list (cadre-ui::gutter-line-at (current-view) 2)))
+         (multiple-value-list (cadre-ui::gutter-line-at (current-view) 2)))
   (cadre-ui::goto-line-column (current-view) (third (cadre-ui::view-sticky (current-view))) 0 :extend nil))
 
 (then 400
@@ -2989,13 +2992,19 @@ d" 0 0)
          (buffer-string (current-buffer)))
   (press "ESC"))
 
+(defun spare-carets () (length (gethash (current-view) cadre-ui::*spare-carets*)))
+(defvar *spare-carets-before*)
+
 (then 200
   (check "Escape goes back to one cursor" (null (extra-cursors)))
+  (setf *spare-carets-before* (spare-carets))
+  (check "keeping the carets to use again" (plusp *spare-carets-before*) *spare-carets-before*)
   (set-cursor 0 0)
   (press "C-M-Down"))
 
 (then 200
   (check "Ctrl+Alt+Down adds a cursor below" (= 1 (length (extra-cursors))))
+  (check "with a caret used again" (= (1- *spare-carets-before*) (spare-carets)) (spare-carets))
   (press "End")
   (press "!")
   (press "Left")
@@ -3022,10 +3031,48 @@ d" 0 0)
   (check "Alt+click on a cursor removes it" (= 1 (length (extra-cursors))) (length (extra-cursors)))
   (cadre-ui::toggle-cursor-at (current-view) 7))
 
+(defvar *cursors-view*)
+(defun extra-selections ()
+  "The (start end) of each range tagged as another cursor's selection."
+  (let* ((gtk-buffer (buffer-text (find-buffer "cursors.txt")))
+         (tag (cadre-ui::extra-selection-tag gtk-buffer))
+         (iter (gtk:text-buffer-get-start-iter gtk-buffer)))
+    (loop while (or (gtk:text-iter-starts-tag iter tag) (gtk:text-iter-forward-to-tag-toggle iter tag))
+          collect (let ((start (gtk:text-iter-get-offset iter)))
+                    (gtk:text-iter-forward-to-tag-toggle iter tag)
+                    (list start (gtk:text-iter-get-offset iter))))))
+(defun extra-selections-p () (and (extra-selections) t))
+
 (then 200
   (check "and elsewhere adds one" (= 2 (length (extra-cursors))) (length (extra-cursors)))
-  (press "ESC")
-  (gtk:text-buffer-set-modified (buffer-text (current-buffer)) nil))
+  (check "the others' selections are shown" (extra-selections-p))
+  (setf *cursors-view* (current-view))
+  (call-command 'cadre-ui::split-editor))
+
+(then 300
+  (check "a split shows the file again"
+         (= 2 (length (cadre-ui::buffer-views *window* (find-buffer "cursors.txt")))))
+  ;; A cursor of its own in the split, selecting "beta".
+  (cadre-ui::add-extra-cursor (current-view) 10 6)
+  (check "both splits' selections are shown" (member '(6 10) (extra-selections) :test #'equal)
+         (extra-selections))
+  (cadre-ui::close-view *window* *cursors-view*))
+
+(then 400
+  (check "closing a view with cursors takes its selections out of the other"
+         (and (null (cadre-ui::view-cursors *cursors-view*)) (equal '((6 10)) (extra-selections)))
+         (extra-selections))
+  (check "and leaves the other's cursors and selections" (= 1 (length (extra-cursors))))
+  (gtk:widget-grab-focus (cadre-ui::view-text-view (current-view)))
+  (press "ESC"))
+
+(then 200
+  (check "which Escape clears" (and (null (extra-cursors)) (null (extra-selections))) (extra-selections))
+  (gtk:text-buffer-set-modified (buffer-text (current-buffer)) nil)
+  (call-command 'cadre-ui::delete-other-groups))
+
+(then 300
+  (check "groups merge back" (= 1 (length (cadre-ui::window-groups *window*)))))
 
 ;;; Breakpoints
 (section "breakpoints")

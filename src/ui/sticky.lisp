@@ -65,6 +65,16 @@
       (gtk:widget-set-visible (first sticky) nil)
       (when (view-gutter view) (gtk:widget-queue-draw (view-gutter view))))))
 
+(defun gutter-line-at (view y)
+  "The line drawn at Y in VIEW's gutter. Second value: true if that is the
+sticky header's line, drawn over the lines under it."
+  (let ((sticky (view-sticky view))
+        (text-view (view-text-view view)))
+    (if (and sticky (third sticky) (< y (gtk:widget-get-height (first sticky))))
+        (values (third sticky) t)
+        (let ((by (nth-value 1 (gtk:text-view-window-to-buffer-coords text-view :left 0 (round y)))))
+          (values (gtk:text-iter-get-line (gtk:text-view-get-line-at-y text-view by)) nil)))))
+
 (defun update-sticky-header (view)
   "Show, move or hide VIEW's header for what is at the top of it now."
   (let* ((text-view (view-text-view view))

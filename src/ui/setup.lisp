@@ -54,12 +54,16 @@
         (and found (plusp (length found)) found))))
 
 (defun program-version (path &rest arguments)
-  "The first line PATH prints when run with ARGUMENTS (default --version), or nil."
-  (let ((output (ignore-errors
-                 (uiop:run-program (cons path (or arguments '("--version")))
-                                   :output :string :error-output nil :ignore-error-status t))))
-    (and output (let ((line (string-trim '(#\Space #\Return) (first (uiop:split-string output :separator '(#\Newline))))))
-                  (and (plusp (length line)) line)))))
+  "The first line PATH prints when run with ARGUMENTS (default --version), or
+nil. Second value: true if it ran and exited with 0."
+  (multiple-value-bind (output error-output status)
+      (ignore-errors
+       (uiop:run-program (cons path (or arguments '("--version")))
+                         :output :string :error-output nil :ignore-error-status t))
+    (declare (ignore error-output))
+    (values (and output (let ((line (string-trim '(#\Space #\Return) (first (uiop:split-string output :separator '(#\Newline))))))
+                          (and (plusp (length line)) line)))
+            (eql status 0))))
 
 ;;; Quicklisp
 
@@ -86,8 +90,12 @@
 and :detail (where, or which version, or what's wrong)."
   (flet ((program (program &optional version)
            (let ((path (program-path program)))
-             (list :found (and path t)
-                   :detail (and path (or (and version (program-version path)) path))))))
+             (if (and path version)
+                 ;; macOS has a /usr/bin/git that only offers to install the
+                 ;; developer tools: there, but it doesn't run.
+                 (multiple-value-bind (line ran) (program-version path)
+                   (list :found ran :detail (if ran (or line path) (format nil "~a doesn't run" path))))
+                 (list :found (and path t) :detail path)))))
     (case key
       (:sbcl (program (first *lisp-command*) t))
       (:quicklisp (let ((state (quicklisp-state)))
@@ -212,6 +220,7 @@ it worked."
                                (gtk:widget-set-sensitive button t)))))
                  (editor-error (e)
                    (message "~a" (editor-error-message e))
+                   (gtk:button-set-label button "Try Again")
                    (gtk:widget-set-sensitive button t)))))
       (loop for (key name importance what-for) in *setup-tools*
             do (gtk:list-box-append list (setup-row key name importance what-for (cdr (assoc key results))

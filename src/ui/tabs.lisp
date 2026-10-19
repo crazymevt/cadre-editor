@@ -226,6 +226,8 @@ forget a closed page's view and remove the group if it is now empty."
                      nil))))
 
 (defun page-removed (win view)
+  ;; Its cursors are marks and tags in the buffer, which another view may show.
+  (when (view-cursors view) (clear-extra-cursors view))
   (dolist (handler (view-buffer-handlers view))
     (gobject:disconnect (view-gtk-buffer view) handler))
   (setf (view-buffer-handlers view) nil)

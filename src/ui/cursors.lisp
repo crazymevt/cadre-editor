@@ -45,15 +45,25 @@
 
 ;;; Adding and removing cursors
 
+(defvar *spare-carets* (make-hash-table :test 'eq :weakness :key)
+  "View → the carets of cursors it no longer has, hidden, to use again:
+gtk_text_view_remove leaves an overlay child in the text view.")
+
+(defun view-caret (view)
+  "A hidden caret overlay in VIEW's text view: a spare one, or a new one."
+  (or (pop (gethash view *spare-carets*))
+      (let ((caret (make-instance 'gtk:box :css-classes '("cadre-extra-cursor") :can-target nil :visible nil)))
+        (gtk:text-view-add-overlay (view-text-view view) caret 0 0)
+        caret)))
+
 (defun add-extra-cursor (view insert &optional (bound insert))
   "Add a cursor at offset INSERT in VIEW, with a selection to BOUND."
   (let* ((gtk-buffer (view-gtk-buffer view))
-         (caret (make-instance 'gtk:box :css-classes '("cadre-extra-cursor") :can-target nil))
+         (caret (view-caret view))
          (cursor (make-extra-cursor
                   :insert (gtk:text-buffer-create-mark gtk-buffer nil (iter-at gtk-buffer insert) nil)
                   :bound (gtk:text-buffer-create-mark gtk-buffer nil (iter-at gtk-buffer bound) nil)
                   :caret caret)))
-    (gtk:text-view-add-overlay (view-text-view view) caret 0 0)
     (setf (view-cursors view) (append (view-cursors view) (list cursor)))
     (redraw-cursors view)
     cursor))
@@ -62,10 +72,8 @@
   (let ((gtk-buffer (view-gtk-buffer view))
         (caret (cursor-caret cursor)))
     (setf (view-cursors view) (remove cursor (view-cursors view)))
-    ;; As with inline results: hide it too, in case GTK keeps drawing it.
     (gtk:widget-set-visible caret nil)
-    (when (gtk:widget-get-parent caret)
-      (ignore-errors (gtk:text-view-remove (view-text-view view) caret)))
+    (push caret (gethash view *spare-carets*))
     (gtk:text-buffer-delete-mark gtk-buffer (cursor-insert cursor))
     (gtk:text-buffer-delete-mark gtk-buffer (cursor-bound cursor))))
 
@@ -93,19 +101,23 @@
   (ensure-face-tag gtk-buffer "cadre-extra-selection" :search))
 
 (defun redraw-cursors (view)
-  "Put each cursor's caret where it is now, and tag its selection."
+  "Put each cursor's caret where it is now, and tag its selection. The tag
+is the buffer's, so the selections of the buffer's other views (splits)
+are tagged again too."
   (let* ((gtk-buffer (view-gtk-buffer view))
          (text-view (view-text-view view))
          (tag (extra-selection-tag gtk-buffer)))
     (gtk:text-buffer-remove-tag gtk-buffer tag (gtk:text-buffer-get-start-iter gtk-buffer)
                                 (gtk:text-buffer-get-end-iter gtk-buffer))
     (dolist (cursor (view-cursors view))
-      (multiple-value-bind (insert bound) (cursor-offsets view cursor)
-        (let ((rect (gtk:text-view-get-iter-location text-view (iter-at gtk-buffer insert)))
-              (caret (cursor-caret cursor)))
-          (gtk:widget-set-size-request caret 2 (max 1 (gdk:rectangle-height rect)))
-          (gtk:text-view-move-overlay text-view caret (gdk:rectangle-x rect) (gdk:rectangle-y rect))
-          (gtk:widget-set-visible caret t)
+      (let ((rect (gtk:text-view-get-iter-location text-view (iter-at gtk-buffer (cursor-offsets view cursor))))
+            (caret (cursor-caret cursor)))
+        (gtk:widget-set-size-request caret 2 (max 1 (gdk:rectangle-height rect)))
+        (gtk:text-view-move-overlay text-view caret (gdk:rectangle-x rect) (gdk:rectangle-y rect))
+        (gtk:widget-set-visible caret t)))
+    (dolist (shown (adjoin view (and *window* (buffer-views *window* (view-buffer view)))))
+      (dolist (cursor (view-cursors shown))
+        (multiple-value-bind (insert bound) (cursor-offsets shown cursor)
           (unless (= insert bound)
             (gtk:text-buffer-apply-tag gtk-buffer tag (iter-at gtk-buffer (min insert bound))
                                        (iter-at gtk-buffer (max insert bound)))))))))

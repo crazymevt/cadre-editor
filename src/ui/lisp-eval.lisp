@@ -65,33 +65,49 @@ the identifier at VIEW's cursor (check-syntax reads the buffer's text)."
                                      (subseq text 3)
                                      text))))
 
+(defvar *inline-result-labels* (make-hash-table :test 'eq :weakness :key)
+  "Text view → (label . buffer): its inline result label, used again for
+each result (gtk_text_view_remove leaves an overlay child in the text view),
+and the buffer whose result it shows.")
+
 (defun clear-inline-result (buffer)
   (let ((shown (buffer-local buffer :inline-result)))
     (when shown
       (setf (buffer-local buffer :inline-result) nil)
-      (destructuring-bind (text-view . label) shown
-        ;; GTK keeps overlay children in a container of its own; removing
-        ;; one doesn't always take it off the screen, so hide it too.
-        (gtk:widget-set-visible label nil)
-        (when (gtk:widget-get-parent label)
-          (ignore-errors (gtk:text-view-remove text-view label)))))))
+      (gtk:widget-set-visible (cdr shown) nil))))
+
+(defun inline-result-label (text-view buffer)
+  "TEXT-VIEW's inline result label, made the first time, now BUFFER's."
+  (let ((entry (gethash text-view *inline-result-labels*)))
+    (cond ((null entry)
+           (let ((label (make-instance 'gtk:label :css-classes '("cadre-inline-result") :visible nil)))
+             (gtk:text-view-add-overlay text-view label 0 0)
+             (setf entry (setf (gethash text-view *inline-result-labels*) (cons label buffer)))))
+          ((not (eq buffer (cdr entry)))
+           ;; It showed another buffer's result, before the view switched to BUFFER.
+           (let ((owner (cdr entry)))
+             (when (eq (car entry) (cdr (buffer-local owner :inline-result)))
+               (clear-inline-result owner)))
+           (setf (cdr entry) buffer)))
+    (car entry)))
 
 (defun show-inline-result (view line result)
   "Show RESULT after the end of LINE in VIEW, until the buffer changes."
   (let* ((buffer (view-buffer view))
          (text-view (view-text-view view))
          (rect (gtk:text-view-get-iter-location text-view (line-end-iter (view-gtk-buffer view) line)))
-         (text (result-text result))
-         ;; Overlay children get their minimum width, so the label must not
-         ;; ellipsize; long values are shortened here instead.
-         (label (make-instance 'gtk:label :label (format nil "⇒ ~a" (if (> (length text) 120)
-                                                                          (concatenate 'string (subseq text 0 119) "…")
-                                                                          text))
-                                          :tooltip-text (string-trim '(#\Newline) result)
-                                          :css-classes '("cadre-inline-result"))))
+         (text (result-text result)))
     (clear-inline-result buffer)
-    (gtk:text-view-add-overlay text-view label (+ (gdk:rectangle-x rect) 16) (gdk:rectangle-y rect))
-    (setf (buffer-local buffer :inline-result) (cons text-view label))))
+    (let ((label (inline-result-label text-view buffer)))
+      ;; Overlay children get their minimum width, so the label must not
+      ;; ellipsize; long values are shortened here instead.
+      (gtk:label-set-label label (format nil "⇒ ~a" (if (> (length text) 120)
+                                                        (concatenate 'string (subseq text 0 119) "…")
+                                                        text)))
+      (gtk:widget-set-tooltip-text label (string-trim '(#\Newline) result))
+      (gtk:text-view-move-overlay text-view label (+ (gdk:rectangle-x rect) 16) (gdk:rectangle-y rect))
+      (gtk:widget-set-visible label t)
+      (setf (buffer-local buffer :inline-result) (cons text-view label)))))
 
 (defun eval-for-message (string package &optional view line)
   "Evaluate STRING; show the value in the status bar and, with VIEW, after LINE."

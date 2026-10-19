@@ -263,10 +263,9 @@ while the pointer is over the gutter."
                          (lambda (gesture n x y)
                            (declare (ignore n))
                            (when (fold-zone-p view x)
-                             (let* ((text-view (view-text-view view))
-                                    (by (nth-value 1 (gtk:text-view-window-to-buffer-coords text-view :left 0 (round y))))
-                                    (line (gtk:text-iter-get-line (gtk:text-view-get-line-at-y text-view by))))
-                               (when (toggle-fold-at view line)
+                             (multiple-value-bind (line sticky) (gutter-line-at view y)
+                               ;; The sticky header's line has no arrow drawn.
+                               (when (and (not sticky) (toggle-fold-at view line))
                                  (gtk:gesture-set-state gesture :claimed))))))
         (gobject:connect motion :enter (lambda (c x y) (declare (ignore c x y))
                                          (setf (buffer-local (view-buffer view) :gutter-hover) t)
