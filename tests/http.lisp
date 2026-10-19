@@ -27,6 +27,17 @@ Content-Type: application/json
 https://example.com/ping
 ")
 
+(define-test http-delete-keeps-file-variables :parent cadre-tests
+  (dolist (prefix (list "" (format nil "### First~%")))
+    (let* ((text (format nil "~a@baseUrl = https://example.com~%POST {{baseUrl}}/one~%~%@body = not-a-file-variable~%~%### Second~%GET {{baseUrl}}/two~%" prefix))
+           (requests (c:parse-http-file text))
+           (remaining (c:remove-http-request text (first requests))))
+      (multiple-value-bind (requests variables) (c:parse-http-file remaining)
+        (is equal '(("baseUrl" . "https://example.com")) variables)
+        (is equal '("Second") (mapcar #'c:http-request-name requests))
+        (is string= "{{baseUrl}}/two" (c:http-request-url (first requests))))
+      (false (search "@body" remaining)))))
+
 (define-test http-files :parent cadre-tests
   (multiple-value-bind (requests variables) (c:parse-http-file *sample-http*)
     (is equal '(("baseUrl" . "https://api.example.com") ("version" . "v2")) variables)

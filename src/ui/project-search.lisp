@@ -500,12 +500,16 @@ another preview. Malformed or missing context is never accepted."
                                                                        (and (= (first a) (first b)) (< (second a) (second b))))))))
                                    (loop for line-text across lines
                                          for n from 0
-                                         do (let ((pos 0))
-                                              (loop for (l s e) in pieces
-                                                    when (= l n)
-                                                      do (write-string line-text out :start pos :end s)
-                                                         (write-string (cond (regex (regex-replacement pattern (subseq line-text s e) replacement
-                                                                                                       :case-sensitive case-sensitive))
+                                         do (let* ((pos 0)
+                                                   (line-matches (loop while (and pieces (= (first (first pieces)) n))
+                                                                       collect (pop pieces)))
+                                                   (replacements (and regex
+                                                                      (regex-replacements pattern line-text
+                                                                                          (mapcar (lambda (m) (cons (second m) (third m))) line-matches)
+                                                                                          replacement :case-sensitive case-sensitive))))
+                                              (loop for (l s e) in line-matches
+                                                    do (write-string line-text out :start pos :end s)
+                                                         (write-string (cond (regex (pop replacements))
                                                                              (case-sensitive replacement)
                                                                              (t (replacement-for (subseq line-text s e) replacement)))
                                                                        out)

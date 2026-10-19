@@ -712,6 +712,40 @@ Over lines.\"
   (let ((once (c:format-css "a{b:c}")))
     (is string= once (c:format-css once))))
 
+(define-test css-inline-comments :parent cadre-tests
+  (dolist (source '("a { color: /* comment */ red; }"
+                    "a/* selector: , { */ b { color: red; }"
+                    "a { color/* property: */: red; }"
+                    "a { width: calc(1px /* , ; ) */ + 2px); }"))
+    (let ((formatted (c:format-css source)))
+      (is string= formatted (c:format-css formatted))))
+  (is string= (format nil "a {~%  color: /* comment */ red;~%}~%")
+      (c:format-css "a { color: /* comment */ red; }"))
+  (is string= (format nil "a/* selector: , { */ b {~%  color: red;~%}~%")
+      (c:format-css "a/* selector: , { */ b { color: red; }"))
+  (is string= (format nil "a {~%  color/* property: */: red;~%}~%")
+      (c:format-css "a { color/* property: */: red; }")))
+
+(define-test regex-replacement-context :parent cadre-tests
+  (is string= "qux" (c:regex-replacement "foo(?=bar)" "foobar" "qux" :start 0 :end 3))
+  (is string= "qux" (c:regex-replacement "(?<=foo)bar" "foobar" "qux" :start 3 :end 6))
+  (is string= "foo-bar" (c:regex-replacement "(?<=(foo))(bar)" "foobar" "\\1-\\2" :start 3 :end 6))
+  (is string= "FOO" (c:regex-replacement "foo(?=bar)" "foobar foobar" "FOO" :start 7 :end 10))
+  (is string= "qux" (c:regex-replacement "^foo(?=bar$)" "foobar" "qux" :start 0 :end 3))
+  (fail (c:regex-replacement "^foo" "foo foo" "qux" :start 4 :end 7) 'c:editor-error))
+
+(define-test regex-replacements-in-one-pass :parent cadre-tests
+  ;; Only the selected matches change; captures can precede or follow them.
+  (is equal '("foo-bar" "foo-bar")
+      (c:regex-replacements "(?<=(foo))(bar)" "foobar foobar foobar"
+                            '((3 . 6) (17 . 20)) "\\1-\\2"))
+  (is equal '("bar" "bar")
+      (c:regex-replacements "foo(?=(bar))" "foobar foobar" '((0 . 3) (7 . 10)) "\\1"))
+  (is equal '("x / y")
+      (c:regex-replacements "foo" "x foo y" '((2 . 5)) "\\`/\\'"))
+  (is equal nil (c:regex-replacements "foo" "foobar" nil "x"))
+  (fail (c:regex-replacements "foo" "foo bar" '((0 . 3) (4 . 7)) "x") 'c:editor-error))
+
 (define-test occurrences :parent cadre-tests
   (let ((string "alpha beta alpha alphabet alpha-x"))
     (is equal '(0 5) (multiple-value-list (c:word-at string 2 #'c:word-char-p)))

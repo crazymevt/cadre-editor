@@ -94,6 +94,12 @@
 
 ;;; CSS
 
+(defun css-comment-end (text i)
+  "The end of a CSS block comment at I, or nil (// is part of URLs)."
+  (when (and (< (1+ i) (length text))
+             (char= (char text i) #\/) (char= (char text (1+ i)) #\*))
+    (skip-comment text i)))
+
 (defun css-statements (text)
   "TEXT split into (kind text) items: (:open selector) before a {, (:declaration
 text) ending in ; or before a }, (:close) for }, and (:comment text)."
@@ -104,9 +110,12 @@ text) ending in ; or before a }, (:close) for }, and (:comment text)."
                  (cond ((member c '(#\" #\')) (setf i (skip-string text i)))
                        ((and (char= c #\/) (< (1+ i) n) (char= (char text (1+ i)) #\*))
                         (let ((before (piece i)) (end (skip-comment text i)))
-                          (when (plusp (length before)) (push (list :declaration before) items))
-                          (push (list :comment (subseq text i end)) items)
-                          (setf i end start end)))
+                          ;; Inside a selector, declaration or function, a
+                          ;; comment belongs to that statement, not a new one.
+                          (when (and (zerop parens) (zerop (length before)))
+                            (push (list :comment (subseq text i end)) items)
+                            (setf start end))
+                          (setf i end)))
                        ((char= c #\() (incf parens) (incf i))
                        ((char= c #\)) (setf parens (max 0 (1- parens))) (incf i))
                        ((plusp parens) (incf i))
@@ -128,7 +137,12 @@ text) ending in ; or before a }, (:close) for }, and (:comment text)."
     (loop with i = 0 and space = nil
           while (< i (length string))
           do (let ((c (char string i)))
-               (cond ((member c '(#\" #\'))
+               (cond ((css-comment-end string i)
+                      (when space (write-char #\Space out) (setf space nil))
+                      (let ((end (css-comment-end string i)))
+                        (write-string string out :start i :end end)
+                        (setf i end)))
+                     ((member c '(#\" #\'))
                       (when space (write-char #\Space out) (setf space nil))
                       (let ((end (skip-string string i))) (write-string string out :start i :end end) (setf i end)))
                      ((json-space-p c) (setf space t) (incf i))
@@ -145,7 +159,8 @@ text) ending in ; or before a }, (:close) for }, and (:comment text)."
   (let ((parts '()) (start 0) (parens 0) (i 0))
     (loop while (< i (length string))
           do (let ((c (char string i)))
-               (cond ((member c '(#\" #\')) (setf i (skip-string string i)))
+               (cond ((css-comment-end string i) (setf i (css-comment-end string i)))
+                     ((member c '(#\" #\')) (setf i (skip-string string i)))
                      (t (case c
                           (#\( (incf parens))
                           (#\) (setf parens (max 0 (1- parens))))
@@ -159,7 +174,12 @@ text) ending in ; or before a }, (:close) for }, and (:comment text)."
 (defun css-declaration (text)
   "property: value, from a declaration's text."
   (let* ((one (collapse-space text))
-         (colon (position #\: one)))
+         (colon (loop with i = 0
+                      while (< i (length one))
+                      do (cond ((css-comment-end one i) (setf i (css-comment-end one i)))
+                               ((member (char one i) '(#\" #\')) (setf i (skip-string one i)))
+                               ((char= (char one i) #\:) (return i))
+                               (t (incf i))))))
     (if (and colon (not (char= (char one 0) #\@)))
         (format nil "~a: ~a" (string-trim " " (subseq one 0 colon)) (string-trim " " (subseq one (1+ colon))))
         one)))

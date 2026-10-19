@@ -3,6 +3,28 @@
 
 (define-test rename)
 
+(define-test project-regex-replace-keeps-context :parent rename
+  (let* ((path #P"/tmp/cadre-regex-context.txt")
+         (written nil)
+         (scanners 0)
+         (scanner-maker (symbol-function 'c:regex-scanner))
+         (ui::*project-search*
+           (ui::make-project-search :mode :text :entry :pattern :replace-entry :replacement
+                                    :case-button :case :regex-button :regex
+                                    :results-data (list (list path '((0 0 3) (0 7 10)))))))
+    (with-assistant-functions
+        ((gtk:editable-get-text (lambda (entry) (if (eq entry :pattern) "foo(?=(bar))" "\\1")))
+         (gtk:toggle-button-get-active (constantly t))
+         (c:regex-scanner (lambda (pattern &rest options)
+                           (incf scanners) (apply scanner-maker pattern options)))
+         (ui::checked-matches #'identity)
+         (ui::find-file-buffer (lambda (file) (declare (ignore file)) nil))
+         (ui::read-text-file (lambda (file) (declare (ignore file)) "foobar foobar"))
+         (ui::write-text-file (lambda (file text) (declare (ignore file)) (setf written text))))
+      (is equal '(2 1 0) (multiple-value-list (ui::apply-project-replace)))
+      (is string= "barbar barbar" written)
+      (is = 1 scanners))))
+
 (defpackage #:cadre-rename-test-a (:use #:cl) (:export #:widget))
 (defpackage #:cadre-rename-test-b (:use #:cl #:cadre-rename-test-a))
 (intern "WIDGET" '#:cadre-rename-test-a)

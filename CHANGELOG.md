@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Merge-conflict buttons resolve the conflict beside them, and diff3
+  conflicts correctly highlight the base version.
+- CSS formatting preserves comments inside declarations and selectors.
+- Regular-expression replacement keeps the surrounding text needed by
+  lookahead, lookbehind and capture groups, in files and project searches.
+- Regex Replace All scans each line once for replacement values, keeping
+  long lines with many matches responsive.
+- Deleting an HTTP request preserves file variables used by other requests.
 - With several cursors in both sides of a split, each side's selections stay
   highlighted while the other edits or closes, and closing a side no longer
   leaves its selections highlighted in the other.

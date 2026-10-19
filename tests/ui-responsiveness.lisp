@@ -3,6 +3,46 @@
 
 (define-test responsiveness)
 
+(define-test diff3-highlighting-uses-base-tag :parent responsiveness
+  (let* ((c:*buffer-created-hook* nil)
+         (ui:*window* nil)
+         (buffer (c:make-buffer :text (ui::make-gtk-text
+                  (format nil "<<<<<<< ours~%a~%||||||| base~%b~%=======~%c~%>>>>>>> theirs~%"))))
+         (text (c:buffer-text buffer))
+         (tags (loop repeat 4 collect (gtk:text-tag-new nil))))
+    (dolist (tag tags) (gtk:text-tag-table-add (gtk:text-buffer-get-tag-table text) tag))
+    (with-assistant-functions
+        ((ui::conflict-tags (lambda (b) (declare (ignore b)) tags)))
+      (ui::update-conflicts buffer)
+      (is = 1 (length (c:buffer-local buffer :conflicts)))
+      (loop for line in '(1 3 5) for tag in (list (first tags) (third tags) (second tags))
+            do (true (gtk:text-iter-has-tag (ui::line-iter text line) tag))))))
+
+(define-test find-replacement-keeps-line-context :parent responsiveness
+  (let ((ui::*find-regex* t) (ui::*find-case-sensitive* t))
+    (is string= "x" (ui::find-replacement-at "(?<=foo)bar" (format nil "before~%foobar~%after") 10 13 "x"))
+    (is string= "x" (ui::find-replacement-at "^foo(?=bar$)" (format nil "before~%foobar~%after") 7 10 "x"))))
+
+(define-test replace-all-uses-original-context :parent responsiveness
+  (let* ((c:*buffer-created-hook* nil)
+         (ui:*window* :window)
+         (ui::*find-regex* t) (ui::*find-case-sensitive* t)
+         (buffer (c:make-buffer :text (c:make-string-text "foobar")))
+         (view (make-instance 'ui::editor-view :buffer buffer))
+         (fb (make-instance 'ui::find-bar)))
+    (setf (slot-value fb 'ui::entry) :pattern
+          (slot-value fb 'ui::replace-entry) :replacement)
+    (with-assistant-functions
+        ((ui::selected-view (lambda (win) (declare (ignore win)) view))
+         (gtk:editable-get-text (lambda (entry) (if (eq entry :pattern) "foo(?=bar)|bar" "x")))
+         (gtk:text-buffer-begin-user-action (lambda (text) (declare (ignore text))))
+         (gtk:text-buffer-end-user-action (lambda (text) (declare (ignore text))))
+         (ui::replace-text-between (lambda (text start end replacement)
+                                    (c:text-delete text start end) (c:text-insert text start replacement)))
+         (ui::find-update (lambda (fb) (declare (ignore fb)))))
+      (ui::find-replace-all fb)
+      (is string= "xx" (c:buffer-string buffer)))))
+
 (define-test transcript-scroll-requests-are-coalesced :parent responsiveness
   (let ((ui::*chat* (ui::make-chat :scroller :scroller))
         (callbacks nil) (scrolls 0))
@@ -20,6 +60,44 @@
       (is = 1 scrolls)
       (ui::chat-scroll-to-end)
       (is = 1 (length callbacks)))))
+
+(define-test regex-replace-all-work-scales-with-matches :parent responsiveness
+  (let* ((count 2048)
+         (c:*buffer-created-hook* nil)
+         (ui:*window* :window)
+         (ui::*find-regex* t) (ui::*find-case-sensitive* t)
+         (text (format nil "~{~a~}" (make-list count :initial-element "ab")))
+         (buffer (c:make-buffer :text (c:make-string-text text)))
+         (view (make-instance 'ui::editor-view :buffer buffer))
+         (fb (make-instance 'ui::find-bar))
+         (scanner-maker (symbol-function 'c:regex-scanner))
+         (replace (symbol-function 'cl-ppcre:regex-replace))
+         (scanners 0) (scans 0) (output-span 0))
+    (setf (slot-value fb 'ui::entry) :pattern
+          (slot-value fb 'ui::replace-entry) :replacement)
+    (with-assistant-functions
+        ((ui::selected-view (lambda (win) (declare (ignore win)) view))
+         (gtk:editable-get-text (lambda (entry) (if (eq entry :pattern) "(?<=(a))b" "\\1x")))
+         (c:regex-scanner (lambda (pattern &rest options)
+                           (incf scanners)
+                           (let ((scanner (apply scanner-maker pattern options)))
+                             (lambda (source start end)
+                               (incf scans) (funcall scanner source start end)))))
+         (cl-ppcre:regex-replace (lambda (scanner source replacement &rest options)
+                                  (incf output-span (- (getf options :end (length source)) (getf options :start 0)))
+                                  (apply replace scanner source replacement options)))
+         (gtk:text-buffer-begin-user-action (lambda (text) (declare (ignore text))))
+         (gtk:text-buffer-end-user-action (lambda (text) (declare (ignore text))))
+         (ui::replace-text-between (lambda (text start end replacement)
+                                    (c:text-delete text start end) (c:text-insert text start replacement)))
+         (ui::find-update (lambda (fb) (declare (ignore fb)))))
+      (ui::find-replace-all fb)
+      (is string= (format nil "~{~a~}" (make-list count :initial-element "aax")) (c:buffer-string buffer))
+      ;; Bound actual scanner work and output spans rather than wall-clock
+      ;; time, so a slow test host doesn't mask or invent a quadratic path.
+      (true (<= scanners 2))
+      (true (<= scans (+ (* 2 count) 2)))
+      (true (<= output-span (length text))))))
 
 (define-test project-root-stops-at-symlinked-open-folder :parent responsiveness
   (let* ((root (merge-pathnames (format nil "cadre-root-~a/" (c:make-uuid)) (uiop:temporary-directory)))

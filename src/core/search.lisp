@@ -86,9 +86,39 @@ is a regular expression or a scanner from REGEX-SCANNER."
                                                                          :whole-word whole-word :regex regex)
                          collect (list n start end))))))
 
-(defun regex-replacement (pattern match replacement &key case-sensitive)
-  "REPLACEMENT for MATCH of the regular expression PATTERN, with \\1 … filled in."
-  (cl-ppcre:regex-replace (regex-scanner pattern :case-sensitive case-sensitive) match replacement))
+(defun regex-match-replacement (text replacement start end registers-start registers-end)
+  "Expand REPLACEMENT from existing captures without copying the whole line."
+  (let* ((context (or (search "\\`" replacement) (search "\\'" replacement)))
+         (result (cl-ppcre:regex-replace
+                  (lambda (source from to)
+                    (declare (ignore source from to))
+                    (values start end registers-start registers-end))
+                  text replacement :start (if context 0 start) :end (if context (length text) end))))
+    ;; Only replacements explicitly inserting the prefix/suffix need those
+    ;; parts in the output. Captures still refer to the full source string.
+    (if context (subseq result start (- (length result) (- (length text) end))) result)))
+
+(defun regex-replacements (pattern text matches replacement &key case-sensitive)
+  "Replacements for MATCHES, ascending (start . end) ranges in TEXT.
+Scan the original line once, keeping lookarounds and capture groups intact."
+  (when (null matches) (return-from regex-replacements nil))
+  (let ((scanner (regex-scanner pattern :case-sensitive case-sensitive))
+        (remaining matches)
+        (replacements nil))
+    (cl-ppcre:do-scans (start end registers-start registers-end scanner text)
+      (when (= start (caar remaining))
+        (unless (= end (cdar remaining))
+          (editor-error "The regular expression match changed; search again"))
+        (push (regex-match-replacement text replacement start end registers-start registers-end) replacements)
+        (pop remaining)
+        (unless remaining (return-from regex-replacements (nreverse replacements))))
+      (when (> start (caar remaining))
+        (editor-error "The regular expression match changed; search again")))
+    (editor-error "The regular expression match changed; search again")))
+
+(defun regex-replacement (pattern text replacement &key case-sensitive (start 0) (end (length text)))
+  "REPLACEMENT for PATTERN's match at START–END in TEXT, with \\1 … filled in."
+  (first (regex-replacements pattern text (list (cons start end)) replacement :case-sensitive case-sensitive)))
 
 (defun symbol-name-part (token-text)
   "The start of the symbol's name in TOKEN-TEXT, after any package prefix."

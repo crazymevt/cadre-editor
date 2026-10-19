@@ -76,7 +76,7 @@
    #:paredit-wrap #:paredit-split #:paredit-join #:paredit-open #:paredit-close #:paredit-quote
    #:read-form-tree #:bound-variables-at #:extract-function-edits #:extract-variable-edits
    #:directory-link-p #:project-files #:read-text-file #:split-text-lines #:line-matches #:text-matches
-   #:symbol-occurrences #:symbol-contexts #:symbol-context #:sc-line #:sc-start #:sc-end #:sc-column #:sc-prefix #:sc-package #:sc-local #:sc-clause #:sc-clause-package #:prefix-package #:classify-symbol-context #:context-packages #:lexical-rename-places #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement
+   #:symbol-occurrences #:symbol-contexts #:symbol-context #:sc-line #:sc-start #:sc-end #:sc-column #:sc-prefix #:sc-package #:sc-local #:sc-clause #:sc-clause-package #:prefix-package #:classify-symbol-context #:context-packages #:lexical-rename-places #:replace-matches #:symbol-name-part #:regex-scanner #:regex-replacement #:regex-replacements
    #:definition #:make-definition #:source-definitions #:definition-name #:definition-kind #:definition-arglist
    #:definition-documentation #:definition-line #:arglist-hint #:form-argument-position
    #:*markdown-faces* #:markdown-inlines #:markdown-line-spans #:markdown-blocks #:markdown-headings

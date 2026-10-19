@@ -194,8 +194,11 @@
   "The @name lines in REQUEST's block of TEXT, which go with it when it's rewritten."
   (with-output-to-string (out)
     (dolist (line (text-lines-with-offsets (subseq text (http-request-start request) (http-request-end request))))
-      (when (file-variable-line (third line))
-        (format out "~a~%" (third line))))))
+      (let ((text (third line)))
+        (cond ((file-variable-line text) (format out "~a~%" text))
+              ((or (separator-line-p text) (comment-line-p text)
+                   (string= (string-trim '(#\Space #\Tab) text) "")))
+              (t (return)))))))
 
 (defun replace-http-request (text old new)
   "TEXT with request OLD's block (from parsing TEXT) replaced by NEW."
@@ -212,7 +215,9 @@
     (concatenate 'string text (if (plusp (length text)) (format nil "~%~%") "") (render-http-request request))))
 
 (defun remove-http-request (text request)
-  (concatenate 'string (subseq text 0 (http-request-start request)) (subseq text (http-request-end request))))
+  (concatenate 'string (subseq text 0 (http-request-start request))
+               (block-variable-lines text request)
+               (subseq text (http-request-end request))))
 
 ;;; Variables
 

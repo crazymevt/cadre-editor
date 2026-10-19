@@ -137,10 +137,20 @@
   (or *find-case-sensitive* (and (not *find-regex*) (not (case-fold-p pattern)))))
 
 (defun find-replacement (pattern match replacement)
-  "What MATCH of PATTERN becomes, as the find bar's options say."
+  "What MATCH of PATTERN, a plain-text search, becomes, as the find bar's
+options say. Regex matches go through FIND-REPLACEMENT-AT and
+FIND-REPLACEMENTS, which need the line around them."
+  (replacement-for match replacement :case-fold (not (find-case-sensitive-p pattern))))
+
+(defun find-replacement-at (pattern text start end replacement)
+  "The replacement of TEXT's START–END match, keeping its original line."
   (if *find-regex*
-      (regex-replacement pattern match replacement :case-sensitive (find-case-sensitive-p pattern))
-      (replacement-for match replacement :case-fold (not (find-case-sensitive-p pattern)))))
+      (let* ((line-start (1+ (or (position #\Newline text :end start :from-end t) -1)))
+             (line-end (or (position #\Newline text :start end) (length text))))
+        (regex-replacement pattern (subseq text line-start line-end) replacement
+                           :start (- start line-start) :end (- end line-start)
+                           :case-sensitive (find-case-sensitive-p pattern)))
+      (find-replacement pattern (subseq text start end) replacement)))
 
 (defun find-matches (gtk-buffer pattern)
   "Start and end offsets of each occurrence of PATTERN in GTK-BUFFER."
@@ -154,6 +164,22 @@
                   repeat *max-search-matches*
                   collect (cons (+ (aref starts line) start) (+ (aref starts line) end)))
             'vector)))
+
+(defun find-replacements (pattern text matches replacement)
+  "Replacement strings for ascending MATCHES, batching regex work per line."
+  (if (not *find-regex*)
+      (map 'list (lambda (match) (find-replacement pattern (subseq text (car match) (cdr match)) replacement)) matches)
+      (let ((remaining (coerce matches 'list))
+            (line-start 0))
+        (loop for line in (split-text-lines text)
+              for line-end = (+ line-start (length line))
+              for ranges = (loop while (and remaining (< (caar remaining) line-end))
+                                 for match = (pop remaining)
+                                 collect (cons (- (car match) line-start) (- (cdr match) line-start)))
+              append (regex-replacements pattern line ranges replacement
+                                         :case-sensitive (find-case-sensitive-p pattern))
+              do (setf line-start (1+ line-end))
+              until (null remaining)))))
 
 (defun find-update (fb)
   "Search again for the entry's text in the current buffer."
@@ -276,8 +302,8 @@
         (find-update fb)
         (let* ((gtk-buffer (buffer-text buffer))
                (match (aref (find-bar-matches fb) index))
-               (replacement (find-replacement pattern (text-string gtk-buffer (car match) (cdr match))
-                                              (gtk:editable-get-text (find-bar-replace-entry fb)))))
+               (replacement (find-replacement-at pattern (text-string gtk-buffer) (car match) (cdr match)
+                                                 (gtk:editable-get-text (find-bar-replace-entry fb)))))
           (replace-text-between gtk-buffer (car match) (cdr match) replacement)
           (gtk:text-buffer-place-cursor gtk-buffer (iter-at gtk-buffer (+ (car match) (length replacement))))
           (find-update fb)))))
@@ -288,12 +314,14 @@
     (when (and view (plusp (length pattern)))
       (let* ((gtk-buffer (view-gtk-buffer view))
              (matches (find-matches gtk-buffer pattern))
-             (to (gtk:editable-get-text (find-bar-replace-entry fb))))
+             (text (text-string gtk-buffer))
+             (to (gtk:editable-get-text (find-bar-replace-entry fb)))
+             (replacements (reverse (find-replacements pattern text matches to))))
         (with-user-action (gtk-buffer)
           (loop for i from (1- (length matches)) downto 0
                 for (start . end) = (aref matches i)
                 do (replace-text-between gtk-buffer start end
-                                         (find-replacement pattern (text-string gtk-buffer start end) to))))
+                                         (pop replacements))))
         (find-update fb)
         (message "Replaced ~d occurrence~:p" (length matches))))))
 
