@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.0
+
 - **Breakpoints.** Click left of a line number in a Common Lisp file, or
   press `F9` (`C-x SPC` in the Emacs keys), to set a breakpoint. It stops
   before the statement the line is in, and the dot moves to that statement's
@@ -11,8 +13,8 @@
   breakpoints in. A breakpoint set before the file's package is loaded
   waits, and goes in once it is, instead of opening the debugger. A form
   that isn't in a body, such as `unwind-protect`'s protected form, is wrapped
-  as `(progn (break …) form)`, so its value and cleanup are unchanged. Compiler notes and the debugger's source positions skip
-  the inserted break. Clear Breakpoints (`Ctrl+Shift+F9`) removes them all.
+  as `(progn (break …) form)`, so its value and cleanup are unchanged.
+  Compiler notes and the debugger's source positions skip the inserted break. Clear Breakpoints (`Ctrl+Shift+F9`) removes them all.
 
 - **Multiple cursors.** `Ctrl+D` selects the word at the cursor, then adds
   a cursor at its next occurrence. `Ctrl+K Ctrl+D` skips an occurrence,
