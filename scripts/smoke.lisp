@@ -3102,7 +3102,36 @@ d" 0 0)
          (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))
   (call-command 'cadre-ui::debugger-continue))
 
-(then-when ((null cadre-ui::*debug-levels*) :timeout 20)
+(then-when ((search ":DONE" (repl-text)) :timeout 20)
+  (check "Continue finishes the call in the REPL" (not (cadre-ui::repl-busy cadre-ui::*repl*))
+         (let ((text (repl-text))) (subseq text (max 0 (- (length text) 300)))))
+  (call-command 'cadre-ui::clear-breakpoints)
+  (with-open-file (o (merge-pathnames "src/bp-protect.lisp" *root*) :direction :output :if-exists :supersede)
+    ;; Its own package: the REPL followed bp-later.lisp into BP-LATER.
+    (format o "(in-package :cl-user)~%(defun bp-protect ()~%  (let ((cleaned nil))~%    (list (unwind-protect~%               (* 6 7)~%            (setf cleaned t))~%          cleaned)))~%"))
+  (open-file-path (merge-pathnames "src/bp-protect.lisp" *root*)))
+
+(then-when ((find-buffer "bp-protect.lisp"))
+  (show-buffer-named "bp-protect.lisp")
+  (cadre-ui::toggle-breakpoint-at (current-view) 4))
+
+(then-when ((cadre-ui::buffer-local (current-buffer) :breakpoint-insertions) :timeout 30)
+  (check "a breakpoint on UNWIND-PROTECT's protected form wraps it"
+         (equal '(4) (cadre-ui::breakpoint-lines (current-buffer))) (cadre-ui::breakpoint-lines (current-buffer))))
+
+(then 2000
+  (cadre-ui::repl-eval "(cl-user::bp-protect)"))
+
+(then-when (cadre-ui::*debug-levels* :timeout 30)
+  (check "it stops there" (search "bp-protect.lisp, line 5" (first (cadre-ui::dl-condition (first cadre-ui::*debug-levels*))))
+         (cadre-ui::dl-condition (first cadre-ui::*debug-levels*)))
+  (call-command 'cadre-ui::debugger-continue))
+
+(then-when ((search "(42 " (repl-text)) :timeout 20)
+  (check "and Continue returns the protected form's value, with the cleanup run"
+         (search "(42 T)" (repl-text))
+         (list :busy (cadre-ui::repl-busy cadre-ui::*repl*) :levels (length cadre-ui::*debug-levels*)
+               :repl (let ((text (repl-text))) (subseq text (max 0 (- (length text) 400))))))
   (call-command 'cadre-ui::clear-breakpoints))
 
 ;;; Checking the setup

@@ -46,7 +46,22 @@ arguments: they get 4 extra columns, the body after them 2."
       do (setf (gethash (string-downcase (symbol-name name)) *indentation-specs*) spec))
 
 (defvar *learned-indentation* (make-hash-table :test 'equal)
-  "Names whose spec came from the Lisp (learn-indentation), not the table above.")
+  "Names whose spec came from the Lisp (learn-indentation), not the table
+above, each with (previous-spec): the spec it took the place of, built in or
+set with define-indentation, or (nil).")
+
+(defun set-learned-spec (name spec)
+  (unless (gethash name *learned-indentation*)
+    (setf (gethash name *learned-indentation*) (list (gethash name *indentation-specs*))))
+  (setf (gethash name *indentation-specs*) spec))
+
+(defun unlearn-spec (name)
+  "Forget the spec learned for NAME, giving back the one it took the place of."
+  (let ((previous (first (gethash name *learned-indentation*))))
+    (if previous
+        (setf (gethash name *indentation-specs*) previous)
+        (remhash name *indentation-specs*))
+    (remhash name *learned-indentation*)))
 
 (defun body-position (indent)
   "The number of arguments before &body, from INDENT as Swank reports it:
@@ -68,12 +83,9 @@ gives the position of &body, or is nil when a macro no longer has one."
     (when (and (consp update) (stringp (first update)) (consp (rest update)))
       (let ((name (string-downcase (first update)))
             (indent (body-position (second update))))
-        (cond ((integerp indent)
-               (setf (gethash name *indentation-specs*) indent
-                     (gethash name *learned-indentation*) t))
+        (cond ((integerp indent) (set-learned-spec name indent))
               ((and (null indent) (gethash name *learned-indentation*))
-               (remhash name *indentation-specs*)
-               (remhash name *learned-indentation*)))))))
+               (unlearn-spec name)))))))
 
 (defun learned-indentation ()
   "The specs learned from the Lisp, as an alist of (name . spec) sorted by name."
@@ -82,6 +94,12 @@ gives the position of &body, or is nil when a macro no longer has one."
               when (integerp spec) collect (cons name spec))
         #'string< :key #'car))
 
+(defun forget-learned-indentation ()
+  "Forget every spec learned from the Lisp (or restored), giving back the
+built-in or configured ones they took the place of."
+  (dolist (name (loop for name being the hash-keys of *learned-indentation* collect name))
+    (unlearn-spec name)))
+
 (defun restore-learned-indentation (specs)
   "Bring back SPECS, an alist from LEARNED-INDENTATION saved earlier, so
 macros indent right before the Lisp is running. A name that already has a
@@ -89,8 +107,7 @@ spec, built in or learned since, keeps it."
   (loop for (name . spec) in specs
         when (and (stringp name) (typep spec '(integer 0 32))
                   (not (gethash name *indentation-specs*)))
-          do (setf (gethash name *indentation-specs*) spec
-                   (gethash name *learned-indentation*) t)))
+          do (set-learned-spec name spec)))
 
 (defun symbol-base-name (string)
   "STRING without any package prefix, in lower case."

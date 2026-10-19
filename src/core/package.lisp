@@ -94,7 +94,7 @@
    #:+cursor-marker+ #:standard-symbol #:standard-symbols #:standard-arglist #:standard-documentation #:standard-symbol-kind
    #:paredit-delete-before #:paredit-delete-after #:paredit-kill-end
    #:lisp-indentation #:define-indentation #:indentation-spec #:learn-indentation
-   #:learned-indentation #:restore-learned-indentation
+   #:learned-indentation #:restore-learned-indentation #:forget-learned-indentation
    #:breakpoint-place #:insert-at-offsets #:unshift-position
    #:token-face #:datum-comment-columns #:dialect-definitions #:clojure-namespace-at #:*faces* #:*paren-face-count*
    ;; Swank

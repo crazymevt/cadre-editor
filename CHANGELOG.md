@@ -9,7 +9,9 @@
   `(break)` in it, and your file isn't changed. Running the code opens the
   debugger, and Continue goes on. Compiling the form or the file keeps the
   breakpoints in. A breakpoint set before the file's package is loaded
-  waits, and goes in once it is, instead of opening the debugger. Compiler notes and the debugger's source positions skip
+  waits, and goes in once it is, instead of opening the debugger. A form
+  that isn't in a body, such as `unwind-protect`'s protected form, is wrapped
+  as `(progn (break …) form)`, so its value and cleanup are unchanged. Compiler notes and the debugger's source positions skip
   the inserted break. Clear Breakpoints (`Ctrl+Shift+F9`) removes them all.
 
 - **Multiple cursors.** `Ctrl+D` selects the word at the cursor, then adds
@@ -37,6 +39,7 @@
 - **Learned indentation is kept.** The indentation the Lisp reports for a
   project's macros with `&body` is saved per project. Those macros indent
   correctly the next time the project is opened, before a Lisp is running.
+  Opening another project replaces them with that project's.
   `*remember-learned-indentation*` turns this off.
 
 - **More responsive opening and conversation history.** Project discovery

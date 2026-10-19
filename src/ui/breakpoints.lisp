@@ -45,19 +45,31 @@
 
 (defun form-breakpoint-insertions (buffer sl sc el ec)
   "For the form from (SL, SC) to (EL, EC): (offset . text) for each
-breakpoint in it, at buffer offsets."
+breakpoint in it, at buffer offsets. A break goes before its statement, or
+around it, (progn (break …) statement), where it isn't in a body. Closing
+parens come first, for a statement that ends where another starts."
   (let ((syntax (buffer-syntax buffer))
         (text (buffer-text buffer)))
     (when syntax
-      (remove-duplicates
-       (loop for line in (breakpoint-lines buffer)
-             for place = (and (<= sl line el) (breakpoint-place syntax line))
-             when (and place
-                       (or (> (first place) sl) (and (= (first place) sl) (> (second place) sc)))
-                       (or (< (first place) el) (and (= (first place) el) (< (second place) ec))))
-               collect (cons (text-line-position text (first place) (second place))
-                             (breakpoint-text buffer (first place))))
-       :key #'car :test #'=))))
+      (let ((places (remove-duplicates
+                     (loop for line in (breakpoint-lines buffer)
+                           for place = (and (<= sl line el) (breakpoint-place syntax line))
+                           when (and place
+                                     (or (> (first place) sl) (and (= (first place) sl) (> (second place) sc)))
+                                     (or (< (first place) el) (and (= (first place) el) (< (second place) ec))))
+                             collect place)
+                     :test #'equal))
+            (opens '())
+            (closes '()))
+        (dolist (place places)
+          (destructuring-bind (line column &optional end-line end-column) place
+            (let ((start (text-line-position text line column)))
+              (if end-line
+                  (progn
+                    (push (cons start (format nil "(cl:progn ~a" (breakpoint-text buffer line))) opens)
+                    (push (cons (text-line-position text end-line end-column) ")") closes))
+                  (push (cons start (breakpoint-text buffer line)) opens)))))
+        (append (sort closes #'< :key #'car) (sort opens #'< :key #'car))))))
 
 (defun breakpoint-form-text (buffer sl sc el ec text)
   "TEXT, the form from (SL, SC) to (EL, EC) in BUFFER, with a break before

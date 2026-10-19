@@ -224,3 +224,30 @@
                (ui::restore-project-indentation project-a)
                (is eq nil (c:indentation-spec "frobnicate-thing") "the setting turns it off")))
         (c:learn-indentation '(("frobnicate-thing" nil ())))))))
+
+(define-test learned-indentation-switching-projects :parent local-history
+  (with-history-fixture
+    (let ((project-a (merge-pathnames "a/" directory))
+          (project-b (merge-pathnames "b/" directory))
+          (ui::*remember-learned-indentation* t)
+          (ui::*indentation-save-pending* nil))
+      (unwind-protect
+           (progn
+             (c:learn-indentation '(("frob-around" (4 "&body") ("A"))))
+             (ui::save-project-indentation project-a)
+             (c:forget-learned-indentation)
+             (c:learn-indentation '(("frob-around" (4 4 4 "&body") ("B"))))
+             (ui::save-project-indentation project-b)
+             (ui::restore-project-indentation project-a)
+             (is = 1 (c:indentation-spec "frob-around"))
+             (ui::restore-project-indentation project-b)
+             (is = 3 (c:indentation-spec "frob-around") "the new project's spec replaces the old one's")
+             (c:learn-indentation '(("only-in-b" (4 "&body") ("B"))))
+             (setf ui::*indentation-save-pending* project-b)
+             (ui::restore-project-indentation project-a)
+             (false (c:indentation-spec "only-in-b") "switching forgets what the other project learned")
+             (is equal 1 (cdr (assoc "only-in-b" (cdr (assoc (ui::project-key project-b) (ui::read-saved-indentation)
+                                                             :test #'equal))
+                                     :test #'equal))
+                 "and saves it for that project first"))
+        (c:forget-learned-indentation)))))

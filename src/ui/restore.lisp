@@ -248,7 +248,11 @@ for the HyperSpec tab, or nil if it has no file."
 (defun project-key (directory) (uiop:native-namestring directory))
 
 (defun restore-project-indentation (directory)
-  "Use the indentation learned for DIRECTORY's macros in an earlier session."
+  "Use the indentation learned for DIRECTORY's macros in an earlier session,
+in place of what was learned for the project open before."
+  ;; What the project open before learned, saved under its own name first.
+  (save-pending-indentation)
+  (forget-learned-indentation)
   (when *remember-learned-indentation*
     (let ((saved (cdr (assoc (project-key directory) (read-saved-indentation) :test #'equal))))
       (when (listp saved) (restore-learned-indentation saved)))))
@@ -272,16 +276,25 @@ for the HyperSpec tab, or nil if it has no file."
                                      (terpri out)))))
         (error (e) (message "Could not save learned indentation: ~a" e))))))
 
-(defvar *indentation-save-pending* nil)
+(defvar *indentation-save-pending* nil
+  "The project whose learned indentation is to be saved in a moment, or nil.")
+
+(defun save-pending-indentation ()
+  "Save now what was learned for the project waiting to be saved, if any."
+  (let ((project *indentation-save-pending*))
+    (when project
+      (setf *indentation-save-pending* nil)
+      (save-project-indentation project))))
 
 (defun indentation-learned (updates)
   "Handle Swank's :indentation-update, saving the result a moment later."
   (learn-indentation updates)
   (let ((project (and *window* (window-project *window*))))
     (when (and project *remember-learned-indentation* (not *indentation-save-pending*))
-      (setf *indentation-save-pending* t)
+      (setf *indentation-save-pending* project)
       (glib:timeout-add glib:+priority-default-idle+ 2000
                         (lambda ()
-                          (setf *indentation-save-pending* nil)
-                          (save-project-indentation project)
+                          ;; Saved already if the project changed meanwhile.
+                          (when (eq *indentation-save-pending* project)
+                            (save-pending-indentation))
                           nil)))))

@@ -282,6 +282,42 @@ Second line of the docstring.\"
     (is = 3 (c:unshift-position 5 insertions))
     (is = 8 (c:unshift-position 11 insertions))))
 
+(define-test breakpoint-wrapped-places :parent cadre-tests
+  (let* ((lines '("(defun g ()"                 ; 0
+                  "  (unwind-protect"           ; 1
+                  "       (compute 1"           ; 2
+                  "                2)"          ; 3
+                  "    (cleanup)"               ; 4
+                  "    (more-cleanup))"         ; 5
+                  "  (prog1 (first-value)"      ; 6
+                  "    (other)))"               ; 7
+                  "(unwind-protect (top) (done))")) ; 8
+         (s (c:make-lisp-syntax (c:make-string-text (format nil "~{~a~%~}" lines)))))
+    (flet ((at (line) (c:breakpoint-place s line)))
+      (is equal '(1 2) (at 1) "the UNWIND-PROTECT itself is a statement of the DEFUN")
+      (is equal '(2 7 3 18) (at 2) "its protected form is wrapped, to its end")
+      (is equal '(2 7 3 18) (at 3))
+      (is equal '(4 4) (at 4) "cleanup forms are a body")
+      (is equal '(6 2) (at 6) "a line starting the PROG1 stops before it")
+      (is equal '(7 4) (at 7))
+      (is equal '(8 16 8 21) (at 8) "a top-level one: its protected form, wrapped")))
+  (is equal "(a (progn (b) x)(progn (b) y))"
+      (c:insert-at-offsets "(a xy)" '((4 . ")") (5 . ")") (3 . "(progn (b) ") (4 . "(progn (b) ")))
+      "a close before an open at the same offset"))
+
+(define-test learned-indentation-keeps-built-ins :parent cadre-tests
+  (unwind-protect
+       (progn
+         (is = 1 (c:indentation-spec "when"))
+         (c:learn-indentation '(("when" (4 4 "&body") ("MY-PROJECT"))))
+         (is = 2 (c:indentation-spec "when") "a project's macro named WHEN")
+         (c:forget-learned-indentation)
+         (is = 1 (c:indentation-spec "when") "switching projects gives back the built-in rule")
+         (c:learn-indentation '(("unless" (4 4 4 "&body") ("MY-PROJECT"))))
+         (c:learn-indentation '(("unless" nil ("MY-PROJECT"))))
+         (is = 1 (c:indentation-spec "unless") "and so does the macro losing its &body"))
+    (c:forget-learned-indentation)))
+
 (define-test fuzzy :parent cadre-tests
   (true (c:fuzzy-match "sb" "save-buffer"))
   (false (c:fuzzy-match "xyz" "save-buffer"))
