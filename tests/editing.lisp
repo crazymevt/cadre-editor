@@ -321,7 +321,61 @@ Over lines.\"
     (is equal '(:left :right) (second (seventh blocks)))
     (is equal "code" (third (ninth blocks)))
     (is = 0 (car (last (first blocks))))
-    (is = 3 (car (last (second blocks))))))
+    (is = 3 (car (last (second blocks)))))
+  ;; A quote ends where an unquoted line starts another block...
+  (is equal '(:quote :heading) (mapcar #'first (c:markdown-blocks (format nil "> quoted~%# Outside"))))
+  (is equal '(:quote :list) (mapcar #'first (c:markdown-blocks (format nil "> quoted~%- item"))))
+  (is equal '(:quote :code) (mapcar #'first (c:markdown-blocks (format nil "> quoted~%```~%x~%```"))))
+  ;; ...but a plain line carries on its paragraph.
+  (let ((blocks (c:markdown-blocks (format nil "> one~%two~%~%after"))))
+    (is equal '(:quote :paragraph) (mapcar #'first blocks))
+    (is string= "one two" (car (second (first (second (first blocks)))))))
+  ;; Not after a heading inside the quote.
+  (is equal '(:quote :paragraph) (mapcar #'first (c:markdown-blocks (format nil "> # Title~%text"))))
+  ;; Nor after other blocks that aren't paragraphs.
+  (dolist (text (list (format nil "> ```~%> x~%outside") (format nil ">     code~%outside")
+                      (format nil "> title~%> ===~%outside") (format nil "> one~%>~%outside")
+                      (format nil "> > one~%> >~%outside") (format nil "> | a |~%> |---|~%outside")))
+    (let ((blocks (c:markdown-blocks text)))
+      (is equal '(:quote :paragraph) (mapcar #'first blocks))
+      (is string= "outside" (car (second (second blocks))))))
+  ;; A list item's paragraph inside the quote carries on too, over several lines.
+  (let* ((blocks (c:markdown-blocks (format nil "> - one~%two~%three")))
+         (item (first (fourth (first (second (first blocks)))))))
+    (is equal '(:quote) (mapcar #'first blocks))
+    (is string= "one two three" (car (second (first (second item))))))
+  ;; Lazy lines carry on a nested quote's paragraph, and the outer quote's.
+  (let ((blocks (c:markdown-blocks (format nil "> > one~%two~%> three~%four"))))
+    (is equal '(:quote) (mapcar #'first blocks))
+    (is equal '(:quote) (mapcar #'first (second (first blocks))))
+    (is string= "one two three four" (car (second (first (second (first (second (first blocks)))))))))
+  ;; Lines alternating with and without > make one paragraph.
+  (let ((blocks (c:markdown-blocks (with-output-to-string (o) (dotimes (k 2000) (format o "> a~%b~%"))))))
+    (is = 1 (length blocks))
+    (is = 1 (length (second (first blocks))))))
+
+(define-test markdown-quote-linear-scanning :parent cadre-tests
+  ;; Quotes that end early must not read the remaining document each time.
+  ;; Count source reads instead of elapsed time so the bound is deterministic.
+  (dolist (pattern '("> # heading~%outside~%" "> > one~%> >~%outside~%"
+                     "> ```~%> code~%outside~%"))
+    (let* ((count 2000)
+           (text (with-output-to-string (out)
+                   (dotimes (k count) (format out pattern))))
+           (lines (coerce (c::split-text-lines text) 'vector))
+           (reads 0)
+           (blocks (c::parse-line-blocks
+                    (lambda (k) (incf reads) (aref lines k))
+                    (lambda (k) (< k (length lines))) 0)))
+      (is = (* 2 count) (length blocks))
+      (true (loop for (quote paragraph) on blocks by #'cddr
+                  for n from 0
+                  always (and (eq :quote (first quote))
+                              (eq :paragraph (first paragraph))
+                              (string= "outside" (car (second paragraph)))
+                              (= (* n (if (search "heading" pattern) 2 3))
+                                 (car (last quote))))))
+      (true (< reads (* 20 count))))))
 
 (define-test markdown-misc :parent cadre-tests
   (is equal '((1 "A" 0) (2 "B c" 2) (1 "D" 4))

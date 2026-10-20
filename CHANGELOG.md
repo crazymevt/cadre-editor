@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Assistant replies stay in view after GTK lays out new messages and cards,
+  while reading earlier entries or expanding cards preserves your position.
+  Sending a message returns to the latest messages.
+- A delayed Codex startup failure no longer ends a newer turn on the same
+  connection.
+
+- The Claude assistant status shows remaining account usage reported during
+  turns, with conversation cost available in its tooltip.
+
 - Merge-conflict buttons resolve the conflict beside them, and diff3
   conflicts correctly highlight the base version.
 - CSS formatting preserves comments inside declarations and selectors.
@@ -9,6 +18,11 @@
   lookahead, lookbehind and capture groups, in files and project searches.
 - Regex Replace All scans each line once for replacement values, keeping
   long lines with many matches responsive.
+- In the Markdown preview, a blockquote no longer swallows the unquoted lines
+  after it: plain text stays in the quote only when it carries on a paragraph
+  (including one in a quoted list item), not after quoted code or headings.
+- Markdown previews stay responsive when many blockquotes end at unquoted
+  text, by reading quote contents only as parsing reaches them.
 - Deleting an HTTP request preserves file variables used by other requests.
 - With several cursors in both sides of a split, each side's selections stay
   highlighted while the other edits or closes, and closing a side no longer

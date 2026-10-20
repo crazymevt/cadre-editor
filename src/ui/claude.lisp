@@ -64,6 +64,24 @@ of proposing every change for review. Open files reload when they change on disk
 (defvar *mcp-server* nil)
 (defvar *mcp-config* nil)
 (defvar *claude-status* nil "A claude-status, once checked.")
+(defvar *claude-rate-limits* nil "Latest account usage reported by Claude Code.")
+
+(defun claude-usage-summary ()
+  "Remaining usage from Claude Code's most recent rate_limit_event."
+  (let ((windows (jget *claude-rate-limits* "unifiedWindows")))
+    (when (cadre::jobject-p windows)
+      (let ((parts
+              (loop for (name . window) in (cdr windows)
+                    for used = (jget window "utilization")
+                    when (realp used)
+                      collect (let ((left (max 0 (min 100 (* 100 (- 1 used))))))
+                                (format nil "~a% ~a"
+                                        (if (and (plusp left) (< left 0.5)) "<1" (round left))
+                                        (cond ((equal name "five_hour") "5h")
+                                              ((equal name "seven_day") "7d")
+                                              (t (substitute #\Space #\_ name))))))))
+        (and parts (format nil "~{~a~^ / ~}" parts))))))
+
 (defvar *claude-checking* nil)
 (defvar *claude-when-checked* '() "Functions to call once the check finishes and Claude is ready.")
 
@@ -78,6 +96,7 @@ of proposing every change for review. Open files reload when they change on disk
   (plan-box nil)                        ; the checklist of Claude's current plan (TodoWrite)
   messages message-boxes scroller input send-button status model-dropdown stack composer
   (scroll-pending nil)
+  (scroll-follow (list t))             ; shared with transcript-rendering copies
   context-file context-problems context-debugger
   (stream-box nil)                      ; the box of the reply being streamed
   (stream-label nil)
@@ -151,6 +170,7 @@ of proposing every change for review. Open files reload when they change on disk
     (let ((viewport (gtk:scrolled-window-get-child scroller)))
       (when (typep viewport 'gtk:viewport)
         (gtk:viewport-set-scroll-to-focus viewport nil)))
+    (connect-chat-scrolling chat)
     (let ((model (position *claude-model* *claude-models* :test #'string=)))
       (when model (gtk:drop-down-set-selected models model)))
     (gtk:widget-set-tooltip-text efforts "Thinking level for the next message")
@@ -427,9 +447,17 @@ chat or what is missing. THEN is called if Claude is ready."
                         (or usage "usage unavailable")))
                 (if *codex-status* "Codex is not ready" "")))
            ((not (claude-ready-p)) (if *claude-status* "Claude Code is not ready" ""))
-           (t (format nil "~:[~;Agent · ~]~a~@[ · $~,4f this conversation~]" (eq (chat-mode *chat*) :agent)
-                      (claude-status-version *claude-status*)
-                      (and (plusp (chat-cost *chat*)) (chat-cost *chat*))))))
+           (t (let ((usage (claude-usage-summary)))
+                (gtk:widget-set-tooltip-text
+                 (chat-status *chat*)
+                 (format nil "Claude Code ~a~%~a~@[~%$~,4f this conversation~]"
+                         (claude-status-version *claude-status*)
+                         (if usage (format nil "Remaining usage: ~a" usage)
+                             "Usage is reported during Claude turns.")
+                         (and (plusp (chat-cost *chat*)) (chat-cost *chat*))))
+                (format nil "~:[~;Agent · ~]Claude · ~a"
+                        (eq (chat-mode *chat*) :agent)
+                        (or usage "usage unavailable"))))))
     (gtk:button-set-label (chat-send-button *chat*) (if (chat-busy *chat*) "Stop" "Send"))
     (gtk:widget-set-css-classes (chat-send-button *chat*)
                                 (if (chat-busy *chat*) '("destructive-action") '("suggested-action")))))
@@ -441,15 +469,32 @@ chat or what is missing. THEN is called if Claude is ready."
   (chat-scroll-to-end)
   widget)
 
+(defun connect-chat-scrolling (chat)
+  "Follow layout changes only while the reader stays at the bottom."
+  (let ((adjustment (gtk:scrolled-window-get-vadjustment (chat-scroller chat))))
+    (gobject:connect adjustment :value-changed
+                     (lambda (adj)
+                       (setf (car (chat-scroll-follow chat))
+                             (>= (+ (gtk:adjustment-get-value adj)
+                                    (gtk:adjustment-get-page-size adj))
+                                 (- (gtk:adjustment-get-upper adj) 2d0)))))
+    ;; Range changes happen during layout. Move the viewport on a later idle.
+    (gobject:connect adjustment :changed
+                     (lambda (adj)
+                       (declare (ignore adj))
+                       (let ((*chat* chat)) (chat-scroll-to-end))))))
+
 (defun chat-scroll-to-end ()
-  (unless (chat-scroll-pending *chat*)
+  (when (and (car (chat-scroll-follow *chat*)) (not (chat-scroll-pending *chat*)))
     (let ((chat *chat*) (scroller (chat-scroller *chat*)))
       (setf (chat-scroll-pending chat) t)
       (glib:idle-add glib:+priority-default-idle+
                    (lambda ()
                      (setf (chat-scroll-pending chat) nil)
-                     (let ((adj (gtk:scrolled-window-get-vadjustment scroller)))
-                       (gtk:adjustment-set-value adj (- (gtk:adjustment-get-upper adj) (gtk:adjustment-get-page-size adj))))
+                     ;; The reader may have scrolled up since this was queued.
+                     (when (car (chat-scroll-follow chat))
+                       (let ((adj (gtk:scrolled-window-get-vadjustment scroller)))
+                         (gtk:adjustment-set-value adj (- (gtk:adjustment-get-upper adj) (gtk:adjustment-get-page-size adj)))))
                      nil)))))
 
 (defun show-claude-intro ()
@@ -707,6 +752,9 @@ Claude meant as its reply: not showing it lost that."
       (:tool-start (chat-tool-row (event-id event) (event-name event) nil))
       (:tool-use (chat-tool-row (event-id event) (event-name event) (event-input event)))
       (:tool-result (chat-tool-result (event-id event) (event-text event) (event-error event)))
+      (:rate-limit
+       (setf *claude-rate-limits* (event-data event))
+       (chat-update-status))
       (:result
        (setf (chat-busy *chat*) nil
              (chat-stream-box *chat*) nil)
@@ -796,6 +844,7 @@ started in the other mode is replaced, resuming the same conversation."
   (when (eq (chat-provider *chat*) :codex)
     (return-from send-to-claude (send-to-codex text :shown shown)))
   (let ((context (message-context)))
+    (setf (car (chat-scroll-follow *chat*)) t)
     (chat-user-message (or shown text))
     (setf (chat-busy *chat*) t)
     (chat-update-status)
@@ -975,6 +1024,7 @@ started in the other mode is replaced, resuming the same conversation."
   (deny-pending-approvals)
   (forget-session-approvals (chat-provider *chat*))
   (clrhash (chat-tools *chat*))
+  (setf (car (chat-scroll-follow *chat*)) t)
   (setf (chat-busy *chat*) nil (chat-cost *chat*) 0 (chat-stream-box *chat*) nil
         (chat-plan-box *chat*) nil (chat-pending-directory *chat*) nil)
   (clear-box (chat-messages *chat*))

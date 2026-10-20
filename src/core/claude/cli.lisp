@@ -138,6 +138,7 @@ project's settings and Cadre's tools."
   :tool-use  NAME, ID, INPUT (a JSON object)
   :tool-result  ID, TEXT, ERROR
   :result    TEXT, ERROR, COST, DURATION, SESSION-ID, DATA: usage
+  :rate-limit  DATA: the account's rate_limit_info
   :other     DATA: the JSON"
   kind text name id input error cost duration session-id model data subagent)
 
@@ -190,6 +191,8 @@ since a message can hold several blocks. Nil for lines that are not JSON."
                                      (not (equal (jget json "subtype") "success")))
                           :cost (jget json "total_cost_usd") :duration (jget json "duration_ms")
                           :session-id (jget json "session_id") :data (jget json "usage"))))
+            ((equal type "rate_limit_event")
+             (list (event :kind :rate-limit :data (jget json "rate_limit_info"))))
             (t (list (event :kind :other :data json)))))))))
 
 (defun tool-display-name (name)

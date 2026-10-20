@@ -40,6 +40,10 @@
     (is eq :result (c:event-kind e))
     (false (c:event-error e))
     (is = 0.0123d0 (c:event-cost e)))
+  (let ((e (first (c:parse-claude-event
+                   "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.28}}}}"))))
+    (is eq :rate-limit (c:event-kind e))
+    (is = 0.28d0 (c:jget (c:event-data e) "unifiedWindows" "five_hour" "utilization")))
   (is eq nil (c:parse-claude-event "not json"))
   (let ((line (c:parse-json (c:user-message-line "fix it"))))
     (is string= "user" (c:jget line "type"))

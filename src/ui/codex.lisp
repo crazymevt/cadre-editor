@@ -390,7 +390,8 @@ conversation, and only while SERVER is still the chat's."
                            (error (e)
                              (deliver-to-gui
                               (lambda ()
-                                (when (and *chat* (eq server (chat-codex-process *chat*)))
+                                (when (and *chat* (eq server (chat-codex-process *chat*))
+                                           (eq tool-token (cadre::codex-tool-token server)))
                                   (chat-note (format nil "Could not resume the saved Codex conversation (~a). Starting a new conversation." e)))))
                              nil))))
           (codex-start-thread server :model model :instructions *codex-system-prompt*))
@@ -403,7 +404,8 @@ conversation, and only while SERVER is still the chat's."
     (error (e)
       (deliver-to-gui
        (lambda ()
-         (when (and *chat* (eq server (chat-codex-process *chat*)))
+         (when (and *chat* (eq server (chat-codex-process *chat*))
+                    (eq tool-token (cadre::codex-tool-token server)))
            (setf (chat-busy *chat*) nil)
            (unless (codex-stopped server)
              (chat-note (format nil "Could not start Codex: ~a" e) "error"))
@@ -413,6 +415,7 @@ conversation, and only while SERVER is still the chat's."
 (defun send-to-codex (text &key shown)
   "Send TEXT, with editor context, through Codex app-server."
   (let ((context (message-context)))
+    (setf (car (chat-scroll-follow *chat*)) t)
     (chat-user-message (or shown text))
     (incf (chat-codex-turn-generation *chat*))
     (setf (chat-busy *chat*) t)

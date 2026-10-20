@@ -350,6 +350,7 @@ state and never records entries or scrolls away from the earlier page."
         (gtk:box-append container button)
         (gobject:connect button :clicked
           (lambda (b)
+            (setf (car (chat-scroll-follow chat)) nil)
             (gtk:box-remove container b)
             (let ((earlier (make-instance 'gtk:box :orientation :vertical :spacing 10))
                   (*chat* chat))
