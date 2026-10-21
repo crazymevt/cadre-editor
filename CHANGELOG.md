@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.1
+
 - Assistant replies stay in view after GTK lays out new messages and cards,
   while reading earlier entries or expanding cards preserves your position.
   Sending a message returns to the latest messages.
